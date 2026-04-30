@@ -1,7 +1,7 @@
 // Demo Store - Zustand store for managing QMS data in memory (demo mode)
 import { create } from 'zustand';
-import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings } from '@/types/qms';
-import { mockProfiles, mockOrganizations, mockOrgMembers, mockDocuments, mockCapas, mockNCRs, mockBatchRecords, mockSuppliers, mockFormTemplates, mockFormInstances, mockAudits, mockTraining, mockRisks, mockAuditTrails, mockPrerequisites } from './mock-data';
+import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation } from '@/types/qms';
+import { mockProfiles, mockOrganizations, mockOrgMembers, mockDocuments, mockCapas, mockNCRs, mockBatchRecords, mockSuppliers, mockFormTemplates, mockFormInstances, mockAudits, mockTraining, mockRisks, mockAuditTrails, mockPrerequisites, mockChangeControls, mockDeviations } from './mock-data';
 
 interface QMSStore {
   // Data
@@ -20,6 +20,8 @@ interface QMSStore {
   risks: Risk[];
   auditTrails: AuditTrail[];
   prerequisites: DocumentPrerequisite[];
+  changeControls: ChangeControl[];
+  deviations: Deviation[];
 
   // Computed helpers
   getProfile: (id: string) => Profile | undefined;
@@ -45,6 +47,10 @@ interface QMSStore {
   updateRisk: (id: string, updates: Partial<Risk>) => void;
   addFormInstance: (instance: FormInstance) => void;
   updateFormInstance: (id: string, updates: Partial<FormInstance>) => void;
+  addChangeControl: (cc: ChangeControl) => void;
+  updateChangeControl: (id: string, updates: Partial<ChangeControl>) => void;
+  addDeviation: (dev: Deviation) => void;
+  updateDeviation: (id: string, updates: Partial<Deviation>) => void;
 
   // Audit trail logging
   logAudit: (action: AuditTrail['action'], tableName: string, recordId?: string, oldValues?: Record<string, unknown>, newValues?: Record<string, unknown>) => void;
@@ -74,6 +80,8 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
   risks: mockRisks,
   auditTrails: mockAuditTrails,
   prerequisites: mockPrerequisites,
+  changeControls: mockChangeControls,
+  deviations: mockDeviations,
 
   // Computed helpers
   getProfile: (id: string) => get().profiles.find(p => p.id === id),
@@ -204,6 +212,28 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
     const old = state.formInstances.find(f => f.id === id);
     state.logAudit('UPDATE', 'FormInstance', id, old ? { status: old.status } : undefined, updates);
     return { formInstances: state.formInstances.map(f => f.id === id ? { ...f, ...updates } : f) };
+  }),
+
+  addChangeControl: (cc) => set(state => {
+    state.logAudit('CREATE', 'ChangeControl', cc.id, undefined, { ccNumber: cc.ccNumber, title: cc.title, status: cc.status });
+    return { changeControls: [...state.changeControls, cc] };
+  }),
+
+  updateChangeControl: (id, updates) => set(state => {
+    const old = state.changeControls.find(c => c.id === id);
+    state.logAudit('UPDATE', 'ChangeControl', id, old ? { status: old.status } : undefined, updates);
+    return { changeControls: state.changeControls.map(c => c.id === id ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c) };
+  }),
+
+  addDeviation: (dev) => set(state => {
+    state.logAudit('CREATE', 'Deviation', dev.id, undefined, { devNumber: dev.devNumber, title: dev.title, status: dev.status });
+    return { deviations: [...state.deviations, dev] };
+  }),
+
+  updateDeviation: (id, updates) => set(state => {
+    const old = state.deviations.find(d => d.id === id);
+    state.logAudit('UPDATE', 'Deviation', id, old ? { status: old.status } : undefined, updates);
+    return { deviations: state.deviations.map(d => d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d) };
   }),
 
   // Audit trail logging

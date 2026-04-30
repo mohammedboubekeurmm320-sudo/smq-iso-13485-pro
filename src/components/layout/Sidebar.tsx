@@ -59,7 +59,7 @@ const NAV_GROUPS = [
     label: 'DOCUMENTS',
     items: [
       { id: 'documents' as ActiveSection, label: 'Document Control', icon: FileText, module: 'documents', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.documents.filter(d => d.status === 'In Review').length },
-      { id: 'document-hierarchy' as ActiveSection, label: 'Document Hierarchy', icon: GitBranch, module: 'documents' },
+      { id: 'document-hierarchy' as ActiveSection, label: 'Document Hierarchy', icon: GitBranch, module: 'hierarchy' },
     ],
   },
   {
@@ -102,6 +102,8 @@ export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle }:
     // Core modules are always visible
     const coreModules = ['documents', 'capa', 'ncr', 'audits', 'training', 'reports', 'compliance'];
     if (coreModules.includes(module)) return true;
+    // 'documents' core includes document-hierarchy visibility
+    if (module === 'documents') return true;
     return activeModules.includes(module);
   };
 

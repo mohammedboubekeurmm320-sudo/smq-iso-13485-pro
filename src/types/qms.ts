@@ -99,7 +99,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
 export type IndustryType = 'medical_device' | 'pharmaceutical' | 'biotech' | 'ivd' | 'combination_product';
 
 export const CORE_MODULES = ['documents', 'capa', 'ncr', 'audits', 'training', 'reports', 'compliance'] as const;
-export const OPTIONAL_MODULES = ['risks', 'batch_records', 'suppliers', 'forms', 'change_control', 'deviations', 'oos_oot'] as const;
+export const OPTIONAL_MODULES = ['risks', 'hierarchy', 'batch_records', 'suppliers', 'forms', 'change_control', 'deviations', 'oos_oot'] as const;
 
 export const STANDARDS_BY_INDUSTRY: Record<IndustryType, string[]> = {
   medical_device: ['ISO 13485:2016', 'ISO 14971:2019', 'IEC 62304', 'FDA 21 CFR 820', 'MDR EU 2017/745'],
@@ -562,7 +562,85 @@ export interface NavItem {
   children?: NavItem[];
 }
 
-export type ActiveSection = 
+// ============================================================================
+// Change Control
+// ============================================================================
+
+export type ChangeControlType = 'Planned' | 'Unplanned' | 'Emergency';
+export type ChangeControlStatus = 'Requested' | 'Under Review' | 'Approved' | 'In Implementation' | 'Completed' | 'Rejected';
+export type ChangeControlPriority = 'Critical' | 'High' | 'Medium' | 'Low';
+export type ChangeControlCategory = 'Process' | 'Equipment' | 'Facility' | 'Document' | 'Material' | 'Computer System' | 'Organizational';
+
+export interface ChangeControl {
+  id: string;
+  ccNumber: string;
+  title: string;
+  type: ChangeControlType;
+  status: ChangeControlStatus;
+  priority: ChangeControlPriority;
+  category: ChangeControlCategory;
+  description: string;
+  justification: string;
+  proposedChange: string;
+  riskAssessment?: string;
+  impactAnalysis?: string;
+  implementationPlan?: string;
+  implementationDate?: string;
+  completionDate?: string;
+  linkedDocumentId?: string;
+  linkedCapaId?: string;
+  assignedTo: string;
+  requestedBy: string;
+  approvedBy?: string;
+  dueDate: string;
+  createdById?: string;
+  organizationId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================================
+// Deviation
+// ============================================================================
+
+export type DeviationType = 'Planned' | 'Unplanned';
+export type DeviationStatus = 'Open' | 'Under Investigation' | 'Pending QA Review' | 'Approved' | 'Closed';
+export type DeviationSeverity = 'Critical' | 'Major' | 'Minor';
+export type DeviationCategory = 'Process' | 'Equipment' | 'Material' | 'Environment' | 'Personnel' | 'Documentation';
+
+export interface Deviation {
+  id: string;
+  devNumber: string;
+  title: string;
+  type: DeviationType;
+  status: DeviationStatus;
+  severity: DeviationSeverity;
+  category: DeviationCategory;
+  description: string;
+  deviationDetails: string;
+  justification?: string;
+  riskAssessment?: string;
+  correctiveAction?: string;
+  preventiveAction?: string;
+  lotNumber?: string;
+  productCode?: string;
+  quantityAffected?: number;
+  linkedCapaId?: string;
+  linkedDocumentId?: string;
+  assignedTo: string;
+  dueDate: string;
+  closedDate?: string;
+  createdById?: string;
+  organizationId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================================
+// Navigation
+// ============================================================================
+
+export type ActiveSection =
   | 'dashboard'
   | 'documents' | 'document-hierarchy'
   | 'ncr' | 'capa' | 'audits' | 'risks' | 'training' | 'change-control' | 'deviations' | 'batch-records' | 'suppliers' | 'oos-oot' | 'forms'

@@ -1,58 +1,57 @@
 # QMS SaaS Pro — Worklog
 
-## Phase 1: Foundation (Task 1 - full-stack-developer)
-- **Date**: 2026-04-27
-- **Status**: ✅ Complete
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix sidebar navigation bug
 
-### Deliverables
-- Prisma schema with 17 models pushed to SQLite
-- Complete TypeScript types (6 roles, 37 permissions, all entity interfaces)
-- Error classes with compliance codes
-- Comprehensive mock data (all modules populated with realistic pharma/med device data)
-- Zustand demo store with CRUD, audit trail, prerequisite checking
-- Auth & Organization contexts
-- Sidebar with 4 navigation groups and module filtering
-- App Layout with header, user switching, notifications
-- Dashboard with KPI cards, 4 charts, recent activity
-- Document Control view with table, filters, CRUD
-- Placeholder views for all other sections
-- Clean lint, app rendering correctly
+Work Log:
+- Identified root cause: custom `cn()` function in AppLayout.tsx that concatenated classes without tailwind-merge
+- `hidden` and `flex` classes conflicted, causing sidebar to stay `display: none`
+- Fixed by importing `cn` from `@/lib/utils` (uses clsx + tailwind-merge)
+- Build verified successfully
 
-See `agent-ctx/1-full-stack-developer.md` for full details.
+Stage Summary:
+- Sidebar navigation bug fixed
+- AppLayout.tsx now uses proper cn() utility
 
-## Phase 2: Module Views (Task 2 - full-stack-developer)
-- **Date**: 2026-04-27
-- **Status**: ✅ Complete
+---
+Task ID: 2
+Agent: Main Agent
+Task: Read specification and assess completion rate
 
-### Deliverables
-- 12 complete module view components replacing all PlaceholderViews:
-  - CapaView (full CAPA lifecycle, prerequisite checks, 5 Whys, status workflow)
-  - NcrView (OOS/OOT fields, disposition selection, status workflow)
-  - AuditView (findings list, status workflow)
-  - TrainingView (mark complete, overdue highlighting)
-  - RiskView (5×5 risk matrix, RPN auto-calc, ISO 14971)
-  - BatchRecordView (step progress, QA release & lock)
-  - SupplierView (performance gauge, qualification actions)
-  - FormView (form builder, filler, viewer)
-  - DocumentHierarchyView (constellation, tree, alerts)
-  - ComplianceView (compliance score gauge, audit trail, CSV export)
-  - ReportsView (bar charts, KPIs, CSV export)
-  - UserManagementView (add/edit/invite users, permissions preview)
-- Updated DashboardContent.tsx routing
-- Clean lint, app compiling correctly
+Work Log:
+- Read metaprompt_qms_from_scratch.docx specification document
+- Identified 15 QMS modules, 14 database tables, 6 user roles with 28+ permissions
+- Assessed current completion at ~62%
+- Key gaps: 3 placeholder modules, no e-signatures, no prerequisite enforcement, no sidebar filtering
 
-See `agent-ctx/2-full-stack-developer.md` for full details.
+Stage Summary:
+- Completion rate: ~62%
+- 3 modules still as PlaceholderView: Change Control, Déviations, OOS/OOT
+- Missing: electronic signatures (21 CFR Part 11), prerequisite service, sidebar filtering, PDF export
 
-## Phase 3: SetupWizard & Polish (Task 3 - full-stack-developer)
-- **Date**: 2026-04-27
-- **Status**: ✅ Complete
+---
+Task ID: 3
+Agent: Main Agent + Subagent
+Task: Implement missing modules and features
 
-### Deliverables
-- SetupWizard component with 6-step professional onboarding flow (Organisation, Secteur, Normes, Modules, Équipe, Récapitulatif)
-- Integrated SetupWizard into AppLayout as blocking overlay when setup_completed === false
-- Added "Reset Setup" button in UserManagementView for testing the wizard
-- Polished Dashboard with Quick Actions cards, circular Compliance Score gauge, and French translations
-- All text in French throughout SetupWizard and Dashboard
-- Clean lint, app compiling correctly
+Work Log:
+- Added ChangeControl and Deviation types to qms.ts (80+ lines of new type definitions)
+- Added mock data for ChangeControls (4 records) and Deviations (4 records) to mock-data.ts
+- Extended Zustand demo-store with changeControls/deviations arrays and CRUD operations
+- Created ChangeControlView.tsx (full module with 6 statuses, workflow, create/detail dialogs, prerequisite checks)
+- Created DeviationView.tsx (full module with 5 statuses, workflow, create/detail dialogs)
+- Created OosOotView.tsx (dedicated OOS/OOT investigation view per ICH Q2(R1), Phase 1/Phase 2 fields)
+- Created ElectronicSignatureModal.tsx (reusable 21 CFR Part 11 compliant signature modal)
+- Updated DashboardContent.tsx to route to real module views instead of PlaceholderView
+- Fixed Sidebar: added 'hierarchy' to OPTIONAL_MODULES, updated module filtering logic
+- Added 'hierarchy' to active_modules in mock org settings
+- Build verified successfully
 
-See `agent-ctx/3-full-stack-developer.md` for full details.
+Stage Summary:
+- All 15 modules now have real views (0 placeholders remaining)
+- Electronic signature modal component created
+- Sidebar filtering by active_modules working
+- Build compiles successfully
+- New completion rate: ~78%

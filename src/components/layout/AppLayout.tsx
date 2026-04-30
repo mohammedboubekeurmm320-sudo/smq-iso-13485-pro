@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Sidebar } from './Sidebar';
+import { cn } from '@/lib/utils';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { OrganizationProvider, useOrganization } from '@/contexts/OrganizationContext';
 import { SetupWizard } from '@/components/setup/SetupWizard';
@@ -193,10 +194,6 @@ function AppLayoutInner({ children }: AppLayoutProps) {
       </div>
     </div>
   );
-}
-
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(' ');
 }
 
 export function AppLayout({ children }: AppLayoutProps) {

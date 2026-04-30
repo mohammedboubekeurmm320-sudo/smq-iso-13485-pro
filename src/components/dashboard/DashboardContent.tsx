@@ -6,6 +6,9 @@ import { DashboardView } from './DashboardView';
 import { DocumentControlView } from './DocumentControlView';
 import { PlaceholderView } from './PlaceholderView';
 import { CapaView } from '@/components/modules/CapaView';
+import { ChangeControlView } from '@/components/modules/ChangeControlView';
+import { DeviationView } from '@/components/modules/DeviationView';
+import { OosOotView } from '@/components/modules/OosOotView';
 import { NcrView } from '@/components/modules/NcrView';
 import { AuditView } from '@/components/modules/AuditView';
 import { TrainingView } from '@/components/modules/TrainingView';
@@ -41,15 +44,15 @@ export function DashboardContent({ activeSection }: DashboardContentProps) {
     case 'training':
       return <TrainingView />;
     case 'change-control':
-      return <PlaceholderView title="Change Control" description="Manage change requests and approvals" icon="ArrowLeftRight" />;
+      return <ChangeControlView />;
     case 'deviations':
-      return <PlaceholderView title="Déviations" description="Record and manage process deviations" icon="AlertOctagon" />;
+      return <DeviationView />;
     case 'batch-records':
       return <BatchRecordView />;
     case 'suppliers':
       return <SupplierView />;
     case 'oos-oot':
-      return <PlaceholderView title="OOS/OOT" description="Out of Specification / Out of Trend investigations" icon="FlaskConical" />;
+      return <OosOotView />;
     case 'forms':
       return <FormView />;
     case 'reports':
