@@ -110,8 +110,7 @@ export function FormView() {
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
     };
-    // In a real app we'd add to store; for demo we just add to the array
-    // Using store pattern - we don't have addFormTemplate, so we'll work with existing data
+    store.addFormTemplate(newTemplate);
     resetBuilder();
     setShowBuilderDialog(false);
   };

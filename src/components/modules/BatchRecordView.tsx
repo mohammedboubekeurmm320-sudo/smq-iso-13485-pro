@@ -3,6 +3,9 @@
 import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import type { BatchRecord, BatchStep, BatchStatus, BatchStepStatus } from '@/types/qms';
 import {
   Package, Plus, Search, Eye, CheckCircle2, Lock, ArrowRight, AlertTriangle,
@@ -38,12 +41,10 @@ const stepStatusColors: Record<BatchStepStatus, string> = {
   'Failed': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 };
 
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(' ');
-}
 
 export function BatchRecordView() {
   const { currentUser, hasPermission } = useAuth();
+  const { toast } = useToast();
   const store = useQMSStore();
   const batchRecords = store.batchRecords;
   const profiles = store.profiles;
@@ -119,9 +120,29 @@ export function BatchRecordView() {
     setShowCreateDialog(false);
   };
 
+  const canCompleteStep = (batch: BatchRecord, step: BatchStep): boolean => {
+    if (batch.isLocked) return false;
+    const steps = batch.steps || [];
+    // Check if all previous steps (lower stepOrder) are completed
+    const previousSteps = steps.filter(s => s.stepOrder < step.stepOrder);
+    return previousSteps.every(s => s.status === 'Completed');
+  };
+
   const handleCompleteStep = (batch: BatchRecord, step: BatchStep) => {
     if (batch.isLocked) return;
-    const updatedSteps = (batch.steps || []).map(s =>
+    const steps = batch.steps || [];
+    // Enforce step sequencing: all previous steps must be completed
+    const previousSteps = steps.filter(s => s.stepOrder < step.stepOrder);
+    const incompletePrevious = previousSteps.find(s => s.status !== 'Completed');
+    if (incompletePrevious) {
+      toast({
+        title: 'Step sequence error',
+        description: `Step ${incompletePrevious.stepOrder} (${incompletePrevious.stepName}) must be completed first.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    const updatedSteps = steps.map(s =>
       s.id === step.id ? { ...s, status: 'Completed' as BatchStepStatus, performedAt: new Date().toISOString(), operatorId: currentUser?.id } : s
     );
     store.updateBatchRecord(batch.id, { steps: updatedSteps });
@@ -235,7 +256,7 @@ export function BatchRecordView() {
                       </TableCell>
                       <TableCell className="text-sm">{batch.batchSize ? `${batch.batchSize} ${batch.batchSizeUnit}` : '-'}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {new Date(batch.manufacturingDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })}
+                        {formatDate(batch.manufacturingDate)}
                       </TableCell>
                       <TableCell>
                         <Badge className={cn('text-xs', statusColors[batch.status])} variant="secondary">{batch.status}</Badge>
@@ -321,9 +342,9 @@ export function BatchRecordView() {
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                   <div><span className="text-muted-foreground">Batch Size:</span> <span className="font-medium">{selectedBatch.batchSize} {selectedBatch.batchSizeUnit}</span></div>
-                  <div><span className="text-muted-foreground">Mfg Date:</span> <span className="font-medium">{new Date(selectedBatch.manufacturingDate).toLocaleDateString()}</span></div>
-                  <div><span className="text-muted-foreground">Expiry:</span> <span className="font-medium">{selectedBatch.expiryDate ? new Date(selectedBatch.expiryDate).toLocaleDateString() : '-'}</span></div>
-                  {selectedBatch.qaReleaseDate && <div><span className="text-muted-foreground">QA Released:</span> <span className="font-medium">{new Date(selectedBatch.qaReleaseDate).toLocaleDateString()}</span></div>}
+                  <div><span className="text-muted-foreground">Mfg Date:</span> <span className="font-medium">{formatDate(selectedBatch.manufacturingDate)}</span></div>
+                  <div><span className="text-muted-foreground">Expiry:</span> <span className="font-medium">{formatDate(selectedBatch.expiryDate)}</span></div>
+                  {selectedBatch.qaReleaseDate && <div><span className="text-muted-foreground">QA Released:</span> <span className="font-medium">{formatDate(selectedBatch.qaReleaseDate)}</span></div>}
                 </div>
 
                 {/* Step Progress */}
@@ -379,7 +400,13 @@ export function BatchRecordView() {
                               </TableCell>
                               <TableCell>
                                 {hasPermission('batch.update') && !selectedBatch.isLocked && step.status !== 'Completed' && step.status !== 'Failed' && (
-                                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => handleCompleteStep(selectedBatch, step)}>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 text-xs"
+                                    onClick={() => handleCompleteStep(selectedBatch, step)}
+                                    disabled={!canCompleteStep(selectedBatch, step)}
+                                  >
                                     <CheckCircle2 className="h-3 w-3 mr-1" />Complete
                                   </Button>
                                 )}

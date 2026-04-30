@@ -6,10 +6,10 @@ import { cn } from '@/lib/utils';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { OrganizationProvider, useOrganization } from '@/contexts/OrganizationContext';
 import { SetupWizard } from '@/components/setup/SetupWizard';
+import { GlobalSearch } from '@/components/shared/GlobalSearch';
 import type { ActiveSection, OrgSettings } from '@/types/qms';
 import {
   Bell,
-  Search,
   ChevronDown,
   LogOut,
   User,
@@ -27,7 +27,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { useQMSStore } from '@/lib/demo-store';
 
 interface AppLayoutProps {
@@ -123,14 +122,8 @@ function AppLayoutInner({ children }: AppLayoutProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Search */}
-            <div className="hidden md:flex items-center relative">
-              <Search className="absolute left-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search..."
-                className="pl-9 w-64 h-9"
-              />
-            </div>
+            {/* Global Search */}
+            <GlobalSearch onNavigate={(section) => { setActiveSection(section); setMobileSidebarOpen(false); }} />
 
             {/* Notifications */}
             <Button variant="ghost" size="icon" className="relative">

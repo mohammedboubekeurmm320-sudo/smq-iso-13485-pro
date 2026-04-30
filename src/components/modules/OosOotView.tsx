@@ -2,15 +2,19 @@
 
 import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
+import { useAuth } from '@/contexts/AuthContext';
 import type { NonConformance } from '@/types/qms';
+import { cn, formatDate } from '@/lib/utils';
 import {
   FlaskConical, Search, Eye, ArrowRight, CheckCircle2,
-  AlertTriangle, XCircle, AlertCircle,
+  AlertTriangle, XCircle, AlertCircle, ChevronRight,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -20,7 +24,6 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { cn, formatDate } from '@/lib/utils';
 
 const phase1ConclusionColors: Record<string, string> = {
   'Error Found': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
@@ -42,6 +45,7 @@ const ncrStatusColors: Record<string, string> = {
 };
 
 export function OosOotView() {
+  const { hasPermission } = useAuth();
   const store = useQMSStore();
   const ncrs = store.ncrs;
   const profiles = store.profiles;
@@ -54,6 +58,11 @@ export function OosOotView() {
   const [selectedNcr, setSelectedNcr] = useState<NonConformance | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
 
+  // Phase advancement state
+  const [phase1Conclusion, setPhase1Conclusion] = useState<string>('');
+  const [phase2Conclusion, setPhase2Conclusion] = useState<string>('');
+  const [rejectLotDecision, setRejectLotDecision] = useState<boolean>(false);
+
   const filteredNcrs = oosOotNcrs.filter(ncr => {
     const matchesSearch = searchTerm === '' ||
       ncr.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -65,7 +74,8 @@ export function OosOotView() {
 
   const summaryCounts = {
     total: oosOotNcrs.length,
-    phase1Pending: oosOotNcrs.filter(n => n.phase1Conclusion === 'Pending').length,
+    phase1Concluded: oosOotNcrs.filter(n => n.phase1Conclusion && n.phase1Conclusion !== 'Pending').length,
+    phase1Pending: oosOotNcrs.filter(n => !n.phase1Conclusion || n.phase1Conclusion === 'Pending').length,
     phase2Required: oosOotNcrs.filter(n => n.phase2Required).length,
     confirmedOos: oosOotNcrs.filter(n => n.phase2Conclusion === 'Confirmed OOS').length,
     invalidated: oosOotNcrs.filter(n => n.phase2Conclusion === 'Invalidated').length,
@@ -79,7 +89,39 @@ export function OosOotView() {
 
   const openDetail = (ncr: NonConformance) => {
     setSelectedNcr(ncr);
+    setPhase1Conclusion(ncr.phase1Conclusion || '');
+    setPhase2Conclusion(ncr.phase2Conclusion || '');
+    setRejectLotDecision(ncr.rejectLot);
     setShowDetailDialog(true);
+  };
+
+  const handleAdvancePhase1 = () => {
+    if (!selectedNcr || !phase1Conclusion) return;
+    const updates: Partial<NonConformance> = {
+      phase1Conclusion: phase1Conclusion as NonConformance['phase1Conclusion'],
+      phase2Required: phase1Conclusion === 'No Error Found' ? false : true,
+    };
+    // If no error found, Phase 2 is not required
+    if (phase1Conclusion === 'No Error Found') {
+      updates.phase2Conclusion = 'Invalidated';
+      updates.rejectLot = false;
+    }
+    store.updateNCR(selectedNcr.id, updates);
+    setSelectedNcr({ ...selectedNcr, ...updates });
+  };
+
+  const handleAdvancePhase2 = () => {
+    if (!selectedNcr || !phase2Conclusion) return;
+    const updates: Partial<NonConformance> = {
+      phase2Conclusion: phase2Conclusion as NonConformance['phase2Conclusion'],
+      rejectLot: rejectLotDecision,
+    };
+    store.updateNCR(selectedNcr.id, updates);
+    setSelectedNcr({ ...selectedNcr, ...updates });
+  };
+
+  const handleRejectLotToggle = () => {
+    setRejectLotDecision(!rejectLotDecision);
   };
 
   return (
@@ -96,12 +138,12 @@ export function OosOotView() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
               <FlaskConical className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-muted-foreground">Total OOS/OOT</span>
+              <span className="text-sm text-muted-foreground">Total</span>
             </div>
             <span className="text-2xl font-bold">{summaryCounts.total}</span>
           </CardContent>
@@ -113,6 +155,15 @@ export function OosOotView() {
               <span className="text-sm text-muted-foreground">Phase 1 Pending</span>
             </div>
             <span className="text-2xl font-bold">{summaryCounts.phase1Pending}</span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-blue-500" />
+              <span className="text-sm text-muted-foreground">Phase 1 Concluded</span>
+            </div>
+            <span className="text-2xl font-bold">{summaryCounts.phase1Concluded}</span>
           </CardContent>
         </Card>
         <Card>
@@ -148,10 +199,10 @@ export function OosOotView() {
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Rechercher OOS/OOT (titre, NCR#, lot#)..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
+          <Input placeholder="Search OOS/OOT (title, NCR#, lot#)..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-[200px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
             {(['Open', 'Under Investigation', 'Pending Disposition', 'Closed'] as string[]).map(s => (
@@ -165,7 +216,7 @@ export function OosOotView() {
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-3 flex items-start gap-2">
         <AlertTriangle className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
         <p className="text-sm text-blue-700 dark:text-blue-400">
-          OOS/OOT records are created from the NCR module with the OOS/OOT flag enabled. This view provides a specialized investigation workflow per ICH Q2(R1) guidelines.
+          OOS/OOT records are created from the NCR module with the OOS/OOT flag enabled. This view provides a specialized investigation workflow per ICH Q2(R1) guidelines. Use the detail dialog to advance Phase 1 and Phase 2 conclusions.
         </p>
       </div>
 
@@ -207,12 +258,12 @@ export function OosOotView() {
                           {ncr.phase1Conclusion}
                         </Badge>
                       ) : (
-                        <span className="text-muted-foreground text-xs">-</span>
+                        <Badge className="text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" variant="secondary">Pending</Badge>
                       )}
                     </TableCell>
                     <TableCell>
                       {ncr.phase2Required ? (
-                        ncr.phase2Conclusion ? (
+                        ncr.phase2Conclusion && ncr.phase2Conclusion !== 'Pending' ? (
                           <Badge className={cn('text-xs', phase2ConclusionColors[ncr.phase2Conclusion] || '')} variant="secondary">
                             {ncr.phase2Conclusion}
                           </Badge>
@@ -238,7 +289,7 @@ export function OosOotView() {
                 {filteredNcrs.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                      Aucun résultat OOS/OOT trouvé
+                      No OOS/OOT records found
                     </TableCell>
                   </TableRow>
                 )}
@@ -250,7 +301,7 @@ export function OosOotView() {
 
       {/* Detail Dialog */}
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
           {selectedNcr && (
             <>
               <DialogHeader>
@@ -261,16 +312,54 @@ export function OosOotView() {
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                {/* Status Badge */}
+                {/* Status & Type Badges */}
                 <div className="flex flex-wrap gap-2">
                   <Badge className={cn(ncrStatusColors[selectedNcr.status] || '')} variant="secondary">{selectedNcr.status}</Badge>
-                  <Badge variant="outline" className="border-red-300 text-red-700">{selectedNcr.type}</Badge>
+                  <Badge variant="outline" className="border-red-300 text-red-700 dark:border-red-700 dark:text-red-400">{selectedNcr.type}</Badge>
                   {selectedNcr.severity && <Badge variant="outline">{selectedNcr.severity}</Badge>}
                   {selectedNcr.rejectLot && (
                     <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" variant="secondary">
                       Reject Lot
                     </Badge>
                   )}
+                </div>
+
+                {/* Investigation Workflow Progress */}
+                <div className="flex items-center gap-1 p-3 bg-muted/50 rounded-lg overflow-x-auto">
+                  {/* Phase 1 step */}
+                  <div className={cn(
+                    'px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap',
+                    selectedNcr.phase1Conclusion && selectedNcr.phase1Conclusion !== 'Pending'
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-primary text-primary-foreground'
+                  )}>
+                    Phase 1: {selectedNcr.phase1Conclusion && selectedNcr.phase1Conclusion !== 'Pending' ? selectedNcr.phase1Conclusion : 'Pending'}
+                  </div>
+                  <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                  {/* Phase 2 step */}
+                  <div className={cn(
+                    'px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap',
+                    !selectedNcr.phase2Required ? 'bg-muted text-muted-foreground' :
+                    selectedNcr.phase2Conclusion && selectedNcr.phase2Conclusion !== 'Pending'
+                      ? selectedNcr.phase2Conclusion === 'Confirmed OOS'
+                        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                        : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                  )}>
+                    Phase 2: {!selectedNcr.phase2Required ? 'N/A' :
+                      selectedNcr.phase2Conclusion && selectedNcr.phase2Conclusion !== 'Pending'
+                        ? selectedNcr.phase2Conclusion : 'Pending'}
+                  </div>
+                  <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                  {/* Decision step */}
+                  <div className={cn(
+                    'px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap',
+                    selectedNcr.rejectLot
+                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                      : 'bg-muted text-muted-foreground'
+                  )}>
+                    Decision: {selectedNcr.rejectLot ? 'Reject Lot' : 'Pending'}
+                  </div>
                 </div>
 
                 {/* Phase 1 Investigation */}
@@ -287,16 +376,38 @@ export function OosOotView() {
                     </span></div>
                     <div><span className="text-muted-foreground">Specification Limit:</span> <span className="font-medium ml-1 font-mono text-xs">{selectedNcr.specLimit || '-'}</span></div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Phase 1 Conclusion:</span>
-                    {selectedNcr.phase1Conclusion ? (
-                      <Badge className={cn(phase1ConclusionColors[selectedNcr.phase1Conclusion] || '')} variant="secondary">
-                        {selectedNcr.phase1Conclusion}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline">Pending</Badge>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">Phase 1 Conclusion:</span>
+                      {selectedNcr.phase1Conclusion && selectedNcr.phase1Conclusion !== 'Pending' ? (
+                        <Badge className={cn(phase1ConclusionColors[selectedNcr.phase1Conclusion] || '')} variant="secondary">
+                          {selectedNcr.phase1Conclusion}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-muted-foreground">Pending</Badge>
+                      )}
+                    </div>
+                    {hasPermission('ncr.update') && (!selectedNcr.phase1Conclusion || selectedNcr.phase1Conclusion === 'Pending') && (
+                      <div className="flex items-center gap-2">
+                        <Select value={phase1Conclusion} onValueChange={setPhase1Conclusion}>
+                          <SelectTrigger className="w-[180px] h-8 text-xs"><SelectValue placeholder="Select conclusion" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="No Error Found">No Error Found</SelectItem>
+                            <SelectItem value="Error Found">Error Found</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button size="sm" onClick={handleAdvancePhase1} disabled={!phase1Conclusion}>
+                          Advance <ArrowRight className="h-3 w-3 ml-1" />
+                        </Button>
+                      </div>
                     )}
                   </div>
+                  {selectedNcr.phase1Conclusion === 'No Error Found' && (
+                    <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-md p-2 text-xs text-green-700 dark:text-green-400">
+                      No error found in laboratory investigation. The OOS result is invalidated. Phase 2 investigation is not required.
+                    </div>
+                  )}
                 </div>
 
                 {/* Phase 2 Investigation (if required) */}
@@ -306,24 +417,66 @@ export function OosOotView() {
                       <span className="bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-2 py-0.5 rounded text-xs font-medium">Phase 2</span>
                       Full-Scale Investigation
                     </h4>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">Phase 2 Conclusion:</span>
-                      {selectedNcr.phase2Conclusion ? (
-                        <Badge className={cn(phase2ConclusionColors[selectedNcr.phase2Conclusion] || '')} variant="secondary">
-                          {selectedNcr.phase2Conclusion}
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline">Pending</Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">Reject Lot Decision:</span>
-                      {selectedNcr.rejectLot ? (
-                        <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" variant="secondary">Yes — Reject Lot</Badge>
-                      ) : (
-                        <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" variant="secondary">No — Do Not Reject</Badge>
-                      )}
-                    </div>
+                    {(!selectedNcr.phase1Conclusion || selectedNcr.phase1Conclusion === 'Pending') ? (
+                      <div className="bg-muted/30 rounded-md p-3 text-sm text-muted-foreground">
+                        Phase 2 investigation requires Phase 1 to be concluded first. Complete the Phase 1 laboratory investigation before proceeding.
+                      </div>
+                    ) : (
+                      <>
+                        <Separator />
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">Phase 2 Conclusion:</span>
+                            {selectedNcr.phase2Conclusion && selectedNcr.phase2Conclusion !== 'Pending' ? (
+                              <Badge className={cn(phase2ConclusionColors[selectedNcr.phase2Conclusion] || '')} variant="secondary">
+                                {selectedNcr.phase2Conclusion}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-muted-foreground">Pending</Badge>
+                            )}
+                          </div>
+                          {hasPermission('ncr.update') && (!selectedNcr.phase2Conclusion || selectedNcr.phase2Conclusion === 'Pending') && (
+                            <div className="flex items-center gap-2">
+                              <Select value={phase2Conclusion} onValueChange={setPhase2Conclusion}>
+                                <SelectTrigger className="w-[180px] h-8 text-xs"><SelectValue placeholder="Select conclusion" /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Confirmed OOS">Confirmed OOS</SelectItem>
+                                  <SelectItem value="Invalidated">Invalidated</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Button size="sm" onClick={handleAdvancePhase2} disabled={!phase2Conclusion}>
+                                Conclude <ArrowRight className="h-3 w-3 ml-1" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Reject Lot Decision */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">Reject Lot Decision:</span>
+                            {selectedNcr.phase2Conclusion && selectedNcr.phase2Conclusion !== 'Pending' ? (
+                              selectedNcr.rejectLot ? (
+                                <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" variant="secondary">Yes — Reject Lot</Badge>
+                              ) : (
+                                <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" variant="secondary">No — Do Not Reject</Badge>
+                              )
+                            ) : (
+                              <Badge variant="outline" className="text-muted-foreground">Pending</Badge>
+                            )}
+                          </div>
+                          {hasPermission('ncr.update') && (!selectedNcr.phase2Conclusion || selectedNcr.phase2Conclusion === 'Pending') && (
+                            <Button
+                              size="sm"
+                              variant={rejectLotDecision ? 'destructive' : 'outline'}
+                              onClick={handleRejectLotToggle}
+                            >
+                              {rejectLotDecision ? 'Reject Lot' : 'Do Not Reject Lot'}
+                            </Button>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 

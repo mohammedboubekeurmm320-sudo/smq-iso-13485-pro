@@ -45,12 +45,17 @@ interface QMSStore {
   updateTraining: (id: string, updates: Partial<Training>) => void;
   addRisk: (risk: Risk) => void;
   updateRisk: (id: string, updates: Partial<Risk>) => void;
+  addFormTemplate: (template: FormTemplate) => void;
   addFormInstance: (instance: FormInstance) => void;
   updateFormInstance: (id: string, updates: Partial<FormInstance>) => void;
   addChangeControl: (cc: ChangeControl) => void;
   updateChangeControl: (id: string, updates: Partial<ChangeControl>) => void;
   addDeviation: (dev: Deviation) => void;
   updateDeviation: (id: string, updates: Partial<Deviation>) => void;
+
+  // Profile management
+  addProfile: (profile: Profile) => void;
+  updateProfile: (id: string, updates: Partial<Profile>) => void;
 
   // Audit trail logging
   logAudit: (action: AuditTrail['action'], tableName: string, recordId?: string, oldValues?: Record<string, unknown>, newValues?: Record<string, unknown>) => void;
@@ -203,6 +208,11 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
     return { risks: state.risks.map(r => r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r) };
   }),
 
+  addFormTemplate: (template) => set(state => {
+    state.logAudit('CREATE', 'FormTemplate', template.id, undefined, { title: template.title, version: template.version, isActive: template.isActive });
+    return { formTemplates: [...state.formTemplates, template] };
+  }),
+
   addFormInstance: (instance) => set(state => {
     state.logAudit('CREATE', 'FormInstance', instance.id, undefined, { referenceNumber: instance.referenceNumber, status: instance.status });
     return { formInstances: [...state.formInstances, instance] };
@@ -234,6 +244,18 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
     const old = state.deviations.find(d => d.id === id);
     state.logAudit('UPDATE', 'Deviation', id, old ? { status: old.status } : undefined, updates);
     return { deviations: state.deviations.map(d => d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d) };
+  }),
+
+  // Profile management
+  addProfile: (profile) => set(state => {
+    state.logAudit('CREATE', 'Profile', profile.id, undefined, { email: profile.email, fullName: profile.fullName, role: profile.role });
+    return { profiles: [...state.profiles, profile] };
+  }),
+
+  updateProfile: (id, updates) => set(state => {
+    const old = state.profiles.find(p => p.id === id);
+    state.logAudit('UPDATE', 'Profile', id, old ? { role: old.role, department: old.department } : undefined, updates);
+    return { profiles: state.profiles.map(p => p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p) };
   }),
 
   // Audit trail logging
