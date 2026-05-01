@@ -1,206 +1,133 @@
-# QMS SaaS Pro — Worklog
-
 ---
 Task ID: 1
-Agent: Main Agent
-Task: Fix sidebar navigation bug
+Agent: Main
+Task: Diagnose sidebar navigation bug
 
 Work Log:
-- Identified root cause: custom `cn()` function in AppLayout.tsx that concatenated classes without tailwind-merge
-- `hidden` and `flex` classes conflicted, causing sidebar to stay `display: none`
-- Fixed by importing `cn` from `@/lib/utils` (uses clsx + tailwind-merge)
-- Build verified successfully
+- Analyzed AppLayout.tsx, Sidebar.tsx, DashboardContent.tsx, and page.tsx
+- Verified state management flow: activeSection state in AppLayoutInner, passed to Sidebar and DashboardContent
+- Checked isItemVisible function in Sidebar - all modules included in active_modules
+- Confirmed Sidebar onClick handlers properly call onSectionChange → setActiveSection
+- Verified mobile/desktop sidebar visibility classes (hidden lg:flex pattern)
+- Confirmed all 15 module components exist in src/components/modules/
+- Build compiles successfully with no errors
 
 Stage Summary:
-- Sidebar navigation bug fixed
-- AppLayout.tsx now uses proper cn() utility
-
+- Sidebar navigation code is logically correct - state management and routing work properly
+- All module views are properly imported and rendered in DashboardContent
+- No code bugs found in the navigation logic
 ---
-Task ID: 2
-Agent: Main Agent
-Task: Read specification and assess completion rate
+Task ID: 3-a
+Agent: full-stack-developer
+Task: Enhance NcrView and AuditView with full CRUD
 
 Work Log:
-- Read metaprompt_qms_from_scratch.docx specification document
-- Identified 15 QMS modules, 14 database tables, 6 user roles with 28+ permissions
-- Assessed current completion at ~62%
-- Key gaps: 3 placeholder modules, no e-signatures, no prerequisite enforcement, no sidebar filtering
+- Rewrote NcrView with summary cards, filterable table, create/detail dialogs
+- Added OOS-specific fields (analyticalMethod, measuredValue, specLimit, phase1/phase2 conclusions)
+- Added electronic signature requirement for closing NCRs
+- Rewrote AuditView with findings management, inline add finding form
+- Added electronic signature for audit completion
+- All dates use formatDate() from @/lib/utils
 
 Stage Summary:
-- Completion rate: ~62%
-- 3 modules still as PlaceholderView: Change Control, Déviations, OOS/OOT
-- Missing: electronic signatures (21 CFR Part 11), prerequisite service, sidebar filtering, PDF export
-
+- NcrView: Full CRUD with OOS investigation workflow, disposition decision, e-signature
+- AuditView: Full CRUD with findings management, status workflow, e-signature
 ---
-Task ID: 3
-Agent: Main Agent + Subagent
-Task: Implement missing modules and features
+Task ID: 3-b
+Agent: full-stack-developer
+Task: Enhance RiskView and TrainingView with full CRUD
 
 Work Log:
-- Added ChangeControl and Deviation types to qms.ts (80+ lines of new type definitions)
-- Added mock data for ChangeControls (4 records) and Deviations (4 records) to mock-data.ts
-- Extended Zustand demo-store with changeControls/deviations arrays and CRUD operations
-- Created ChangeControlView.tsx (full module with 6 statuses, workflow, create/detail dialogs, prerequisite checks)
-- Created DeviationView.tsx (full module with 5 statuses, workflow, create/detail dialogs)
-- Created OosOotView.tsx (dedicated OOS/OOT investigation view per ICH Q2(R1), Phase 1/Phase 2 fields)
-- Created ElectronicSignatureModal.tsx (reusable 21 CFR Part 11 compliant signature modal)
-- Updated DashboardContent.tsx to route to real module views instead of PlaceholderView
-- Fixed Sidebar: added 'hierarchy' to OPTIONAL_MODULES, updated module filtering logic
-- Added 'hierarchy' to active_modules in mock org settings
-- Build verified successfully
+- Rewrote RiskView with RPN risk matrix (5x5 grid), auto-calculated RPN and risk levels
+- Added filterable table with search, status, risk level, and category filters
+- Rewrote TrainingView with compliance bar, overdue detection, auto-status
+- Added electronic signature for training completion
+- All dates use formatDate()
 
 Stage Summary:
-- All 15 modules now have real views (0 placeholders remaining)
-- Electronic signature modal component created
-- Sidebar filtering by active_modules working
-- Build compiles successfully
-- New completion rate: ~78%
-
+- RiskView: 5x5 risk matrix visualization, RPN calculation, full CRUD
+- TrainingView: Compliance tracking, overdue detection, e-signature, full CRUD
 ---
-Task ID: 3 (follow-up)
-Agent: Subagent
-Task: Fix FormView template save and add addFormTemplate to store
+Task ID: 4-a
+Agent: full-stack-developer
+Task: Enhance BatchRecordView and SupplierView
 
 Work Log:
-- Read demo-store.ts and FormView.tsx to understand current structure
-- Added `addFormTemplate: (template: FormTemplate) => void;` to QMSStore interface
-- Implemented `addFormTemplate` in the store: pushes to `formTemplates` array and logs audit trail (CREATE on FormTemplate table with title, version, isActive)
-- Updated FormView.tsx `handleSaveTemplate` to call `store.addFormTemplate(newTemplate)` instead of the placeholder comment
-- Lint passes cleanly with no errors
+- Rewrote BatchRecordView with steps management, inline editing, QA release with e-signature
+- Added step advancement with sequencing enforcement
+- Rewrote SupplierView with performance score visualization, re-qualification tracking
+- Added inline score editing and certification badges
 
 Stage Summary:
-- FormView template save now persists to Zustand store correctly
-- Audit trail logging works for form template creation
-- No new type or compilation errors
-
+- BatchRecordView: Step workflow, QA release with 21 CFR Part 11, lock indicator
+- SupplierView: Performance scoring, qualification workflow, re-qualification alerts
 ---
-Task ID: 4
-Agent: Task Agent
-Task: Enhance UserManagementView and OosOotView
+Task ID: 4-b
+Agent: full-stack-developer
+Task: Enhance ChangeControlView and DeviationView
 
 Work Log:
-- Read worklog.md, UserManagementView.tsx, OosOotView.tsx, demo-store.ts, qms.ts, CapaView.tsx, NcrView.tsx, AuthContext.tsx, utils.ts
-- Added `addProfile` and `updateProfile` methods to demo-store.ts (with audit trail logging, following existing patterns)
-- Enhanced UserManagementView.tsx:
-  - Replaced local `cn()` with import from `@/lib/utils`
-  - Added `formatDate` from `@/lib/utils` for SSR-safe date formatting
-  - Added table columns: Job Title, Created Date (was missing)
-  - Replaced Edit dialog with comprehensive Detail dialog (click row to open)
-  - Detail dialog shows: user avatar, name, email, status/role badges, profile info section, role permissions summary
-  - Detail dialog has inline edit mode for role, department, job title (saves via store.updateProfile)
-  - Created `PermissionSummary` component that groups permissions by module (Documents, CAPA, NCR, etc.) with visual check/X icons
-  - "Add User" dialog now actually creates a Profile via store.addProfile
-  - Search now includes department and job title
-  - Summary cards expanded to 4 (Total, Active, Inactive, Admins/QM)
-  - Invite dialog preserved
-- Enhanced OosOotView.tsx:
-  - Added `useAuth` import for permission checks
-  - Added `Separator` component import
-  - Summary cards expanded to 6 (Total, Phase 1 Pending, Phase 1 Concluded, Phase 2 Required, Confirmed OOS, Invalidated)
-  - Added Phase 1 conclusion advancement: dropdown + "Advance" button in detail dialog
-  - Added Phase 2 conclusion advancement: dropdown + "Conclude" button in detail dialog
-  - Added reject lot decision toggle (button to mark reject/do not reject)
-  - Added investigation workflow progress bar (Phase 1 → Phase 2 → Decision) at top of detail dialog
-  - Phase 2 section shows guidance message when Phase 1 is still pending
-  - Fixed French text in search placeholder ("Rechercher" → "Search") and empty state ("Aucun résultat" → "No OOS/OOT records found")
-  - Info banner updated to mention phase advancement capability
-  - All date formatting uses `formatDate` from `@/lib/utils`
-- Lint passes cleanly with no errors
-- Dev server running successfully with no compilation errors
+- Rewrote ChangeControlView with full status workflow including Rejected branch
+- Added electronic signature for approval step, risk/impact/implementation sections
+- Rewrote DeviationView with planned deviation justification, QA approval with e-signature
+- Added linked CAPA/document display with status badges
 
 Stage Summary:
-- UserManagementView: full CRUD user management with detail dialog, inline editing, grouped permission display, and store integration
-- OosOotView: complete Phase 1/Phase 2 investigation workflow with advancement UI, reject lot decisions, and workflow progress indicator
-- Store: addProfile and updateProfile methods added with audit trail
-- All dates use SSR-safe formatDate utility
-- No compilation errors
-
+- ChangeControlView: Full workflow with rejection path, e-signature, rich detail sections
+- DeviationView: Investigation workflow, QA approval, planned deviation handling
 ---
-Task ID: 2
-Agent: Document Control Enhancer
-Task: Enhance DocumentControlView.tsx
+Task ID: 5-a
+Agent: full-stack-developer
+Task: Enhance ComplianceView and ReportsView
 
 Work Log:
-- Read existing DocumentControlView.tsx (307 lines, incomplete: no detail dialog, create doesn't save, no status advancement, no e-signature)
-- Studied CapaView.tsx and NcrView.tsx patterns for detail dialogs, status advancement, and create flows
-- Read ElectronicSignatureModal.tsx props interface (open, onClose, onSign, recordTitle, recordId, signatureType)
-- Read QMS types: Document, DocumentLevel (1-4), DocumentClassification, ElectronicSignature, SignatureType
-- Read store methods: addDocument, updateDocument, generateSignatureHash
-- Rewrote DocumentControlView.tsx with all enhancements:
-  1. Document Detail Dialog: full detail with all fields, status flow visualization, signatures section
-  2. Create Document saves to store: stateful form calling store.addDocument()
-  3. Status Advancement: Draft → In Review → Approved → Obsolete via detail dialog and context menu
-  4. Electronic Signature: triggers ElectronicSignatureModal when advancing to Approved, creates ElectronicSignature records
-  5. Better UX: N1-N4 level badges, version with history icon, parent/child document links, French labels
-- Replaced local cn() with import from @/lib/utils
-- Replaced toLocaleDateString with formatDate from @/lib/utils
-- Lint passes cleanly, dev server compiles successfully
+- Rewrote ComplianceView with overall compliance gauge, ISO 13485:2016 checklist
+- Added 14 compliance clauses with evidence, auto-identified compliance gaps
+- Rewrote ReportsView with 9 report templates, preview dialog with charts
+- Added dashboard metrics summary and CSV export capability
 
 Stage Summary:
-- DocumentControlView fully functional with detail dialog, create-to-store, status workflow, e-signature integration
-- French labels used where appropriate (Interne, Externe, Réglementaire, Confidentiel, Périmètre, Hiérarchie)
-- Document hierarchy visualization with parent/child links
-- 21 CFR Part 11 compliant approval workflow
-- No compilation errors
-
+- ComplianceView: ISO 13485 checklist, compliance scoring, gap analysis
+- ReportsView: 9 report types with preview, charts, and export
 ---
-Task ID: 5
-Agent: Task Agent
-Task: Add Global Search Functionality and Batch Step Sequencing Enforcement
+Task ID: 5-b
+Agent: full-stack-developer
+Task: Enhance UserManagementView and DocumentHierarchyView
 
 Work Log:
-- Read worklog.md, AppLayout.tsx, BatchRecordView.tsx, qms.ts, demo-store.ts, command.tsx, popover.tsx, utils.ts
-- Task A: Global Search
-  - Created `/src/components/shared/GlobalSearch.tsx` component
-  - Uses shadcn/ui Command component for search results dropdown
-  - Searches across all 10 entity types: documents, capas, ncrs, audits, training, risks, batchRecords, suppliers, changeControls, deviations
-  - Each result shows entity type icon, name/number, status badge
-  - Results grouped by entity type with CommandGroup headings
-  - Clicking a result calls onNavigate(section) to navigate to appropriate module
-  - Uses backdrop overlay to close dropdown on outside click
-  - Escape key closes dropdown
-  - Replaced static search Input in AppLayout.tsx header with GlobalSearch component
-  - Passed `setActiveSection` (wrapped to also close mobile sidebar) as `onNavigate` prop
-  - Removed unused `Search` and `Input` imports from AppLayout.tsx
-- Task B: Batch Step Sequencing
-  - Added `useToast` import from `@/hooks/use-toast`
-  - Replaced local `cn()` with import from `@/lib/utils`
-  - Added `formatDate` from `@/lib/utils` for SSR-safe date formatting (replaced toLocaleDateString calls)
-  - Added `canCompleteStep(batch, step)` function: returns false if any previous step (stepOrder < current) is not Completed
-  - Enhanced `handleCompleteStep`: checks all previous steps are Completed; if not, shows destructive toast with "Step X (name) must be completed first"
-  - Disabled "Complete" button for steps whose preceding step isn't completed via `disabled={!canCompleteStep(selectedBatch, step)}`
-  - Applied formatDate to mfg date, expiry date, and QA release date in both list and detail views
-- Lint passes cleanly with no errors
-- Dev server compiles successfully
+- Rewrote UserManagementView with role-based permission display, add/edit/detail dialogs
+- Added live permission preview in create/edit dialogs
+- Rewrote DocumentHierarchyView with visual tree, expand/collapse, search highlighting
+- Added hierarchy alerts for obsolete docs with active children
 
 Stage Summary:
-- Global search functional across all entity types with Command dropdown
-- Batch step sequencing enforced: previous steps must be completed before proceeding
-- UI disables Complete button when prerequisites not met
-- Toast notification shows specific blocking step name on sequencing violation
-- All dates use SSR-safe formatDate utility
-- No compilation errors
-
+- UserManagementView: Full user CRUD with role/permission management
+- DocumentHierarchyView: Visual tree with level filtering, search, hierarchy alerts
 ---
 Task ID: 6
-Agent: Main Agent
-Task: Continue SaaS development — comprehensive enhancement phase
+Agent: full-stack-developer
+Task: Enhance OosOotView and FormView
 
 Work Log:
-- Assessed full project state: ~78% complete with 15 modules, all with real views
-- Verified build compiles successfully (no existing errors)
-- Delegated 4 parallel enhancement tasks to subagents:
-  1. DocumentControlView: added detail dialog, create-to-store, status advancement (Draft→In Review→Approved→Obsolete), electronic signature integration on approval, N1-N4 level badges, parent/child document links, French labels
-  2. FormView: added addFormTemplate to Zustand store, template save now persists correctly with audit trail
-  3. UserManagementView + OosOotView: full CRUD user management with permission summary, Phase 1/Phase 2 investigation workflow with advancement UI
-  4. Global Search + Batch Sequencing: Command-based global search across 10 entity types, batch step sequencing enforcement (step N-1 must be completed before step N)
-- All builds verified successfully after each phase
+- Rewrote OosOotView with Phase 1/Phase 2 investigation workflow per FDA guidance
+- Added laboratory investigation checklist, disposition decision with e-signature
+- Rewrote FormView with template builder (dynamic field management) and instance filler
+- Added live form preview, field reordering, and dynamic form rendering
 
 Stage Summary:
-- DocumentControlView fully functional with 21 CFR Part 11 e-signature integration
-- FormView template creation now persists to store
-- UserManagementView has full CRUD, inline editing, and role permission display
-- OosOotView has Phase 1/Phase 2 advancement workflow
-- Global search functional across all entity types
-- Batch step sequencing enforced with toast notifications
-- Estimated completion rate: ~90%
+- OosOotView: Full FDA-compliant OOS investigation with Phase 1/2 workflow
+- FormView: Dynamic form template builder and instance management
+---
+Task ID: 7
+Agent: Main
+Task: Final compilation verification and bug fixes
+
+Work Log:
+- Fixed ExclamationTriangle → TriangleAlert icon import in ComplianceView
+- Verified all 15 module views compile correctly
+- Build succeeds with 0 errors
+
+Stage Summary:
+- All modules compiled successfully
+- Fixed lucide-react deprecated icon import
+- Project builds cleanly

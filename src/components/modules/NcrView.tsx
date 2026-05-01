@@ -3,9 +3,12 @@
 import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
-import type { NonConformance, NcrStatus, NcrType, NcrSeverity, NcrDisposition } from '@/types/qms';
+import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { cn, formatDate } from '@/lib/utils';
+import type { NonConformance, NcrStatus, NcrType, NcrSeverity, NcrDisposition, SignatureType } from '@/types/qms';
 import {
-  AlertTriangle, Plus, Search, Eye, ArrowRight, AlertCircle,
+  AlertTriangle, Plus, Search, ArrowRight, AlertCircle,
+  CheckCircle2, Clock, ShieldCheck, Link2, Beaker,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -36,15 +40,24 @@ const severityColors: Record<NcrSeverity, string> = {
   'Minor': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
 };
 
+const dispositionColors: Record<NcrDisposition, string> = {
+  'Use As Is': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  'Rework': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  'Scrap': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  'Return to Supplier': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  'Concession': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  'Pending': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+};
+
 const ncrStatusFlow: NcrStatus[] = ['Open', 'Under Investigation', 'Pending Disposition', 'Closed'];
+
+const ncrTypes: NcrType[] = ['Product', 'Process', 'System', 'Supplier', 'OOS', 'OOT'];
+const ncrSeverities: NcrSeverity[] = ['Critical', 'Major', 'Minor'];
+const ncrDispositions: NcrDisposition[] = ['Use As Is', 'Rework', 'Scrap', 'Return to Supplier', 'Concession'];
 
 function getNextNcrStatus(current: NcrStatus): NcrStatus | null {
   const idx = ncrStatusFlow.indexOf(current);
   return idx < ncrStatusFlow.length - 1 ? ncrStatusFlow[idx + 1] : null;
-}
-
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(' ');
 }
 
 export function NcrView() {
@@ -52,23 +65,33 @@ export function NcrView() {
   const store = useQMSStore();
   const ncrs = store.ncrs;
   const profiles = store.profiles;
+  const capas = store.capas;
 
+  // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
+
+  // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedNcr, setSelectedNcr] = useState<NonConformance | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
 
-  // Form state
+  // Electronic signature
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [pendingCloseNcr, setPendingCloseNcr] = useState<NonConformance | null>(null);
+
+  // Create form state
   const [formTitle, setFormTitle] = useState('');
   const [formType, setFormType] = useState<NcrType>('Process');
   const [formSeverity, setFormSeverity] = useState<NcrSeverity>('Major');
+  const [formSource, setFormSource] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formLotNumber, setFormLotNumber] = useState('');
   const [formQtyAffected, setFormQtyAffected] = useState('');
   const [formAssignedTo, setFormAssignedTo] = useState('');
+  const [formDueDate, setFormDueDate] = useState('');
   // OOS/OOT fields
   const [formAnalyticalMethod, setFormAnalyticalMethod] = useState('');
   const [formMeasuredValue, setFormMeasuredValue] = useState('');
@@ -76,10 +99,14 @@ export function NcrView() {
   const [formSpecLimit, setFormSpecLimit] = useState('');
   const [formIsOosOot, setFormIsOosOot] = useState(false);
 
+  // Detail dialog disposition edit
+  const [detailDisposition, setDetailDisposition] = useState<string>('');
+
   const filteredNcrs = ncrs.filter(n => {
     const matchesSearch = searchTerm === '' ||
       n.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      n.ncrNumber.toLowerCase().includes(searchTerm.toLowerCase());
+      n.ncrNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (n.description && n.description.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesStatus = statusFilter === 'all' || n.status === statusFilter;
     const matchesType = typeFilter === 'all' || n.type === typeFilter;
     const matchesSeverity = severityFilter === 'all' || n.severity === severityFilter;
@@ -99,21 +126,28 @@ export function NcrView() {
     return profile?.fullName || profile?.email || userId;
   };
 
+  const getLinkedCapa = (capaId?: string) => {
+    if (!capaId) return null;
+    return capas.find(c => c.id === capaId) || null;
+  };
+
   const resetForm = () => {
     setFormTitle(''); setFormType('Process'); setFormSeverity('Major');
-    setFormDescription(''); setFormLotNumber(''); setFormQtyAffected('');
-    setFormAssignedTo(''); setFormAnalyticalMethod(''); setFormMeasuredValue('');
+    setFormSource(''); setFormDescription(''); setFormLotNumber('');
+    setFormQtyAffected(''); setFormAssignedTo(''); setFormDueDate('');
+    setFormAnalyticalMethod(''); setFormMeasuredValue('');
     setFormMeasuredUnit(''); setFormSpecLimit(''); setFormIsOosOot(false);
   };
 
   const handleCreate = () => {
     const newNcr: NonConformance = {
-      id: `ncr-${Date.now()}`,
+      id: `ncr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       ncrNumber: `NCR-2024-${String(ncrs.length + 1).padStart(3, '0')}`,
       title: formTitle,
       type: formType,
       status: 'Open',
       severity: formSeverity,
+      source: formSource || undefined,
       description: formDescription,
       lotNumber: formLotNumber || undefined,
       quantityAffected: formQtyAffected ? parseInt(formQtyAffected) : undefined,
@@ -126,6 +160,7 @@ export function NcrView() {
       specLimit: formIsOosOot ? formSpecLimit || undefined : undefined,
       phase2Required: formIsOosOot,
       rejectLot: false,
+      dueDate: formDueDate ? new Date(formDueDate).toISOString() : undefined,
       createdDate: new Date().toISOString(),
       createdById: currentUser?.id,
       organizationId: 'org-001',
@@ -140,18 +175,52 @@ export function NcrView() {
   const handleAdvanceStatus = (ncr: NonConformance) => {
     const next = getNextNcrStatus(ncr.status);
     if (!next) return;
+
+    // When advancing to Closed, require electronic signature
+    if (next === 'Closed') {
+      setPendingCloseNcr(ncr);
+      setShowSignatureModal(true);
+      return;
+    }
+
     store.updateNCR(ncr.id, { status: next });
     if (selectedNcr?.id === ncr.id) {
       setSelectedNcr({ ...ncr, status: next });
     }
   };
 
+  // Electronic signature callback for closing NCR
+  const handleSignatureConfirm = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
+    if (!pendingCloseNcr) return;
+
+    store.updateNCR(pendingCloseNcr.id, {
+      status: 'Closed',
+    });
+
+    if (selectedNcr?.id === pendingCloseNcr.id) {
+      setSelectedNcr({ ...pendingCloseNcr, status: 'Closed' });
+    }
+
+    setPendingCloseNcr(null);
+    setShowSignatureModal(false);
+  };
+
+  const handleSignatureCancel = () => {
+    setPendingCloseNcr(null);
+    setShowSignatureModal(false);
+  };
+
   const openDetail = (ncr: NonConformance) => {
     setSelectedNcr(ncr);
+    setDetailDisposition(ncr.disposition || '');
     setShowDetailDialog(true);
   };
 
-  const ncrTypes: NcrType[] = ['Product', 'Process', 'System', 'Supplier', 'OOS', 'OOT'];
+  const handleSetDisposition = () => {
+    if (!selectedNcr || !detailDisposition) return;
+    store.updateNCR(selectedNcr.id, { disposition: detailDisposition as NcrDisposition });
+    setSelectedNcr({ ...selectedNcr, disposition: detailDisposition as NcrDisposition });
+  };
 
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
@@ -175,25 +244,37 @@ export function NcrView() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card>
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2"><AlertCircle className="h-4 w-4 text-blue-500" /><span className="text-sm text-muted-foreground">Open</span></div>
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-blue-500" />
+              <span className="text-sm text-muted-foreground">Open</span>
+            </div>
             <span className="text-2xl font-bold">{summaryCounts.open}</span>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2"><Search className="h-4 w-4 text-amber-500" /><span className="text-sm text-muted-foreground">Under Investigation</span></div>
+            <div className="flex items-center gap-2">
+              <Search className="h-4 w-4 text-amber-500" />
+              <span className="text-sm text-muted-foreground">Under Investigation</span>
+            </div>
             <span className="text-2xl font-bold">{summaryCounts.investigation}</span>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2"><ArrowRight className="h-4 w-4 text-purple-500" /><span className="text-sm text-muted-foreground">Pending Disposition</span></div>
+            <div className="flex items-center gap-2">
+              <ArrowRight className="h-4 w-4 text-purple-500" />
+              <span className="text-sm text-muted-foreground">Pending Disposition</span>
+            </div>
             <span className="text-2xl font-bold">{summaryCounts.pending}</span>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2"><span className="text-sm text-muted-foreground">Closed</span></div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <span className="text-sm text-muted-foreground">Closed</span>
+            </div>
             <span className="text-2xl font-bold text-green-600">{summaryCounts.closed}</span>
           </CardContent>
         </Card>
@@ -223,9 +304,7 @@ export function NcrView() {
           <SelectTrigger className="w-[150px]"><SelectValue placeholder="Severity" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Severities</SelectItem>
-            <SelectItem value="Critical">Critical</SelectItem>
-            <SelectItem value="Major">Major</SelectItem>
-            <SelectItem value="Minor">Minor</SelectItem>
+            {ncrSeverities.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -251,9 +330,18 @@ export function NcrView() {
                 {filteredNcrs.map(ncr => (
                   <TableRow key={ncr.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => openDetail(ncr)}>
                     <TableCell className="font-mono text-xs">{ncr.ncrNumber}</TableCell>
-                    <TableCell><p className="font-medium truncate max-w-xs">{ncr.title}</p></TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={cn(ncr.isOosOot ? 'border-red-300 text-red-700' : '')}>{ncr.type}</Badge>
+                      <div className="min-w-0">
+                        <p className="font-medium truncate max-w-xs">{ncr.title}</p>
+                        {ncr.isOosOot && (
+                          <span className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1 mt-0.5">
+                            <Beaker className="h-3 w-3" />OOS/OOT
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={cn(ncr.isOosOot ? 'border-red-300 text-red-700 dark:border-red-700 dark:text-red-400' : '')}>{ncr.type}</Badge>
                     </TableCell>
                     <TableCell>
                       {ncr.severity && <Badge className={cn('text-xs', severityColors[ncr.severity])} variant="secondary">{ncr.severity}</Badge>}
@@ -261,10 +349,16 @@ export function NcrView() {
                     <TableCell>
                       <Badge className={cn('text-xs', statusColors[ncr.status])} variant="secondary">{ncr.status}</Badge>
                     </TableCell>
-                    <TableCell className="text-sm">{ncr.disposition || '-'}</TableCell>
+                    <TableCell>
+                      {ncr.disposition && ncr.disposition !== 'Pending' ? (
+                        <Badge className={cn('text-xs', dispositionColors[ncr.disposition])} variant="secondary">{ncr.disposition}</Badge>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm">{getUserName(ncr.assignedTo)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {new Date(ncr.createdDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })}
+                      {formatDate(ncr.createdDate, true)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -293,7 +387,10 @@ export function NcrView() {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Type *</Label>
-                <Select value={formType} onValueChange={(v) => { setFormType(v as NcrType); setFormIsOosOot(v === 'OOS' || v === 'OOT'); }}>
+                <Select value={formType} onValueChange={(v) => {
+                  setFormType(v as NcrType);
+                  setFormIsOosOot(v === 'OOS' || v === 'OOT');
+                }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {ncrTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
@@ -305,12 +402,14 @@ export function NcrView() {
                 <Select value={formSeverity} onValueChange={(v) => setFormSeverity(v as NcrSeverity)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Critical">Critical</SelectItem>
-                    <SelectItem value="Major">Major</SelectItem>
-                    <SelectItem value="Minor">Minor</SelectItem>
+                    {ncrSeverities.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Source</Label>
+              <Input value={formSource} onChange={(e) => setFormSource(e.target.value)} placeholder="e.g., Customer Complaint, Internal Audit..." />
             </div>
             <div className="grid gap-2">
               <Label>Description *</Label>
@@ -326,21 +425,27 @@ export function NcrView() {
                 <Input type="number" value={formQtyAffected} onChange={(e) => setFormQtyAffected(e.target.value)} placeholder="0" />
               </div>
             </div>
-            <div className="grid gap-2">
-              <Label>Assigned To</Label>
-              <Select value={formAssignedTo} onValueChange={setFormAssignedTo}>
-                <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
-                <SelectContent>
-                  {profiles.map(p => <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>)}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Assigned To</Label>
+                <Select value={formAssignedTo} onValueChange={setFormAssignedTo}>
+                  <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
+                  <SelectContent>
+                    {profiles.map(p => <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Due Date</Label>
+                <Input type="date" value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} />
+              </div>
             </div>
 
             {/* OOS/OOT Fields */}
             {formIsOosOot && (
-              <div className="border rounded-md p-4 space-y-3 bg-red-50/50 dark:bg-red-900/10">
+              <div className="border border-red-200 dark:border-red-800 rounded-md p-4 space-y-3 bg-red-50/50 dark:bg-red-900/10">
                 <h4 className="font-medium text-sm flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-red-500" /> OOS/OOT Investigation Fields
+                  <Beaker className="h-4 w-4 text-red-500" /> OOS/OOT Investigation Fields
                 </h4>
                 <div className="grid gap-2">
                   <Label>Analytical Method</Label>
@@ -372,7 +477,7 @@ export function NcrView() {
 
       {/* Detail Dialog */}
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
           {selectedNcr && (
             <>
               <DialogHeader>
@@ -382,11 +487,14 @@ export function NcrView() {
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
+                {/* Badges */}
                 <div className="flex flex-wrap gap-2">
                   <Badge className={cn(statusColors[selectedNcr.status])} variant="secondary">{selectedNcr.status}</Badge>
-                  <Badge variant="outline">{selectedNcr.type}</Badge>
+                  <Badge variant="outline" className={cn(selectedNcr.isOosOot ? 'border-red-300 text-red-700 dark:border-red-700 dark:text-red-400' : '')}>{selectedNcr.type}</Badge>
                   {selectedNcr.severity && <Badge className={cn(severityColors[selectedNcr.severity])} variant="secondary">{selectedNcr.severity}</Badge>}
-                  {selectedNcr.disposition && <Badge variant="outline">Disposition: {selectedNcr.disposition}</Badge>}
+                  {selectedNcr.disposition && selectedNcr.disposition !== 'Pending' && (
+                    <Badge className={cn(dispositionColors[selectedNcr.disposition])} variant="secondary">Disposition: {selectedNcr.disposition}</Badge>
+                  )}
                 </div>
 
                 {/* Status Flow */}
@@ -404,63 +512,224 @@ export function NcrView() {
                   ))}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div><span className="text-muted-foreground">Assigned To:</span> <span className="font-medium ml-1">{getUserName(selectedNcr.assignedTo)}</span></div>
-                  <div><span className="text-muted-foreground">Created:</span> <span className="font-medium ml-1">{new Date(selectedNcr.createdDate).toLocaleDateString()}</span></div>
-                  {selectedNcr.lotNumber && <div><span className="text-muted-foreground">Lot:</span> <span className="font-mono font-medium ml-1">{selectedNcr.lotNumber}</span></div>}
-                  {selectedNcr.quantityAffected && <div><span className="text-muted-foreground">Qty Affected:</span> <span className="font-medium ml-1">{selectedNcr.quantityAffected}</span></div>}
+                {/* Key Information */}
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">NCR Number:</span>{' '}
+                    <span className="font-mono font-medium">{selectedNcr.ncrNumber}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Type:</span>{' '}
+                    <span className="font-medium">{selectedNcr.type}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Severity:</span>{' '}
+                    <span className="font-medium">{selectedNcr.severity || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Source:</span>{' '}
+                    <span className="font-medium">{selectedNcr.source || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Assigned To:</span>{' '}
+                    <span className="font-medium">{getUserName(selectedNcr.assignedTo)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Created:</span>{' '}
+                    <span className="font-medium">{formatDate(selectedNcr.createdDate)}</span>
+                  </div>
+                  {selectedNcr.lotNumber && (
+                    <div>
+                      <span className="text-muted-foreground">Lot Number:</span>{' '}
+                      <span className="font-mono font-medium">{selectedNcr.lotNumber}</span>
+                    </div>
+                  )}
+                  {selectedNcr.quantityAffected !== undefined && selectedNcr.quantityAffected !== null && (
+                    <div>
+                      <span className="text-muted-foreground">Qty Affected:</span>{' '}
+                      <span className="font-medium">{selectedNcr.quantityAffected}</span>
+                    </div>
+                  )}
+                  {selectedNcr.dueDate && (
+                    <div>
+                      <span className="text-muted-foreground">Due Date:</span>{' '}
+                      <span className="font-medium">{formatDate(selectedNcr.dueDate)}</span>
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-muted-foreground">Updated:</span>{' '}
+                    <span className="font-medium">{formatDate(selectedNcr.updatedAt)}</span>
+                  </div>
                 </div>
 
+                <Separator />
+
+                {/* Description */}
                 <div>
                   <h4 className="font-medium text-sm mb-1">Description</h4>
                   <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedNcr.description}</p>
                 </div>
 
+                {/* Linked CAPA */}
+                {selectedNcr.linkedCapaId && (() => {
+                  const linkedCapa = getLinkedCapa(selectedNcr.linkedCapaId);
+                  return (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                        <Link2 className="h-4 w-4" />
+                        Linked CAPA
+                      </h4>
+                      <div className="bg-muted/30 p-3 rounded-md flex items-center gap-3">
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {linkedCapa?.capaNumber || selectedNcr.linkedCapaId}
+                        </Badge>
+                        {linkedCapa && (
+                          <>
+                            <span className="text-sm">{linkedCapa.title}</span>
+                            <Badge className={cn('text-xs', linkedCapa.status === 'Closed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700')} variant="secondary">
+                              {linkedCapa.status}
+                            </Badge>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* OOS/OOT Section */}
                 {selectedNcr.isOosOot && (
-                  <div className="border border-red-200 dark:border-red-800 rounded-md p-4 space-y-2 bg-red-50/50 dark:bg-red-900/10">
-                    <h4 className="font-medium text-sm flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-red-500" /> OOS/OOT Investigation</h4>
-                    {selectedNcr.analyticalMethod && <p className="text-sm"><span className="text-muted-foreground">Method:</span> {selectedNcr.analyticalMethod}</p>}
-                    {selectedNcr.measuredValue !== undefined && <p className="text-sm"><span className="text-muted-foreground">Measured:</span> {selectedNcr.measuredValue} {selectedNcr.measuredUnit}</p>}
-                    {selectedNcr.specLimit && <p className="text-sm"><span className="text-muted-foreground">Spec Limit:</span> {selectedNcr.specLimit}</p>}
-                    {selectedNcr.phase1Conclusion && <p className="text-sm"><span className="text-muted-foreground">Phase 1:</span> {selectedNcr.phase1Conclusion}</p>}
-                    {selectedNcr.phase2Required && <p className="text-sm"><span className="text-muted-foreground">Phase 2 Required:</span> Yes</p>}
-                    {selectedNcr.phase2Conclusion && <p className="text-sm"><span className="text-muted-foreground">Phase 2:</span> {selectedNcr.phase2Conclusion}</p>}
-                    <p className="text-sm"><span className="text-muted-foreground">Reject Lot:</span> {selectedNcr.rejectLot ? 'Yes' : 'No'}</p>
+                  <div className="border border-red-200 dark:border-red-800 rounded-md p-4 space-y-3 bg-red-50/50 dark:bg-red-900/10">
+                    <h4 className="font-medium text-sm flex items-center gap-2">
+                      <Beaker className="h-4 w-4 text-red-500" /> OOS/OOT Investigation
+                    </h4>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                      {selectedNcr.analyticalMethod && (
+                        <div>
+                          <span className="text-muted-foreground">Analytical Method:</span>{' '}
+                          <span className="font-medium">{selectedNcr.analyticalMethod}</span>
+                        </div>
+                      )}
+                      {selectedNcr.measuredValue !== undefined && selectedNcr.measuredValue !== null && (
+                        <div>
+                          <span className="text-muted-foreground">Measured Value:</span>{' '}
+                          <span className="font-medium">{selectedNcr.measuredValue} {selectedNcr.measuredUnit || ''}</span>
+                        </div>
+                      )}
+                      {selectedNcr.specLimit && (
+                        <div>
+                          <span className="text-muted-foreground">Spec Limit:</span>{' '}
+                          <span className="font-medium">{selectedNcr.specLimit}</span>
+                        </div>
+                      )}
+                    </div>
+                    <Separator className="bg-red-200 dark:bg-red-800" />
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Phase 1 Conclusion:</span>{' '}
+                        <Badge variant="outline" className={cn('text-xs ml-1',
+                          selectedNcr.phase1Conclusion === 'No Error Found' ? 'border-green-300 text-green-700' :
+                          selectedNcr.phase1Conclusion === 'Error Found' ? 'border-red-300 text-red-700' : ''
+                        )}>
+                          {selectedNcr.phase1Conclusion || 'Pending'}
+                        </Badge>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Phase 2 Required:</span>{' '}
+                        <span className="font-medium">{selectedNcr.phase2Required ? 'Yes' : 'No'}</span>
+                      </div>
+                      {selectedNcr.phase2Required && (
+                        <div>
+                          <span className="text-muted-foreground">Phase 2 Conclusion:</span>{' '}
+                          <Badge variant="outline" className={cn('text-xs ml-1',
+                            selectedNcr.phase2Conclusion === 'Invalidated' ? 'border-green-300 text-green-700' :
+                            selectedNcr.phase2Conclusion === 'Confirmed OOS' ? 'border-red-300 text-red-700' : ''
+                          )}>
+                            {selectedNcr.phase2Conclusion || 'Pending'}
+                          </Badge>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-muted-foreground">Reject Lot:</span>{' '}
+                        <Badge variant="outline" className={cn('text-xs ml-1',
+                          selectedNcr.rejectLot ? 'border-red-300 text-red-700' : 'border-green-300 text-green-700'
+                        )}>
+                          {selectedNcr.rejectLot ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
+                    </div>
                   </div>
                 )}
 
-                {/* Disposition Selection */}
-                {hasPermission('ncr.update') && selectedNcr.status === 'Pending Disposition' && (
-                  <div className="grid gap-2">
-                    <Label>Set Disposition</Label>
-                    <Select onValueChange={(v) => {
-                      store.updateNCR(selectedNcr.id, { disposition: v as NcrDisposition });
-                      setSelectedNcr({ ...selectedNcr, disposition: v as NcrDisposition });
-                    }}>
-                      <SelectTrigger><SelectValue placeholder="Select disposition" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Use As Is">Use As Is</SelectItem>
-                        <SelectItem value="Rework">Rework</SelectItem>
-                        <SelectItem value="Scrap">Scrap</SelectItem>
-                        <SelectItem value="Return to Supplier">Return to Supplier</SelectItem>
-                        <SelectItem value="Concession">Concession</SelectItem>
-                      </SelectContent>
-                    </Select>
+                {/* Disposition - visible when Pending Disposition or Closed */}
+                {(selectedNcr.status === 'Pending Disposition' || selectedNcr.status === 'Closed') && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2">Disposition</h4>
+                    {selectedNcr.status === 'Pending Disposition' && hasPermission('ncr.update') ? (
+                      <div className="flex items-center gap-3">
+                        <Select value={detailDisposition} onValueChange={setDetailDisposition}>
+                          <SelectTrigger className="w-[220px]">
+                            <SelectValue placeholder="Select disposition" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ncrDispositions.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="sm"
+                          onClick={handleSetDisposition}
+                          disabled={!detailDisposition || detailDisposition === selectedNcr.disposition}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        {selectedNcr.disposition && selectedNcr.disposition !== 'Pending' ? (
+                          <Badge className={cn(dispositionColors[selectedNcr.disposition])} variant="secondary">{selectedNcr.disposition}</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">Not set</Badge>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {hasPermission('ncr.update') && selectedNcr.status !== 'Closed' && (
-                  <Button className="w-full" onClick={() => handleAdvanceStatus(selectedNcr)}>
-                    Advance to {getNextNcrStatus(selectedNcr.status)}
-                    <ArrowRight className="h-4 w-4 ml-2" />
-                  </Button>
-                )}
+                {/* Advance Status Button */}
+                {hasPermission('ncr.update') && selectedNcr.status !== 'Closed' && (() => {
+                  const nextStatus = getNextNcrStatus(selectedNcr.status);
+                  if (!nextStatus) return null;
+                  const isClose = nextStatus === 'Closed';
+                  return (
+                    <Button className="w-full" onClick={() => handleAdvanceStatus(selectedNcr)}>
+                      {isClose ? (
+                        <>
+                          <ShieldCheck className="h-4 w-4 mr-2" />
+                          Close with Electronic Signature
+                        </>
+                      ) : (
+                        <>
+                          Advance to {nextStatus}
+                          <ArrowRight className="h-4 w-4 ml-2" />
+                        </>
+                      )}
+                    </Button>
+                  );
+                })()}
               </div>
             </>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Electronic Signature Modal */}
+      <ElectronicSignatureModal
+        open={showSignatureModal}
+        onClose={handleSignatureCancel}
+        onSign={handleSignatureConfirm}
+        recordTitle={pendingCloseNcr ? `${pendingCloseNcr.ncrNumber} — ${pendingCloseNcr.title}` : ''}
+        recordId={pendingCloseNcr?.id || ''}
+        signatureType="approval"
+      />
     </div>
   );
 }

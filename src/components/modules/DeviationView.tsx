@@ -5,11 +5,14 @@ import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import type {
   Deviation, DeviationStatus, DeviationType,
-  DeviationSeverity, DeviationCategory,
+  DeviationSeverity, DeviationCategory, SignatureType,
 } from '@/types/qms';
+import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { cn, formatDate } from '@/lib/utils';
 import {
   AlertTriangle, Plus, Search, Eye, ArrowRight, CheckCircle2,
-  Clock, XCircle,
+  Clock, XCircle, ShieldCheck, FileText, Link2,
+  ClipboardList, BarChart3, Wrench, Shield, UserCheck,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -26,7 +30,6 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { cn, formatDate } from '@/lib/utils';
 
 const statusColors: Record<DeviationStatus, string> = {
   'Open': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
@@ -61,15 +64,21 @@ export function DeviationView() {
   const deviations = store.deviations;
   const profiles = store.profiles;
   const capas = store.capas;
+  const documents = store.documents;
 
+  // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedDev, setSelectedDev] = useState<Deviation | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [pendingStatusAdvance, setPendingStatusAdvance] = useState<Deviation | null>(null);
 
   // Create form state
   const [formTitle, setFormTitle] = useState('');
@@ -114,37 +123,17 @@ export function DeviationView() {
     return profile?.fullName || profile?.email || userId;
   };
 
-  const handleCreate = () => {
-    const newDev: Deviation = {
-      id: `dev-${Date.now()}`,
-      devNumber: `DEV-2024-${String(deviations.length + 1).padStart(3, '0')}`,
-      title: formTitle,
-      type: formType,
-      status: 'Open',
-      severity: formSeverity,
-      category: formCategory,
-      description: formDescription,
-      deviationDetails: formDeviationDetails,
-      justification: formJustification || undefined,
-      riskAssessment: formRiskAssessment || undefined,
-      correctiveAction: formCorrectiveAction || undefined,
-      preventiveAction: formPreventiveAction || undefined,
-      lotNumber: formLotNumber || undefined,
-      productCode: formProductCode || undefined,
-      quantityAffected: formQuantityAffected ? parseInt(formQuantityAffected) : undefined,
-      linkedCapaId: formLinkedCapaId || undefined,
-      linkedDocumentId: formLinkedDocId || undefined,
-      assignedTo: formAssignedTo,
-      dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
-      createdById: currentUser?.id,
-      organizationId: 'org-001',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    store.addDeviation(newDev);
-    resetForm();
-    setShowCreateDialog(false);
+  const getLinkedDocument = (docId?: string) => {
+    if (!docId) return null;
+    return documents.find(d => d.id === docId) || null;
   };
+
+  const getLinkedCapa = (capaId?: string) => {
+    if (!capaId) return null;
+    return capas.find(c => c.id === capaId) || null;
+  };
+
+  const approvedDocuments = documents.filter(d => d.status === 'Approved');
 
   const resetForm = () => {
     setFormTitle('');
@@ -166,21 +155,79 @@ export function DeviationView() {
     setFormLinkedDocId('');
   };
 
-  const handleAdvanceStatus = (dev: Deviation) => {
-    const next = getNextStatus(dev.status);
-    if (!next) return;
-    store.updateDeviation(dev.id, {
-      status: next,
-      closedDate: next === 'Closed' ? new Date().toISOString() : undefined,
-    });
-    if (selectedDev?.id === dev.id) {
-      setSelectedDev({ ...dev, status: next });
-    }
+  const handleCreate = () => {
+    const newDev: Deviation = {
+      id: `dev-${Date.now()}`,
+      devNumber: `DEV-2024-${String(deviations.length + 1).padStart(3, '0')}`,
+      title: formTitle,
+      type: formType,
+      status: 'Open',
+      severity: formSeverity,
+      category: formCategory,
+      description: formDescription,
+      deviationDetails: formDeviationDetails,
+      justification: formJustification || undefined,
+      riskAssessment: formRiskAssessment || undefined,
+      correctiveAction: formCorrectiveAction || undefined,
+      preventiveAction: formPreventiveAction || undefined,
+      lotNumber: formLotNumber || undefined,
+      productCode: formProductCode || undefined,
+      quantityAffected: formQuantityAffected ? parseInt(formQuantityAffected) : undefined,
+      linkedCapaId: formLinkedCapaId && formLinkedCapaId !== 'none' ? formLinkedCapaId : undefined,
+      linkedDocumentId: formLinkedDocId && formLinkedDocId !== 'none' ? formLinkedDocId : undefined,
+      assignedTo: formAssignedTo,
+      dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
+      createdById: currentUser?.id,
+      organizationId: 'org-001',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    store.addDeviation(newDev);
+    resetForm();
+    setShowCreateDialog(false);
   };
 
   const openDetail = (dev: Deviation) => {
     setSelectedDev(dev);
     setShowDetailDialog(true);
+  };
+
+  // Status advancement — QA approval (Pending QA Review → Approved) requires e-signature
+  const handleAdvanceStatus = (dev: Deviation) => {
+    const next = getNextStatus(dev.status);
+    if (!next) return;
+
+    if (next === 'Approved') {
+      setPendingStatusAdvance(dev);
+      setShowSignatureModal(true);
+      return;
+    }
+
+    const updates: Partial<Deviation> = { status: next };
+    if (next === 'Closed') {
+      updates.closedDate = new Date().toISOString();
+    }
+    store.updateDeviation(dev.id, updates);
+    if (selectedDev?.id === dev.id) {
+      setSelectedDev({ ...dev, ...updates });
+    }
+  };
+
+  // E-signature callback for QA approval
+  const handleSignatureConfirm = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
+    if (!pendingStatusAdvance) return;
+    const dev = pendingStatusAdvance;
+    store.updateDeviation(dev.id, { status: 'Approved' });
+    if (selectedDev?.id === dev.id) {
+      setSelectedDev({ ...dev, status: 'Approved' });
+    }
+    setPendingStatusAdvance(null);
+    setShowSignatureModal(false);
+  };
+
+  const handleSignatureCancel = () => {
+    setPendingStatusAdvance(null);
+    setShowSignatureModal(false);
   };
 
   return (
@@ -190,14 +237,14 @@ export function DeviationView() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <AlertTriangle className="h-6 w-6 text-primary" />
-            Déviations
+            Deviations
           </h1>
-          <p className="text-muted-foreground mt-1">Enregistrement et gestion des déviations</p>
+          <p className="text-muted-foreground mt-1">Deviation recording, investigation, and management</p>
         </div>
         {hasPermission('ncr.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
             <Plus className="h-4 w-4 mr-2" />
-            Nouvelle Déviation
+            New Deviation
           </Button>
         )}
       </div>
@@ -225,7 +272,7 @@ export function DeviationView() {
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-purple-500" />
+              <ShieldCheck className="h-4 w-4 text-purple-500" />
               <span className="text-sm text-muted-foreground">Pending QA Review</span>
             </div>
             <span className="text-2xl font-bold">{summaryCounts.pendingQA}</span>
@@ -234,7 +281,7 @@ export function DeviationView() {
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
-              <ArrowRight className="h-4 w-4 text-cyan-500" />
+              <CheckCircle2 className="h-4 w-4 text-cyan-500" />
               <span className="text-sm text-muted-foreground">Approved</span>
             </div>
             <span className="text-2xl font-bold">{summaryCounts.approved}</span>
@@ -255,7 +302,7 @@ export function DeviationView() {
       <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Rechercher déviations..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
+          <Input placeholder="Search deviations..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[170px]"><SelectValue placeholder="Status" /></SelectTrigger>
@@ -316,7 +363,15 @@ export function DeviationView() {
                   <TableRow key={dev.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => openDetail(dev)}>
                     <TableCell className="font-mono text-xs">{dev.devNumber}</TableCell>
                     <TableCell>
-                      <p className="font-medium truncate max-w-xs">{dev.title}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium truncate max-w-xs">{dev.title}</p>
+                        {(dev.lotNumber || dev.productCode) && (
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {dev.lotNumber && <span className="text-xs text-muted-foreground font-mono">Lot: {dev.lotNumber}</span>}
+                            {dev.productCode && <span className="text-xs text-muted-foreground font-mono">Prod: {dev.productCode}</span>}
+                          </div>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={cn(
@@ -348,7 +403,7 @@ export function DeviationView() {
                 {filteredDeviations.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                      Aucune déviation trouvée
+                      No deviations found matching filters
                     </TableCell>
                   </TableRow>
                 )}
@@ -362,7 +417,7 @@ export function DeviationView() {
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nouvelle Déviation</DialogTitle>
+            <DialogTitle>Create New Deviation</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-2">
@@ -411,25 +466,31 @@ export function DeviationView() {
               <Label>Deviation Details *</Label>
               <Textarea value={formDeviationDetails} onChange={(e) => setFormDeviationDetails(e.target.value)} placeholder="Detailed description of the deviation..." rows={3} />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            {formType === 'Planned' && (
+              <div className="grid gap-2">
+                <Label>Justification (required for Planned deviations) *</Label>
+                <Textarea value={formJustification} onChange={(e) => setFormJustification(e.target.value)} placeholder="Justification for this planned deviation..." rows={2} />
+              </div>
+            )}
+            {formType !== 'Planned' && (
               <div className="grid gap-2">
                 <Label>Justification</Label>
                 <Textarea value={formJustification} onChange={(e) => setFormJustification(e.target.value)} placeholder="Justification..." rows={2} />
               </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Risk Assessment</Label>
                 <Textarea value={formRiskAssessment} onChange={(e) => setFormRiskAssessment(e.target.value)} placeholder="Risk assessment..." rows={2} />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Corrective Action</Label>
                 <Textarea value={formCorrectiveAction} onChange={(e) => setFormCorrectiveAction(e.target.value)} placeholder="Corrective action..." rows={2} />
               </div>
-              <div className="grid gap-2">
-                <Label>Preventive Action</Label>
-                <Textarea value={formPreventiveAction} onChange={(e) => setFormPreventiveAction(e.target.value)} placeholder="Preventive action..." rows={2} />
-              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Preventive Action</Label>
+              <Textarea value={formPreventiveAction} onChange={(e) => setFormPreventiveAction(e.target.value)} placeholder="Preventive action..." rows={2} />
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="grid gap-2">
@@ -477,11 +538,19 @@ export function DeviationView() {
               </div>
               <div className="grid gap-2">
                 <Label>Linked Document</Label>
-                <Input value={formLinkedDocId} onChange={(e) => setFormLinkedDocId(e.target.value)} placeholder="Document ID" />
+                <Select value={formLinkedDocId} onValueChange={setFormLinkedDocId}>
+                  <SelectTrigger><SelectValue placeholder="Select document" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {approvedDocuments.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.documentNumber} - {d.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            <Button className="w-full" onClick={handleCreate} disabled={!formTitle || !formDescription || !formDeviationDetails || !formAssignedTo}>
-              Créer Déviation
+            <Button className="w-full" onClick={handleCreate} disabled={!formTitle || !formDescription || !formDeviationDetails || !formAssignedTo || (formType === 'Planned' && !formJustification)}>
+              Create Deviation
             </Button>
           </div>
         </DialogContent>
@@ -489,7 +558,7 @@ export function DeviationView() {
 
       {/* Detail Dialog */}
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
           {selectedDev && (
             <>
               <DialogHeader>
@@ -509,7 +578,7 @@ export function DeviationView() {
                   <Badge variant="outline">{selectedDev.category}</Badge>
                 </div>
 
-                {/* Status Flow */}
+                {/* Status Flow Visualization */}
                 <div className="flex items-center gap-1 p-3 bg-muted/50 rounded-lg overflow-x-auto">
                   {statusFlow.map((s, i) => (
                     <React.Fragment key={s}>
@@ -526,59 +595,195 @@ export function DeviationView() {
                   ))}
                 </div>
 
-                {/* Details */}
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div><span className="text-muted-foreground">Assigned To:</span> <span className="font-medium ml-1">{getUserName(selectedDev.assignedTo)}</span></div>
-                  <div><span className="text-muted-foreground">Due Date:</span> <span className="font-medium ml-1">{formatDate(selectedDev.dueDate)}</span></div>
-                  <div><span className="text-muted-foreground">Created:</span> <span className="font-medium ml-1">{formatDate(selectedDev.createdAt)}</span></div>
-                  {selectedDev.closedDate && <div><span className="text-muted-foreground">Closed:</span> <span className="font-medium ml-1">{formatDate(selectedDev.closedDate)}</span></div>}
-                  {selectedDev.lotNumber && <div><span className="text-muted-foreground">Lot Number:</span> <span className="font-medium ml-1 font-mono text-xs">{selectedDev.lotNumber}</span></div>}
-                  {selectedDev.productCode && <div><span className="text-muted-foreground">Product Code:</span> <span className="font-medium ml-1 font-mono text-xs">{selectedDev.productCode}</span></div>}
-                  {selectedDev.quantityAffected !== undefined && <div><span className="text-muted-foreground">Qty Affected:</span> <span className="font-medium ml-1">{selectedDev.quantityAffected}</span></div>}
-                  {selectedDev.linkedCapaId && <div><span className="text-muted-foreground">Linked CAPA:</span> <span className="font-medium ml-1 font-mono text-xs">{selectedDev.linkedCapaId}</span></div>}
-                  {selectedDev.linkedDocumentId && <div><span className="text-muted-foreground">Linked Document:</span> <span className="font-medium ml-1 font-mono text-xs">{selectedDev.linkedDocumentId}</span></div>}
-                </div>
-
-                <div className="space-y-3">
+                {/* Full Metadata Grid including lot and product info */}
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                   <div>
-                    <h4 className="font-medium text-sm mb-1">Description</h4>
-                    <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDev.description}</p>
+                    <span className="text-muted-foreground">Assigned To:</span>{' '}
+                    <span className="font-medium">{getUserName(selectedDev.assignedTo)}</span>
                   </div>
                   <div>
-                    <h4 className="font-medium text-sm mb-1">Deviation Details</h4>
-                    <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDev.deviationDetails}</p>
+                    <span className="text-muted-foreground">Due Date:</span>{' '}
+                    <span className="font-medium">{formatDate(selectedDev.dueDate)}</span>
                   </div>
-                  {selectedDev.justification && (
+                  <div>
+                    <span className="text-muted-foreground">Created:</span>{' '}
+                    <span className="font-medium">{formatDate(selectedDev.createdAt)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Updated:</span>{' '}
+                    <span className="font-medium">{formatDate(selectedDev.updatedAt)}</span>
+                  </div>
+                  {selectedDev.lotNumber && (
                     <div>
-                      <h4 className="font-medium text-sm mb-1">Justification</h4>
-                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDev.justification}</p>
+                      <span className="text-muted-foreground">Lot Number:</span>{' '}
+                      <span className="font-medium font-mono">{selectedDev.lotNumber}</span>
                     </div>
                   )}
-                  {selectedDev.riskAssessment && (
+                  {selectedDev.productCode && (
                     <div>
-                      <h4 className="font-medium text-sm mb-1">Risk Assessment</h4>
-                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDev.riskAssessment}</p>
+                      <span className="text-muted-foreground">Product Code:</span>{' '}
+                      <span className="font-medium font-mono">{selectedDev.productCode}</span>
                     </div>
                   )}
-                  {selectedDev.correctiveAction && (
+                  {selectedDev.quantityAffected !== undefined && (
                     <div>
-                      <h4 className="font-medium text-sm mb-1">Corrective Action</h4>
-                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDev.correctiveAction}</p>
+                      <span className="text-muted-foreground">Qty Affected:</span>{' '}
+                      <span className="font-medium">{selectedDev.quantityAffected}</span>
                     </div>
                   )}
-                  {selectedDev.preventiveAction && (
+                  {selectedDev.closedDate && (
                     <div>
-                      <h4 className="font-medium text-sm mb-1">Preventive Action</h4>
-                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDev.preventiveAction}</p>
+                      <span className="text-muted-foreground">Closed Date:</span>{' '}
+                      <span className="font-medium">{formatDate(selectedDev.closedDate)}</span>
+                    </div>
+                  )}
+                  {selectedDev.createdById && (
+                    <div>
+                      <span className="text-muted-foreground">Created By:</span>{' '}
+                      <span className="font-medium">{getUserName(selectedDev.createdById)}</span>
                     </div>
                   )}
                 </div>
 
-                {/* Action Button */}
+                <Separator />
+
+                {/* Description */}
+                <div>
+                  <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                    <ClipboardList className="h-4 w-4 text-muted-foreground" />
+                    Description
+                  </h4>
+                  <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDev.description}</p>
+                </div>
+
+                {/* Deviation Details */}
+                <div>
+                  <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    Deviation Details
+                  </h4>
+                  <p className="text-sm text-muted-foreground bg-amber-50 dark:bg-amber-900/10 p-3 rounded-md border border-amber-200 dark:border-amber-800">{selectedDev.deviationDetails}</p>
+                </div>
+
+                {/* Justification — especially for planned deviations */}
+                {selectedDev.justification && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                      <FileText className="h-4 w-4 text-blue-500" />
+                      Justification
+                      {selectedDev.type === 'Planned' && (
+                        <Badge variant="outline" className="ml-2 text-xs border-blue-300 text-blue-700">Required for Planned</Badge>
+                      )}
+                    </h4>
+                    <p className="text-sm text-muted-foreground bg-blue-50 dark:bg-blue-900/10 p-3 rounded-md border border-blue-200 dark:border-blue-800">{selectedDev.justification}</p>
+                  </div>
+                )}
+
+                <Separator />
+
+                {/* Risk Assessment */}
+                {selectedDev.riskAssessment && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                      <BarChart3 className="h-4 w-4 text-orange-500" />
+                      Risk Assessment
+                    </h4>
+                    <p className="text-sm text-muted-foreground bg-orange-50 dark:bg-orange-900/10 p-3 rounded-md border border-orange-200 dark:border-orange-800">{selectedDev.riskAssessment}</p>
+                  </div>
+                )}
+
+                {/* Corrective Action */}
+                {selectedDev.correctiveAction && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                      <Wrench className="h-4 w-4 text-red-500" />
+                      Corrective Action
+                    </h4>
+                    <p className="text-sm text-muted-foreground bg-red-50 dark:bg-red-900/10 p-3 rounded-md border border-red-200 dark:border-red-800">{selectedDev.correctiveAction}</p>
+                  </div>
+                )}
+
+                {/* Preventive Action */}
+                {selectedDev.preventiveAction && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                      <Shield className="h-4 w-4 text-green-500" />
+                      Preventive Action
+                    </h4>
+                    <p className="text-sm text-muted-foreground bg-green-50 dark:bg-green-900/10 p-3 rounded-md border border-green-200 dark:border-green-800">{selectedDev.preventiveAction}</p>
+                  </div>
+                )}
+
+                <Separator />
+
+                {/* Linked CAPA */}
+                {(() => {
+                  const linkedCapa = getLinkedCapa(selectedDev.linkedCapaId);
+                  return linkedCapa ? (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                        <Link2 className="h-4 w-4 text-muted-foreground" />
+                        Linked CAPA
+                      </h4>
+                      <div className="bg-muted/30 p-3 rounded-md flex items-center gap-3">
+                        <ShieldCheck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium font-mono">{linkedCapa.capaNumber}</p>
+                          <p className="text-xs text-muted-foreground">{linkedCapa.title}</p>
+                        </div>
+                        <Badge className={cn('text-xs ml-auto',
+                          linkedCapa.status === 'Closed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                          linkedCapa.status === 'Open' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                          'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        )} variant="secondary">
+                          {linkedCapa.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
+                {/* Linked Document */}
+                {(() => {
+                  const linkedDoc = getLinkedDocument(selectedDev.linkedDocumentId);
+                  return linkedDoc ? (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        Linked Document
+                      </h4>
+                      <div className="bg-muted/30 p-3 rounded-md flex items-center gap-3">
+                        <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium font-mono">{linkedDoc.documentNumber}</p>
+                          <p className="text-xs text-muted-foreground">{linkedDoc.title}</p>
+                        </div>
+                        <Badge className={cn('text-xs ml-auto',
+                          linkedDoc.status === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                          linkedDoc.status === 'Draft' ? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' :
+                          'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        )} variant="secondary">
+                          {linkedDoc.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
+                {/* Action Buttons */}
                 {hasPermission('ncr.update') && selectedDev.status !== 'Closed' && (
                   <Button className="w-full" onClick={() => handleAdvanceStatus(selectedDev)}>
-                    Advance to {getNextStatus(selectedDev.status)}
-                    <ArrowRight className="h-4 w-4 ml-2" />
+                    {getNextStatus(selectedDev.status) === 'Approved' ? (
+                      <>
+                        <ShieldCheck className="h-4 w-4 mr-2" />
+                        Approve with Electronic Signature
+                      </>
+                    ) : (
+                      <>
+                        Advance to {getNextStatus(selectedDev.status)}
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
@@ -586,6 +791,16 @@ export function DeviationView() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Electronic Signature Modal */}
+      <ElectronicSignatureModal
+        open={showSignatureModal}
+        onClose={handleSignatureCancel}
+        onSign={handleSignatureConfirm}
+        recordTitle={pendingStatusAdvance ? `${pendingStatusAdvance.devNumber} — ${pendingStatusAdvance.title}` : ''}
+        recordId={pendingStatusAdvance?.id || ''}
+        signatureType="approval"
+      />
     </div>
   );
 }

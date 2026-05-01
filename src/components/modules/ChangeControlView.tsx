@@ -5,11 +5,14 @@ import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import type {
   ChangeControl, ChangeControlStatus, ChangeControlType,
-  ChangeControlPriority, ChangeControlCategory,
+  ChangeControlPriority, ChangeControlCategory, SignatureType, ElectronicSignature,
 } from '@/types/qms';
+import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { cn, formatDate } from '@/lib/utils';
 import {
   ArrowLeftRight, Plus, Search, Eye, ArrowRight, CheckCircle2,
-  AlertTriangle, Clock, XCircle,
+  AlertTriangle, Clock, XCircle, ShieldCheck, FileText, Link2,
+  ClipboardList, AlertOctagon, BarChart3, Wrench, User,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -26,7 +30,6 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { cn, formatDate } from '@/lib/utils';
 
 const statusColors: Record<ChangeControlStatus, string> = {
   'Requested': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
@@ -63,15 +66,22 @@ export function ChangeControlView() {
   const store = useQMSStore();
   const changeControls = store.changeControls;
   const profiles = store.profiles;
+  const documents = store.documents;
+  const capas = store.capas;
 
+  // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedCC, setSelectedCC] = useState<ChangeControl | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [pendingStatusAdvance, setPendingStatusAdvance] = useState<ChangeControl | null>(null);
   const [prereqError, setPrereqError] = useState<string | null>(null);
 
   // Create form state
@@ -86,7 +96,6 @@ export function ChangeControlView() {
   const [formImpactAnalysis, setFormImpactAnalysis] = useState('');
   const [formImplementationPlan, setFormImplementationPlan] = useState('');
   const [formAssignedTo, setFormAssignedTo] = useState('');
-  const [formRequestedBy, setFormRequestedBy] = useState('');
   const [formDueDate, setFormDueDate] = useState('');
   const [formLinkedDocId, setFormLinkedDocId] = useState('');
   const [formLinkedCapaId, setFormLinkedCapaId] = useState('');
@@ -116,6 +125,36 @@ export function ChangeControlView() {
     return profile?.fullName || profile?.email || userId;
   };
 
+  const getLinkedDocument = (docId?: string) => {
+    if (!docId) return null;
+    return documents.find(d => d.id === docId) || null;
+  };
+
+  const getLinkedCapa = (capaId?: string) => {
+    if (!capaId) return null;
+    return capas.find(c => c.id === capaId) || null;
+  };
+
+  const approvedDocuments = documents.filter(d => d.status === 'Approved');
+
+  const resetForm = () => {
+    setFormTitle('');
+    setFormType('Planned');
+    setFormPriority('Medium');
+    setFormCategory('Process');
+    setFormDescription('');
+    setFormJustification('');
+    setFormProposedChange('');
+    setFormRiskAssessment('');
+    setFormImpactAnalysis('');
+    setFormImplementationPlan('');
+    setFormAssignedTo('');
+    setFormDueDate('');
+    setFormLinkedDocId('');
+    setFormLinkedCapaId('');
+    setPrereqError(null);
+  };
+
   const handleCreate = () => {
     const prereqResult = store.checkPrerequisites('CHANGE_CONTROL', 'org-001');
     if (!prereqResult.met) {
@@ -139,10 +178,10 @@ export function ChangeControlView() {
       impactAnalysis: formImpactAnalysis || undefined,
       implementationPlan: formImplementationPlan || undefined,
       assignedTo: formAssignedTo,
-      requestedBy: formRequestedBy || currentUser?.id || '',
+      requestedBy: currentUser?.id || '',
       dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
-      linkedDocumentId: formLinkedDocId || undefined,
-      linkedCapaId: formLinkedCapaId || undefined,
+      linkedDocumentId: formLinkedDocId && formLinkedDocId !== 'none' ? formLinkedDocId : undefined,
+      linkedCapaId: formLinkedCapaId && formLinkedCapaId !== 'none' ? formLinkedCapaId : undefined,
       createdById: currentUser?.id,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
@@ -153,47 +192,61 @@ export function ChangeControlView() {
     setShowCreateDialog(false);
   };
 
-  const resetForm = () => {
-    setFormTitle('');
-    setFormType('Planned');
-    setFormPriority('Medium');
-    setFormCategory('Process');
-    setFormDescription('');
-    setFormJustification('');
-    setFormProposedChange('');
-    setFormRiskAssessment('');
-    setFormImpactAnalysis('');
-    setFormImplementationPlan('');
-    setFormAssignedTo('');
-    setFormRequestedBy('');
-    setFormDueDate('');
-    setFormLinkedDocId('');
-    setFormLinkedCapaId('');
-    setPrereqError(null);
+  const openDetail = (cc: ChangeControl) => {
+    setSelectedCC(cc);
+    setShowDetailDialog(true);
   };
 
+  // Status advancement — approval step requires e-signature
   const handleAdvanceStatus = (cc: ChangeControl) => {
     const next = getNextStatus(cc.status);
     if (!next) return;
-    store.updateChangeControl(cc.id, {
-      status: next,
-      completionDate: next === 'Completed' ? new Date().toISOString() : undefined,
-    });
+
+    if (next === 'Approved') {
+      setPendingStatusAdvance(cc);
+      setShowSignatureModal(true);
+      return;
+    }
+
+    const updates: Partial<ChangeControl> = { status: next };
+    if (next === 'In Implementation') {
+      updates.implementationDate = new Date().toISOString();
+    }
+    if (next === 'Completed') {
+      updates.completionDate = new Date().toISOString();
+    }
+    store.updateChangeControl(cc.id, updates);
     if (selectedCC?.id === cc.id) {
-      setSelectedCC({ ...cc, status: next });
+      setSelectedCC({ ...cc, ...updates });
     }
   };
 
+  // E-signature callback for approval
+  const handleSignatureConfirm = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
+    if (!pendingStatusAdvance) return;
+    const cc = pendingStatusAdvance;
+    store.updateChangeControl(cc.id, {
+      status: 'Approved',
+      approvedBy: currentUser?.id,
+    });
+    if (selectedCC?.id === cc.id) {
+      setSelectedCC({ ...cc, status: 'Approved', approvedBy: currentUser?.id });
+    }
+    setPendingStatusAdvance(null);
+    setShowSignatureModal(false);
+  };
+
+  const handleSignatureCancel = () => {
+    setPendingStatusAdvance(null);
+    setShowSignatureModal(false);
+  };
+
+  // Rejection only at Under Review stage
   const handleReject = (cc: ChangeControl) => {
     store.updateChangeControl(cc.id, { status: 'Rejected' });
     if (selectedCC?.id === cc.id) {
       setSelectedCC({ ...cc, status: 'Rejected' });
     }
-  };
-
-  const openDetail = (cc: ChangeControl) => {
-    setSelectedCC(cc);
-    setShowDetailDialog(true);
   };
 
   return (
@@ -205,12 +258,12 @@ export function ChangeControlView() {
             <ArrowLeftRight className="h-6 w-6 text-primary" />
             Change Control
           </h1>
-          <p className="text-muted-foreground mt-1">Gestion des changements et approbations</p>
+          <p className="text-muted-foreground mt-1">Change management and approval workflow</p>
         </div>
         {hasPermission('ncr.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
             <Plus className="h-4 w-4 mr-2" />
-            Nouveau Change Control
+            New Change Control
           </Button>
         )}
       </div>
@@ -277,7 +330,7 @@ export function ChangeControlView() {
       <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Rechercher Change Controls..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
+          <Input placeholder="Search Change Controls..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[170px]"><SelectValue placeholder="Status" /></SelectTrigger>
@@ -374,7 +427,7 @@ export function ChangeControlView() {
                 {filteredCCs.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                      Aucun Change Control trouvé
+                      No Change Controls found matching filters
                     </TableCell>
                   </TableRow>
                 )}
@@ -388,7 +441,7 @@ export function ChangeControlView() {
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nouveau Change Control</DialogTitle>
+            <DialogTitle>Create New Change Control</DialogTitle>
           </DialogHeader>
           {prereqError && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 flex items-start gap-2">
@@ -476,33 +529,38 @@ export function ChangeControlView() {
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label>Requested By</Label>
-                <Select value={formRequestedBy} onValueChange={setFormRequestedBy}>
-                  <SelectTrigger><SelectValue placeholder="Select requester" /></SelectTrigger>
+                <Label>Due Date *</Label>
+                <Input type="date" value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Linked Document</Label>
+                <Select value={formLinkedDocId} onValueChange={setFormLinkedDocId}>
+                  <SelectTrigger><SelectValue placeholder="Select document" /></SelectTrigger>
                   <SelectContent>
-                    {profiles.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
+                    {approvedDocuments.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.documentNumber} - {d.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Linked CAPA</Label>
+                <Select value={formLinkedCapaId} onValueChange={setFormLinkedCapaId}>
+                  <SelectTrigger><SelectValue placeholder="Select CAPA" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {capas.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.capaNumber} - {c.title}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Due Date *</Label>
-                <Input type="date" value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Linked Document</Label>
-                <Input value={formLinkedDocId} onChange={(e) => setFormLinkedDocId(e.target.value)} placeholder="Document ID" />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Linked CAPA</Label>
-              <Input value={formLinkedCapaId} onChange={(e) => setFormLinkedCapaId(e.target.value)} placeholder="CAPA ID" />
-            </div>
             <Button className="w-full" onClick={handleCreate} disabled={!formTitle || !formDescription || !formJustification || !formProposedChange || !formAssignedTo}>
-              Créer Change Control
+              Create Change Control
             </Button>
           </div>
         </DialogContent>
@@ -510,7 +568,7 @@ export function ChangeControlView() {
 
       {/* Detail Dialog */}
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
           {selectedCC && (
             <>
               <DialogHeader>
@@ -532,7 +590,7 @@ export function ChangeControlView() {
                   <Badge variant="outline">{selectedCC.category}</Badge>
                 </div>
 
-                {/* Status Flow */}
+                {/* Status Flow Visualization */}
                 <div className="flex items-center gap-1 p-3 bg-muted/50 rounded-lg overflow-x-auto">
                   {statusFlow.map((s, i) => (
                     <React.Fragment key={s}>
@@ -547,72 +605,206 @@ export function ChangeControlView() {
                       {i < statusFlow.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
                     </React.Fragment>
                   ))}
+                  {/* Rejected branch */}
                   {selectedCC.status === 'Rejected' && (
                     <>
-                      <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                      <ArrowRight className="h-3 w-3 text-red-400 flex-shrink-0" />
                       <div className="px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                        Rejected
+                      </div>
+                    </>
+                  )}
+                  {/* Show rejection branch indicator from Under Review */}
+                  {selectedCC.status === 'Under Review' && (
+                    <>
+                      <span className="text-muted-foreground text-xs mx-1">or</span>
+                      <div className="px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap bg-red-50 text-red-400 border border-dashed border-red-300 dark:bg-red-900/10 dark:text-red-400">
                         Rejected
                       </div>
                     </>
                   )}
                 </div>
 
-                {/* Details */}
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div><span className="text-muted-foreground">Assigned To:</span> <span className="font-medium ml-1">{getUserName(selectedCC.assignedTo)}</span></div>
-                  <div><span className="text-muted-foreground">Requested By:</span> <span className="font-medium ml-1">{getUserName(selectedCC.requestedBy)}</span></div>
-                  <div><span className="text-muted-foreground">Due Date:</span> <span className="font-medium ml-1">{formatDate(selectedCC.dueDate)}</span></div>
-                  <div><span className="text-muted-foreground">Created:</span> <span className="font-medium ml-1">{formatDate(selectedCC.createdAt)}</span></div>
-                  {selectedCC.approvedBy && <div><span className="text-muted-foreground">Approved By:</span> <span className="font-medium ml-1">{getUserName(selectedCC.approvedBy)}</span></div>}
-                  {selectedCC.implementationDate && <div><span className="text-muted-foreground">Implementation Date:</span> <span className="font-medium ml-1">{formatDate(selectedCC.implementationDate)}</span></div>}
-                  {selectedCC.completionDate && <div><span className="text-muted-foreground">Completion Date:</span> <span className="font-medium ml-1">{formatDate(selectedCC.completionDate)}</span></div>}
-                  {selectedCC.linkedCapaId && <div><span className="text-muted-foreground">Linked CAPA:</span> <span className="font-medium ml-1 font-mono text-xs">{selectedCC.linkedCapaId}</span></div>}
-                  {selectedCC.linkedDocumentId && <div><span className="text-muted-foreground">Linked Document:</span> <span className="font-medium ml-1 font-mono text-xs">{selectedCC.linkedDocumentId}</span></div>}
+                {/* Full Metadata Grid */}
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Assigned To:</span>{' '}
+                    <span className="font-medium">{getUserName(selectedCC.assignedTo)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Requested By:</span>{' '}
+                    <span className="font-medium">{getUserName(selectedCC.requestedBy)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Due Date:</span>{' '}
+                    <span className="font-medium">{formatDate(selectedCC.dueDate)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Created:</span>{' '}
+                    <span className="font-medium">{formatDate(selectedCC.createdAt)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Updated:</span>{' '}
+                    <span className="font-medium">{formatDate(selectedCC.updatedAt)}</span>
+                  </div>
+                  {selectedCC.approvedBy && (
+                    <div>
+                      <span className="text-muted-foreground">Approved By:</span>{' '}
+                      <span className="font-medium flex items-center gap-1">
+                        <ShieldCheck className="h-3 w-3 text-green-500" />
+                        {getUserName(selectedCC.approvedBy)}
+                      </span>
+                    </div>
+                  )}
+                  {selectedCC.implementationDate && (
+                    <div>
+                      <span className="text-muted-foreground">Implementation Date:</span>{' '}
+                      <span className="font-medium">{formatDate(selectedCC.implementationDate)}</span>
+                    </div>
+                  )}
+                  {selectedCC.completionDate && (
+                    <div>
+                      <span className="text-muted-foreground">Completion Date:</span>{' '}
+                      <span className="font-medium">{formatDate(selectedCC.completionDate)}</span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-3">
-                  <div>
-                    <h4 className="font-medium text-sm mb-1">Description</h4>
-                    <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCC.description}</p>
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-sm mb-1">Justification</h4>
-                    <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCC.justification}</p>
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-sm mb-1">Proposed Change</h4>
-                    <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCC.proposedChange}</p>
-                  </div>
-                  {selectedCC.riskAssessment && (
-                    <div>
-                      <h4 className="font-medium text-sm mb-1">Risk Assessment</h4>
-                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCC.riskAssessment}</p>
-                    </div>
-                  )}
-                  {selectedCC.impactAnalysis && (
-                    <div>
-                      <h4 className="font-medium text-sm mb-1">Impact Analysis</h4>
-                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCC.impactAnalysis}</p>
-                    </div>
-                  )}
-                  {selectedCC.implementationPlan && (
-                    <div>
-                      <h4 className="font-medium text-sm mb-1">Implementation Plan</h4>
-                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCC.implementationPlan}</p>
-                    </div>
-                  )}
+                <Separator />
+
+                {/* Description */}
+                <div>
+                  <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                    <ClipboardList className="h-4 w-4 text-muted-foreground" />
+                    Description
+                  </h4>
+                  <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCC.description}</p>
                 </div>
+
+                {/* Justification */}
+                <div>
+                  <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                    <AlertOctagon className="h-4 w-4 text-muted-foreground" />
+                    Justification
+                  </h4>
+                  <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCC.justification}</p>
+                </div>
+
+                <Separator />
+
+                {/* Proposed Change */}
+                <div>
+                  <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                    <ArrowLeftRight className="h-4 w-4 text-primary" />
+                    Proposed Change
+                  </h4>
+                  <p className="text-sm text-muted-foreground bg-primary/5 border border-primary/20 p-3 rounded-md">{selectedCC.proposedChange}</p>
+                </div>
+
+                {/* Risk Assessment */}
+                {selectedCC.riskAssessment && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+                      Risk Assessment
+                    </h4>
+                    <p className="text-sm text-muted-foreground bg-amber-50 dark:bg-amber-900/10 p-3 rounded-md border border-amber-200 dark:border-amber-800">{selectedCC.riskAssessment}</p>
+                  </div>
+                )}
+
+                {/* Impact Analysis */}
+                {selectedCC.impactAnalysis && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                      <BarChart3 className="h-4 w-4 text-blue-500" />
+                      Impact Analysis
+                    </h4>
+                    <p className="text-sm text-muted-foreground bg-blue-50 dark:bg-blue-900/10 p-3 rounded-md border border-blue-200 dark:border-blue-800">{selectedCC.impactAnalysis}</p>
+                  </div>
+                )}
+
+                {/* Implementation Plan */}
+                {selectedCC.implementationPlan && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
+                      <Wrench className="h-4 w-4 text-cyan-500" />
+                      Implementation Plan
+                    </h4>
+                    <p className="text-sm text-muted-foreground bg-cyan-50 dark:bg-cyan-900/10 p-3 rounded-md border border-cyan-200 dark:border-cyan-800">{selectedCC.implementationPlan}</p>
+                  </div>
+                )}
+
+                <Separator />
+
+                {/* Linked Document */}
+                {(() => {
+                  const linkedDoc = getLinkedDocument(selectedCC.linkedDocumentId);
+                  return linkedDoc ? (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        Linked Document
+                      </h4>
+                      <div className="bg-muted/30 p-3 rounded-md flex items-center gap-3">
+                        <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium font-mono">{linkedDoc.documentNumber}</p>
+                          <p className="text-xs text-muted-foreground">{linkedDoc.title}</p>
+                        </div>
+                        <Badge className={cn('text-xs ml-auto', statusColors[linkedDoc.status as ChangeControlStatus] || 'bg-gray-100 text-gray-700')} variant="secondary">
+                          {linkedDoc.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
+                {/* Linked CAPA */}
+                {(() => {
+                  const linkedCapa = getLinkedCapa(selectedCC.linkedCapaId);
+                  return linkedCapa ? (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                        <Link2 className="h-4 w-4 text-muted-foreground" />
+                        Linked CAPA
+                      </h4>
+                      <div className="bg-muted/30 p-3 rounded-md flex items-center gap-3">
+                        <ShieldCheck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium font-mono">{linkedCapa.capaNumber}</p>
+                          <p className="text-xs text-muted-foreground">{linkedCapa.title}</p>
+                        </div>
+                        <Badge className={cn('text-xs ml-auto',
+                          linkedCapa.status === 'Closed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                          linkedCapa.status === 'Open' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                          'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        )} variant="secondary">
+                          {linkedCapa.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* Action Buttons */}
                 {hasPermission('ncr.update') && selectedCC.status !== 'Completed' && selectedCC.status !== 'Rejected' && (
                   <div className="flex gap-3">
                     {getNextStatus(selectedCC.status) && (
                       <Button className="flex-1" onClick={() => handleAdvanceStatus(selectedCC)}>
-                        Advance to {getNextStatus(selectedCC.status)}
-                        <ArrowRight className="h-4 w-4 ml-2" />
+                        {getNextStatus(selectedCC.status) === 'Approved' ? (
+                          <>
+                            <ShieldCheck className="h-4 w-4 mr-2" />
+                            Approve with Electronic Signature
+                          </>
+                        ) : (
+                          <>
+                            Advance to {getNextStatus(selectedCC.status)}
+                            <ArrowRight className="h-4 w-4 ml-2" />
+                          </>
+                        )}
                       </Button>
                     )}
-                    {selectedCC.status !== 'Rejected' && (
+                    {selectedCC.status === 'Under Review' && (
                       <Button variant="destructive" onClick={() => handleReject(selectedCC)}>
                         <XCircle className="h-4 w-4 mr-2" />
                         Reject
@@ -625,6 +817,16 @@ export function ChangeControlView() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Electronic Signature Modal */}
+      <ElectronicSignatureModal
+        open={showSignatureModal}
+        onClose={handleSignatureCancel}
+        onSign={handleSignatureConfirm}
+        recordTitle={pendingStatusAdvance ? `${pendingStatusAdvance.ccNumber} — ${pendingStatusAdvance.title}` : ''}
+        recordId={pendingStatusAdvance?.id || ''}
+        signatureType="approval"
+      />
     </div>
   );
 }
