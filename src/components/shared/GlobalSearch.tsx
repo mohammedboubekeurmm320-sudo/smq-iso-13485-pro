@@ -304,10 +304,14 @@ export function GlobalSearch({ onNavigate }: GlobalSearchProps) {
         onFocus={() => {
           if (query.trim()) setOpen(true);
         }}
+        role="combobox"
+        aria-expanded={open && searchResults.length > 0}
+        aria-autocomplete="list"
+        aria-label="Search QMS records"
       />
 
       {open && searchResults.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 z-50">
+        <div className="absolute top-full left-0 right-0 mt-1 z-50" role="listbox" aria-label="Search results">
           <Command
             className="rounded-lg border shadow-md"
             shouldFilter={false}
@@ -328,6 +332,8 @@ export function GlobalSearch({ onNavigate }: GlobalSearchProps) {
                           value={item.id}
                           onSelect={() => handleSelect(item.section)}
                           className="cursor-pointer"
+                          role="option"
+                          aria-label={`${item.label} - ${item.status}`}
                         >
                           <ItemIcon className="h-4 w-4 text-muted-foreground shrink-0" />
                           <div className="flex-1 min-w-0">

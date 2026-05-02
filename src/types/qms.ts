@@ -103,10 +103,75 @@ export const OPTIONAL_MODULES = ['risks', 'hierarchy', 'batch_records', 'supplie
 
 export const STANDARDS_BY_INDUSTRY: Record<IndustryType, string[]> = {
   medical_device: ['ISO 13485:2016', 'ISO 14971:2019', 'IEC 62304', 'FDA 21 CFR 820', 'MDR EU 2017/745'],
-  pharmaceutical: ['ISO 13485:2016', 'ICH Q10', 'FDA 21 CFR 210/211', 'cGMP', 'EU GMP Annex 15'],
-  biotech: ['ISO 13485:2016', 'ICH Q10', 'FDA 21 CFR 210/211', 'cGMP', 'ISO 14971:2019'],
-  ivd: ['ISO 13485:2016', 'ISO 14971:2019', 'IVDR EU 2017/746', 'FDA 21 CFR 820', 'CLSI Guidelines'],
+  pharmaceutical: ['ICH Q10', 'FDA 21 CFR 210/211', 'cGMP', 'EU GMP Annex 15', 'ISO 13485:2016'],
+  biotech: ['ICH Q10', 'FDA 21 CFR 210/211', 'cGMP', 'ISO 14971:2019', 'ISO 13485:2016'],
+  ivd: ['IVDR EU 2017/746', 'ISO 13485:2016', 'ISO 14971:2019', 'FDA 21 CFR 820', 'CLSI Guidelines'],
   combination_product: ['ISO 13485:2016', 'ISO 14971:2019', 'FDA 21 CFR 820', 'FDA 21 CFR 210/211', 'MDR EU 2017/745'],
+};
+
+// ============================================================================
+// Industry Configuration
+// ============================================================================
+
+export interface IndustryConfig {
+  label: string;
+  primaryStandard: string;
+  recommendedModules: string[];
+  complianceWeights: {
+    documents: number;
+    capas: number;
+    training: number;
+    audits: number;
+    ncrs: number;
+    risks: number;
+    batchRecords: number;
+    suppliers: number;
+  };
+  checklistId: string;
+  terminology: Record<string, string>;
+}
+
+export const INDUSTRY_CONFIG: Record<IndustryType, IndustryConfig> = {
+  medical_device: {
+    label: 'Medical Device',
+    primaryStandard: 'ISO 13485:2016',
+    recommendedModules: ['risks', 'hierarchy', 'suppliers', 'forms'],
+    complianceWeights: { documents: 0.25, capas: 0.20, training: 0.15, audits: 0.15, ncrs: 0.10, risks: 0.10, batchRecords: 0.03, suppliers: 0.02 },
+    checklistId: 'iso13485',
+    terminology: { batchRecord: 'Production Record', deviation: 'Nonconformity' },
+  },
+  pharmaceutical: {
+    label: 'Pharmaceutical',
+    primaryStandard: 'ICH Q10',
+    recommendedModules: ['risks', 'batch_records', 'suppliers', 'forms', 'oos_oot', 'deviations', 'change_control'],
+    complianceWeights: { documents: 0.20, capas: 0.20, training: 0.10, audits: 0.10, ncrs: 0.10, risks: 0.05, batchRecords: 0.15, suppliers: 0.10 },
+    checklistId: 'ichq10',
+    terminology: { batchRecord: 'Batch Record', deviation: 'Deviation' },
+  },
+  biotech: {
+    label: 'Biotech',
+    primaryStandard: 'ICH Q10',
+    recommendedModules: ['risks', 'batch_records', 'suppliers', 'forms', 'oos_oot', 'deviations', 'change_control'],
+    complianceWeights: { documents: 0.20, capas: 0.20, training: 0.10, audits: 0.10, ncrs: 0.10, risks: 0.10, batchRecords: 0.10, suppliers: 0.10 },
+    checklistId: 'ichq10',
+    terminology: { batchRecord: 'Batch Record', deviation: 'Deviation' },
+  },
+  ivd: {
+    label: 'IVD',
+    primaryStandard: 'IVDR EU 2017/746',
+    recommendedModules: ['risks', 'hierarchy', 'suppliers', 'forms'],
+    complianceWeights: { documents: 0.25, capas: 0.20, training: 0.15, audits: 0.15, ncrs: 0.10, risks: 0.10, batchRecords: 0.03, suppliers: 0.02 },
+    checklistId: 'ivdr',
+    terminology: { batchRecord: 'Production Record', deviation: 'Nonconformity' },
+  },
+  combination_product: {
+    label: 'Combination Product',
+    primaryStandard: 'ISO 13485:2016',
+    recommendedModules: ['risks', 'hierarchy', 'batch_records', 'suppliers', 'forms', 'oos_oot', 'deviations', 'change_control'],
+    complianceWeights: { documents: 0.22, capas: 0.18, training: 0.12, audits: 0.12, ncrs: 0.10, risks: 0.10, batchRecords: 0.10, suppliers: 0.06 },
+    checklistId: 'iso13485',
+    terminology: { batchRecord: 'Batch Record', deviation: 'Deviation' },
+  },
 };
 
 export interface OrgSettings {

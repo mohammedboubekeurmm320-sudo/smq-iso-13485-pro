@@ -4,6 +4,9 @@ import React from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useTranslation } from '@/lib/i18n';
+import { INDUSTRY_CONFIG } from '@/types/qms';
+import type { IndustryType } from '@/types/qms';
 import {
   FileText,
   Shield,
@@ -47,7 +50,7 @@ import {
 const COLORS = ['hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)', 'hsl(0, 84%, 60%)', 'hsl(217, 91%, 60%)', 'hsl(280, 67%, 58%)'];
 
 // Circular compliance gauge
-function ComplianceGauge({ score, size = 140 }: { score: number; size?: number }) {
+function ComplianceGauge({ score, size = 140, label }: { score: number; size?: number; label: string }) {
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
@@ -85,7 +88,7 @@ function ComplianceGauge({ score, size = 140 }: { score: number; size?: number }
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-3xl font-bold" style={{ color }}>{score}%</span>
-        <span className="text-xs text-muted-foreground">Conformité</span>
+        <span className="text-xs text-muted-foreground">{label}</span>
       </div>
     </div>
   );
@@ -95,6 +98,7 @@ export function DashboardView() {
   const { currentUser } = useAuth();
   const { currentOrg, orgSettings } = useOrganization();
   const store = useQMSStore();
+  const t = useTranslation();
 
   const documents = store.documents;
   const capas = store.capas;
@@ -118,12 +122,34 @@ export function DashboardView() {
   const qualifiedSuppliers = suppliers.filter(s => s.status === 'Qualified').length;
   const highRisks = risks.filter(r => r.riskLevel === 'High' || r.riskLevel === 'Critical').length;
 
-  // Compliance score calculation
+  // Industry configuration
+  const industryType = orgSettings?.industry_type || 'medical_device';
+  const industryConfig = INDUSTRY_CONFIG[industryType as IndustryType] || INDUSTRY_CONFIG.medical_device;
+  const activeModules = orgSettings?.active_modules || [];
+  const hasBatchRecords = activeModules.includes('batch_records');
+  const isPharmaBiotech = industryType === 'pharmaceutical' || industryType === 'biotech';
+
+  // Compliance score calculation — uses industry-specific weights
   const docCompliance = documents.length > 0 ? (approvedDocs / documents.length) * 100 : 0;
   const capaCompliance = capas.length > 0 ? (capas.filter(c => c.status === 'Closed').length / capas.length) * 100 : 100;
   const trainingCompliance = trainingItems.length > 0 ? (trainingItems.filter(t => t.status === 'Completed').length / trainingItems.length) * 100 : 100;
   const auditCompliance = audits.length > 0 ? (audits.filter(a => a.status === 'Completed').length / audits.length) * 100 : 100;
-  const complianceScore = Math.round((docCompliance * 0.3 + capaCompliance * 0.3 + trainingCompliance * 0.2 + auditCompliance * 0.2));
+  const ncrCompliance = ncrs.length > 0 ? (ncrs.filter(n => n.status === 'Closed').length / ncrs.length) * 100 : 100;
+  const riskCompliance = risks.length > 0 ? (risks.filter(r => r.status !== 'Open').length / risks.length) * 100 : 100;
+  const batchCompliance = batchRecords.length > 0 ? (releasedBatches / batchRecords.length) * 100 : 100;
+  const supplierCompliance = suppliers.length > 0 ? (qualifiedSuppliers / suppliers.length) * 100 : 100;
+
+  const w = industryConfig.complianceWeights;
+  const complianceScore = Math.round(
+    docCompliance * w.documents +
+    capaCompliance * w.capas +
+    trainingCompliance * w.training +
+    auditCompliance * w.audits +
+    ncrCompliance * w.ncrs +
+    riskCompliance * w.risks +
+    batchCompliance * w.batchRecords +
+    supplierCompliance * w.suppliers
+  );
 
   // Chart data - CAPA status distribution
   const capaStatusData = [
@@ -166,30 +192,31 @@ export function DashboardView() {
 
   const firstName = currentUser?.fullName?.split(' ')[0] || 'User';
 
-  // Quick actions
+  // Quick actions — adapted per industry
   const quickActions = [
-    { label: 'Créer CAPA', icon: <Shield className="h-5 w-5" />, color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', description: 'Nouvelle action corrective' },
-    { label: 'Créer NCR', icon: <AlertTriangle className="h-5 w-5" />, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', description: 'Nouvelle non-conformité' },
-    { label: 'Télécharger Doc', icon: <Upload className="h-5 w-5" />, color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', description: 'Ajouter un document' },
-    { label: 'Planifier Audit', icon: <Calendar className="h-5 w-5" />, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', description: 'Nouvel audit interne' },
-  ];
+    { label: t.dashboard.createCapa, icon: <Shield className="h-5 w-5" />, color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', module: undefined },
+    { label: t.dashboard.createNcr, icon: <AlertTriangle className="h-5 w-5" />, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', module: undefined },
+    { label: t.dashboard.batchRecords, icon: <Package className="h-5 w-5" />, color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400', module: 'batch_records' as string | undefined },
+    { label: t.dashboard.uploadDoc, icon: <Upload className="h-5 w-5" />, color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', module: undefined },
+    { label: t.dashboard.scheduleAudit, icon: <Calendar className="h-5 w-5" />, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', module: undefined },
+  ].filter(action => !action.module || activeModules.includes(action.module));
 
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
       {/* Welcome header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Bienvenue, {firstName}</h1>
+          <h1 className="text-2xl font-bold text-foreground">{t.dashboard.welcome}, {firstName}</h1>
           <p className="text-muted-foreground mt-1">
-            {currentOrg?.name} — Tableau de Bord Qualité
+            {currentOrg?.name} — {t.dashboard.qualityDashboard}
           </p>
         </div>
         <div className="hidden md:flex items-center gap-2">
           <Badge variant="outline" className="text-xs">
-            {orgSettings?.applicable_standards?.[0] || 'ISO 13485:2016'}
+            {industryConfig.primaryStandard}
           </Badge>
-          <Badge variant="outline" className="text-xs capitalize">
-            {orgSettings?.industry_type?.replace('_', ' ') || 'Medical Device'}
+          <Badge variant="outline" className="text-xs">
+            {industryConfig.label}
           </Badge>
         </div>
       </div>
@@ -199,7 +226,7 @@ export function DashboardView() {
         {/* Open CAPAs */}
         <Card className="relative overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">CAPAs Ouverts</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t.dashboard.openCapas}</CardTitle>
             <Shield className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -207,23 +234,23 @@ export function DashboardView() {
               <div className="text-2xl font-bold">{openCapas}</div>
               {overdueCapas > 0 && (
                 <Badge variant="destructive" className="text-xs">
-                  {overdueCapas} en retard
+                  {overdueCapas} {t.dashboard.overdue}
                 </Badge>
               )}
             </div>
             <div className="flex items-center mt-1 text-xs text-muted-foreground">
               <ArrowUpRight className="h-3 w-3 text-destructive mr-1" />
-              <span className="text-destructive">+2</span> vs mois dernier
+              <span className="text-destructive">+2</span>
             </div>
             <Progress value={(capas.filter(c => c.status === 'Closed').length / capas.length) * 100} className="mt-3 h-1.5" />
-            <p className="text-xs text-muted-foreground mt-1">{Math.round((capas.filter(c => c.status === 'Closed').length / capas.length) * 100)}% taux de clôture</p>
+            <p className="text-xs text-muted-foreground mt-1">{Math.round((capas.filter(c => c.status === 'Closed').length / capas.length) * 100)}% {t.dashboard.closureRate}</p>
           </CardContent>
         </Card>
 
         {/* Open NCRs */}
         <Card className="relative overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">NCRs Ouverts</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t.modules.ncr.title}</CardTitle>
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -231,41 +258,41 @@ export function DashboardView() {
               <div className="text-2xl font-bold">{openNcrs}</div>
               {ncrs.filter(n => n.severity === 'Critical').length > 0 && (
                 <Badge variant="destructive" className="text-xs">
-                  {ncrs.filter(n => n.severity === 'Critical').length} critique(s)
+                  {ncrs.filter(n => n.severity === 'Critical').length} {t.dashboard.critical}
                 </Badge>
               )}
             </div>
             <div className="flex items-center mt-1 text-xs text-muted-foreground">
               <ArrowDownRight className="h-3 w-3 text-green-600 mr-1" />
-              <span className="text-green-600">-1</span> vs mois dernier
+              <span className="text-green-600">-1</span>
             </div>
             <Progress value={((ncrs.length - openNcrs) / ncrs.length) * 100} className="mt-3 h-1.5" />
-            <p className="text-xs text-muted-foreground mt-1">{Math.round(((ncrs.length - openNcrs) / ncrs.length) * 100)}% taux de résolution</p>
+            <p className="text-xs text-muted-foreground mt-1">{Math.round(((ncrs.length - openNcrs) / ncrs.length) * 100)}% {t.dashboard.closureRate}</p>
           </CardContent>
         </Card>
 
         {/* Approved Documents */}
         <Card className="relative overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Documents</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t.modules.documents.title}</CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{documents.length}</div>
             <div className="flex items-center gap-3 mt-1">
-              <span className="text-xs text-green-600">{approvedDocs} approuvés</span>
-              <span className="text-xs text-amber-600">{inReviewDocs} en revue</span>
-              <span className="text-xs text-muted-foreground">{draftDocs} brouillons</span>
+              <span className="text-xs text-green-600">{approvedDocs} {t.dashboard.approved}</span>
+              <span className="text-xs text-amber-600">{inReviewDocs} {t.dashboard.inReview}</span>
+              <span className="text-xs text-muted-foreground">{draftDocs} {t.dashboard.drafts}</span>
             </div>
             <Progress value={(approvedDocs / documents.length) * 100} className="mt-3 h-1.5" />
-            <p className="text-xs text-muted-foreground mt-1">{Math.round((approvedDocs / documents.length) * 100)}% taux d&apos;approbation</p>
+            <p className="text-xs text-muted-foreground mt-1">{Math.round((approvedDocs / documents.length) * 100)}% {t.dashboard.closureRate}</p>
           </CardContent>
         </Card>
 
         {/* Training Compliance */}
         <Card className="relative overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Formation</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t.modules.training.title}</CardTitle>
             <GraduationCap className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -273,16 +300,16 @@ export function DashboardView() {
               <div className="text-2xl font-bold">{trainingItems.length}</div>
               {overdueTraining > 0 && (
                 <Badge variant="destructive" className="text-xs">
-                  {overdueTraining} en retard
+                  {overdueTraining} {t.dashboard.overdue}
                 </Badge>
               )}
             </div>
             <div className="flex items-center mt-1 text-xs text-muted-foreground">
               <CheckCircle2 className="h-3 w-3 text-green-600 mr-1" />
-              {trainingItems.filter(t => t.status === 'Completed').length} complétées
+              {trainingItems.filter(t => t.status === 'Completed').length} {t.statuses.completed.toLowerCase()}
             </div>
             <Progress value={(trainingItems.filter(t => t.status === 'Completed').length / trainingItems.length) * 100} className="mt-3 h-1.5" />
-            <p className="text-xs text-muted-foreground mt-1">{Math.round((trainingItems.filter(t => t.status === 'Completed').length / trainingItems.length) * 100)}% taux de complétion</p>
+            <p className="text-xs text-muted-foreground mt-1">{Math.round((trainingItems.filter(t => t.status === 'Completed').length / trainingItems.length) * 100)}% {t.dashboard.closureRate}</p>
           </CardContent>
         </Card>
       </div>
@@ -292,11 +319,10 @@ export function DashboardView() {
         {/* Quick Actions */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Actions Rapides</CardTitle>
-            <CardDescription>Accès rapide aux opérations courantes</CardDescription>
+            <CardTitle className="text-base">{t.dashboard.quickActions}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {quickActions.map((action) => (
                 <button
                   key={action.label}
@@ -306,7 +332,6 @@ export function DashboardView() {
                     {action.icon}
                   </div>
                   <span className="text-sm font-medium text-center">{action.label}</span>
-                  <span className="text-xs text-muted-foreground text-center">{action.description}</span>
                 </button>
               ))}
             </div>
@@ -316,29 +341,37 @@ export function DashboardView() {
         {/* Compliance Score */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Score de Conformité</CardTitle>
-            <CardDescription>Indicateur global de conformité QMS</CardDescription>
+            <CardTitle className="text-base">{t.dashboard.complianceScore}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-center">
-            <ComplianceGauge score={complianceScore} />
+            <ComplianceGauge score={complianceScore} label={t.modules.compliance.title} />
             <div className="w-full mt-4 space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Documents</span>
+                <span className="text-muted-foreground">{t.modules.documents.title} ({Math.round(w.documents * 100)}%)</span>
                 <span className="font-medium">{Math.round(docCompliance)}%</span>
               </div>
               <Progress value={docCompliance} className="h-1.5" />
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">CAPAs</span>
+                <span className="text-muted-foreground">{t.modules.capa.title} ({Math.round(w.capas * 100)}%)</span>
                 <span className="font-medium">{Math.round(capaCompliance)}%</span>
               </div>
               <Progress value={capaCompliance} className="h-1.5" />
+              {hasBatchRecords && (
+                <>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">{industryConfig.terminology.batchRecord || t.dashboard.batchRecords} ({Math.round(w.batchRecords * 100)}%)</span>
+                    <span className="font-medium">{Math.round(batchCompliance)}%</span>
+                  </div>
+                  <Progress value={batchCompliance} className="h-1.5" />
+                </>
+              )}
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Formation</span>
+                <span className="text-muted-foreground">{t.modules.training.title} ({Math.round(w.training * 100)}%)</span>
                 <span className="font-medium">{Math.round(trainingCompliance)}%</span>
               </div>
               <Progress value={trainingCompliance} className="h-1.5" />
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Audits</span>
+                <span className="text-muted-foreground">{t.modules.audit.title} ({Math.round(w.audits * 100)}%)</span>
                 <span className="font-medium">{Math.round(auditCompliance)}%</span>
               </div>
               <Progress value={auditCompliance} className="h-1.5" />
@@ -347,29 +380,31 @@ export function DashboardView() {
         </Card>
       </div>
 
-      {/* Secondary KPI row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  <Package className="h-5 w-5" />
+      {/* Secondary KPI row — industry-aware */}
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${hasBatchRecords ? 'lg:grid-cols-3' : ''} gap-4`}>
+        {hasBatchRecords && (
+          <Card className={isPharmaBiotech ? 'border-primary/20' : ''}>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${isPharmaBiotech ? 'bg-primary/10 text-primary' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
+                    <Package className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">{industryConfig.terminology.batchRecord || t.dashboard.batchRecords}</p>
+                    <p className="text-xl font-bold">{batchRecords.length}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Lots de Fabrication</p>
-                  <p className="text-xl font-bold">{batchRecords.length}</p>
+                <div className="text-right">
+                  <p className="text-sm text-green-600 font-medium">{releasedBatches} {t.dashboard.released}</p>
+                  <p className="text-xs text-muted-foreground">{batchRecords.filter(b => b.status === 'In Progress').length} {t.statuses.inProgress.toLowerCase()}</p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-sm text-green-600 font-medium">{releasedBatches} libérés</p>
-                <p className="text-xs text-muted-foreground">{batchRecords.filter(b => b.status === 'In Progress').length} en cours</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
+        <Card className={!hasBatchRecords ? 'border-primary/20' : ''}>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -377,13 +412,13 @@ export function DashboardView() {
                   <BarChart3 className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Risques Actifs</p>
+                  <p className="text-sm text-muted-foreground">{t.dashboard.activeRisks}</p>
                   <p className="text-xl font-bold">{risks.filter(r => r.status === 'Open' || r.status === 'Mitigated').length}</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-sm text-amber-600 font-medium">{highRisks} élevés/critiques</p>
-                <p className="text-xs text-muted-foreground">RPN moyen: {risks.length > 0 ? Math.round(risks.reduce((a, r) => a + r.rpn, 0) / risks.length) : 0}</p>
+                <p className="text-sm text-amber-600 font-medium">{highRisks}</p>
+                <p className="text-xs text-muted-foreground">RPN: {risks.length > 0 ? Math.round(risks.reduce((a, r) => a + r.rpn, 0) / risks.length) : 0}</p>
               </div>
             </div>
           </CardContent>
@@ -397,13 +432,13 @@ export function DashboardView() {
                   <ClipboardCheck className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Fournisseurs</p>
+                  <p className="text-sm text-muted-foreground">{t.dashboard.suppliers}</p>
                   <p className="text-xl font-bold">{suppliers.length}</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-sm text-green-600 font-medium">{qualifiedSuppliers} qualifiés</p>
-                <p className="text-xs text-muted-foreground">Score moyen: {suppliers.filter(s => s.performanceScore && s.performanceScore > 0).length > 0 ? Math.round(suppliers.filter(s => s.performanceScore && s.performanceScore > 0).reduce((a, s) => a + (s.performanceScore || 0), 0) / suppliers.filter(s => s.performanceScore && s.performanceScore > 0).length) : 0}%</p>
+                <p className="text-sm text-green-600 font-medium">{qualifiedSuppliers} {t.dashboard.qualified}</p>
+                <p className="text-xs text-muted-foreground">{suppliers.filter(s => s.performanceScore && s.performanceScore > 0).length > 0 ? Math.round(suppliers.filter(s => s.performanceScore && s.performanceScore > 0).reduce((a, s) => a + (s.performanceScore || 0), 0) / suppliers.filter(s => s.performanceScore && s.performanceScore > 0).length) : 0}%</p>
               </div>
             </div>
           </CardContent>
@@ -415,8 +450,7 @@ export function DashboardView() {
         {/* Monthly Trend */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Tendance Métriques Qualité</CardTitle>
-            <CardDescription>Nombre mensuel de CAPAs, NCRs et Audits</CardDescription>
+            <CardTitle className="text-base">{t.dashboard.qualityMetricsTrend}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-72">
@@ -439,8 +473,7 @@ export function DashboardView() {
         {/* CAPA Status Distribution */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Statut CAPAs</CardTitle>
-            <CardDescription>Répartition des statuts CAPA</CardDescription>
+            <CardTitle className="text-base">{t.dashboard.capaStatus}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-72">
@@ -473,8 +506,7 @@ export function DashboardView() {
         {/* NCR by Type */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">NCR par Type</CardTitle>
-            <CardDescription>Non-conformités classées par type</CardDescription>
+            <CardTitle className="text-base">{t.modules.ncr.title}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-64">
@@ -484,7 +516,7 @@ export function DashboardView() {
                   <XAxis dataKey="name" className="text-xs" />
                   <YAxis className="text-xs" allowDecimals={false} />
                   <Tooltip />
-                  <Bar dataKey="count" fill="hsl(38, 92%, 50%)" radius={[4, 4, 0, 0]} name="Nombre" />
+                  <Bar dataKey="count" fill="hsl(38, 92%, 50%)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -494,8 +526,7 @@ export function DashboardView() {
         {/* Risk Level Distribution */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Profil de Risque</CardTitle>
-            <CardDescription>Répartition des niveaux de risque</CardDescription>
+            <CardTitle className="text-base">{t.dashboard.riskProfile}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-64">
@@ -526,8 +557,7 @@ export function DashboardView() {
       {/* Recent Activity */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Activité Récente</CardTitle>
-          <CardDescription>Dernières entrées du journal d&apos;audit</CardDescription>
+          <CardTitle className="text-base">{t.dashboard.recentActivity}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-3 max-h-80 overflow-y-auto">
@@ -558,7 +588,7 @@ export function DashboardView() {
                       )}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {activity.userEmail} • {new Date(activity.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {activity.userEmail} • {new Date(activity.createdAt).toLocaleDateString(localeFromT(), { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </p>
                   </div>
                 </div>
@@ -569,6 +599,16 @@ export function DashboardView() {
       </Card>
     </div>
   );
+}
+
+// Helper to get locale string for date formatting
+function localeFromT(): string {
+  // We can't use useI18n here since it's not a hook context
+  // Default to browser locale
+  if (typeof navigator !== 'undefined') {
+    return navigator.language;
+  }
+  return 'fr-FR';
 }
 
 function cn(...classes: (string | boolean | undefined)[]) {

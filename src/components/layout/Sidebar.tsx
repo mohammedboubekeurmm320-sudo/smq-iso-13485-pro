@@ -4,7 +4,9 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useQMSStore } from '@/lib/demo-store';
-import type { ActiveSection } from '@/types/qms';
+import { useTranslation } from '@/lib/i18n';
+import type { ActiveSection, IndustryType } from '@/types/qms';
+import { INDUSTRY_CONFIG } from '@/types/qms';
 import {
   LayoutDashboard,
   FileText,
@@ -41,59 +43,78 @@ interface SidebarProps {
 
 interface NavItem {
   id: ActiveSection;
-  label: string;
+  labelKey: string;
   icon: React.ElementType;
   module?: string;
   showBadge?: boolean;
   getBadgeCount?: (store: ReturnType<typeof useQMSStore.getState>) => number;
 }
 
-const NAV_GROUPS = [
+interface NavGroup {
+  labelKey?: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
   {
-    label: undefined,
     items: [
-      { id: 'dashboard' as ActiveSection, label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'dashboard' as ActiveSection, labelKey: 'nav.dashboard', icon: LayoutDashboard },
     ],
   },
   {
-    label: 'DOCUMENTS',
+    labelKey: 'nav.documents',
     items: [
-      { id: 'documents' as ActiveSection, label: 'Document Control', icon: FileText, module: 'documents', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.documents.filter(d => d.status === 'In Review').length },
-      { id: 'document-hierarchy' as ActiveSection, label: 'Document Hierarchy', icon: GitBranch, module: 'hierarchy' },
+      { id: 'documents' as ActiveSection, labelKey: 'nav.documents', icon: FileText, module: 'documents', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.documents.filter(d => d.status === 'In Review').length },
+      { id: 'document-hierarchy' as ActiveSection, labelKey: 'nav.documentHierarchy', icon: GitBranch, module: 'hierarchy' },
     ],
   },
   {
-    label: 'RECORDS',
+    labelKey: 'nav.records',
     items: [
-      { id: 'ncr' as ActiveSection, label: 'Non-conformités', icon: AlertTriangle, module: 'ncr', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.ncrs.filter(n => n.status === 'Open' || n.status === 'Under Investigation').length },
-      { id: 'capa' as ActiveSection, label: 'CAPA', icon: Shield, module: 'capa', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.capas.filter(c => c.status !== 'Closed').length },
-      { id: 'audits' as ActiveSection, label: 'Audits', icon: ClipboardCheck, module: 'audits' },
-      { id: 'risks' as ActiveSection, label: 'Risques', icon: BarChart3, module: 'risks' },
-      { id: 'training' as ActiveSection, label: 'Formation', icon: GraduationCap, module: 'training', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.training.filter(t => t.status === 'Overdue').length },
-      { id: 'change-control' as ActiveSection, label: 'Change Control', icon: ArrowLeftRight, module: 'change_control' },
-      { id: 'deviations' as ActiveSection, label: 'Déviations', icon: AlertOctagon, module: 'deviations' },
-      { id: 'batch-records' as ActiveSection, label: 'Dossiers de Lot', icon: Package, module: 'batch_records' },
-      { id: 'suppliers' as ActiveSection, label: 'Fournisseurs', icon: Truck, module: 'suppliers' },
-      { id: 'oos-oot' as ActiveSection, label: 'OOS/OOT', icon: FlaskConical, module: 'oos_oot' },
-      { id: 'forms' as ActiveSection, label: 'Formulaires', icon: FileSpreadsheet, module: 'forms' },
+      { id: 'ncr' as ActiveSection, labelKey: 'nav.ncr', icon: AlertTriangle, module: 'ncr', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.ncrs.filter(n => n.status === 'Open' || n.status === 'Under Investigation').length },
+      { id: 'capa' as ActiveSection, labelKey: 'nav.capa', icon: Shield, module: 'capa', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.capas.filter(c => c.status !== 'Closed').length },
+      { id: 'audits' as ActiveSection, labelKey: 'nav.audits', icon: ClipboardCheck, module: 'audits' },
+      { id: 'risks' as ActiveSection, labelKey: 'nav.risks', icon: BarChart3, module: 'risks' },
+      { id: 'training' as ActiveSection, labelKey: 'nav.training', icon: GraduationCap, module: 'training', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.training.filter(t => t.status === 'Overdue').length },
+      { id: 'change-control' as ActiveSection, labelKey: 'nav.changeControl', icon: ArrowLeftRight, module: 'change_control' },
+      { id: 'deviations' as ActiveSection, labelKey: 'nav.deviations', icon: AlertOctagon, module: 'deviations' },
+      { id: 'batch-records' as ActiveSection, labelKey: 'nav.batchRecords', icon: Package, module: 'batch_records' },
+      { id: 'suppliers' as ActiveSection, labelKey: 'nav.suppliers', icon: Truck, module: 'suppliers' },
+      { id: 'oos-oot' as ActiveSection, labelKey: 'nav.oosOot', icon: FlaskConical, module: 'oos_oot' },
+      { id: 'forms' as ActiveSection, labelKey: 'nav.forms', icon: FileSpreadsheet, module: 'forms' },
     ],
   },
   {
-    label: 'PILOTAGE',
+    labelKey: 'nav.governance',
     items: [
-      { id: 'reports' as ActiveSection, label: 'Reports & Analytics', icon: PieChart, module: 'reports' },
-      { id: 'compliance' as ActiveSection, label: 'Compliance', icon: CheckCircle2, module: 'compliance' },
+      { id: 'reports' as ActiveSection, labelKey: 'nav.reports', icon: PieChart, module: 'reports' },
+      { id: 'compliance' as ActiveSection, labelKey: 'nav.compliance', icon: CheckCircle2, module: 'compliance' },
     ],
   },
 ];
 
 const SETTINGS_ITEMS: NavItem[] = [
-  { id: 'user-management', label: 'User Management', icon: Users },
+  { id: 'user-management', labelKey: 'nav.userManagement', icon: Users },
 ];
+
+// Helper to resolve nested key from translation object
+function resolveTranslationKey(obj: Record<string, unknown>, keyPath: string): string {
+  const keys = keyPath.split('.');
+  let current: unknown = obj;
+  for (const key of keys) {
+    if (current && typeof current === 'object' && key in (current as Record<string, unknown>)) {
+      current = (current as Record<string, unknown>)[key];
+    } else {
+      return keyPath; // fallback to key path
+    }
+  }
+  return typeof current === 'string' ? current : keyPath;
+}
 
 export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle }: SidebarProps) {
   const { orgSettings } = useOrganization();
   const store = useQMSStore();
+  const t = useTranslation();
 
   const activeModules = orgSettings?.active_modules || [];
 
@@ -123,7 +144,7 @@ export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle }:
             </div>
             <div className="min-w-0">
               <h1 className="text-sm font-semibold text-sidebar-foreground truncate">QMS SaaS Pro</h1>
-              <p className="text-xs text-muted-foreground truncate">ISO 13485:2016</p>
+              <p className="text-xs text-muted-foreground truncate">{INDUSTRY_CONFIG[orgSettings?.industry_type as IndustryType]?.primaryStandard || 'QMS'}</p>
             </div>
           </div>
         )}
@@ -143,20 +164,21 @@ export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle }:
 
             return (
               <div key={groupIdx}>
-                {group.label && !collapsed && (
+                {group.labelKey && !collapsed && (
                   <div className="px-3 py-2">
                     <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      {group.label}
+                      {resolveTranslationKey(t as unknown as Record<string, unknown>, group.labelKey)}
                     </span>
                   </div>
                 )}
-                {group.label && collapsed && (
+                {group.labelKey && collapsed && (
                   <Separator className="my-2" />
                 )}
                 {visibleItems.map((item) => {
                   const isActive = activeSection === item.id;
                   const badgeCount = item.showBadge && item.getBadgeCount ? item.getBadgeCount(store) : 0;
                   const Icon = item.icon;
+                  const label = resolveTranslationKey(t as unknown as Record<string, unknown>, item.labelKey);
 
                   return (
                     <Button
@@ -172,7 +194,7 @@ export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle }:
                       <Icon className={cn('h-4 w-4 flex-shrink-0', isActive && 'text-primary')} />
                       {!collapsed && (
                         <>
-                          <span className="truncate text-sm">{item.label}</span>
+                          <span className="truncate text-sm">{label}</span>
                           {badgeCount > 0 && (
                             <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] text-xs px-1.5">
                               {badgeCount}
@@ -200,13 +222,14 @@ export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle }:
           <div className="px-3 py-2">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
               <Settings className="w-3 h-3" />
-              Paramètres
+              {t.nav.settings}
             </span>
           </div>
         )}
         {SETTINGS_ITEMS.filter(item => isItemVisible(item.module)).map((item) => {
           const isActive = activeSection === item.id;
           const Icon = item.icon;
+          const label = resolveTranslationKey(t as unknown as Record<string, unknown>, item.labelKey);
 
           return (
             <Button
@@ -220,7 +243,7 @@ export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle }:
               )}
             >
               <Icon className={cn('h-4 w-4 flex-shrink-0', isActive && 'text-primary')} />
-              {!collapsed && <span className="truncate text-sm">{item.label}</span>}
+              {!collapsed && <span className="truncate text-sm">{label}</span>}
             </Button>
           );
         })}

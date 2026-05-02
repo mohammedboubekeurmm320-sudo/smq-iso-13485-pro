@@ -26,9 +26,21 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { INDUSTRY_CONFIG } from '@/types/qms';
+import type { IndustryType } from '@/types/qms';
+import {
+  getChecklistById,
+  getChecklistForIndustry,
+  buildComplianceData,
+  COMPLIANCE_CHECKLISTS,
+} from '@/lib/compliance-checklists';
+import type { ComplianceClause as ChecklistClause, ClauseCategory } from '@/lib/compliance-checklists';
 
 // ---------------------------------------------------------------------------
-// Types
+// Types (for rendering)
 // ---------------------------------------------------------------------------
 
 type ClauseStatus = 'Compliant' | 'Partially Compliant' | 'Non-Compliant' | 'Not Assessed';
@@ -37,6 +49,8 @@ interface ComplianceClause {
   id: string;
   number: string;
   name: string;
+  description: string;
+  category: ClauseCategory;
   status: ClauseStatus;
   evidenceCount: number;
   evidence: { type: string; reference: string; title: string }[];
@@ -49,6 +63,31 @@ interface ComplianceGap {
   clause: string;
   description: string;
   recommendedAction: string;
+}
+
+// ---------------------------------------------------------------------------
+// Category section labels
+// ---------------------------------------------------------------------------
+
+const CATEGORY_SECTIONS: { key: ClauseCategory; label: string }[] = [
+  { key: 'quality_system', label: 'Quality System' },
+  { key: 'management', label: 'Management Responsibility' },
+  { key: 'resources', label: 'Resource Management' },
+  { key: 'realization', label: 'Product Realization' },
+  { key: 'measurement', label: 'Measurement & Analysis' },
+  { key: 'improvement', label: 'Improvement' },
+];
+
+// ---------------------------------------------------------------------------
+// Standard → checklist ID mapping
+// ---------------------------------------------------------------------------
+
+function standardToChecklistId(standard: string): string {
+  if (standard.includes('IVDR') || standard.includes('2017/746')) return 'ivdr';
+  if (standard.includes('ICH Q10')) return 'ichq10';
+  if (standard.includes('ISO 13485')) return 'iso13485';
+  // Default fallback
+  return 'iso13485';
 }
 
 // ---------------------------------------------------------------------------
@@ -67,8 +106,8 @@ function ComplianceGauge({ score, size = 180 }: { score: number; size?: number }
   else if (score < 80) color = 'hsl(38, 92%, 50%)'; // amber
 
   return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
+    <div className="relative" style={{ width: size, height: size }} role="img" aria-label={`Overall compliance score: ${score}%`}>
+      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
         <circle
           cx={center}
           cy={center}
@@ -168,8 +207,69 @@ export function ComplianceView() {
   const risks = store.risks;
   const changeControls = store.changeControls;
   const deviations = store.deviations;
+  const batchRecords = store.batchRecords;
+  const suppliers = store.suppliers;
 
   const [expandedClauses, setExpandedClauses] = useState<Set<string>>(new Set());
+
+  // -------------------------------------------------------------------------
+  // Industry config
+  // -------------------------------------------------------------------------
+
+  const industryType = orgSettings?.industry_type || 'medical_device';
+  const industryConfig = INDUSTRY_CONFIG[industryType as IndustryType] || INDUSTRY_CONFIG.medical_device;
+  const applicableStandards = orgSettings?.applicable_standards || [industryConfig.primaryStandard];
+
+  // -------------------------------------------------------------------------
+  // Checklist selection state — dropdown for applicable standards
+  // -------------------------------------------------------------------------
+
+  const defaultChecklistId = industryConfig.checklistId;
+  const [selectedChecklistId, setSelectedChecklistId] = useState<string>(defaultChecklistId);
+
+  // Available checklists based on applicable standards
+  const availableChecklists = useMemo(() => {
+    const seen = new Set<string>();
+    const result: { id: string; name: string; standard: string }[] = [];
+    for (const standard of applicableStandards) {
+      const checklistId = standardToChecklistId(standard);
+      const checklist = COMPLIANCE_CHECKLISTS[checklistId];
+      if (checklist && !seen.has(checklistId)) {
+        seen.add(checklistId);
+        result.push({ id: checklistId, name: checklist.name, standard: checklist.standard });
+      }
+    }
+    return result;
+  }, [applicableStandards]);
+
+  // If the selected checklist is no longer available (industry changed), reset
+  const activeChecklist = useMemo(() => {
+    if (availableChecklists.some(c => c.id === selectedChecklistId)) {
+      return COMPLIANCE_CHECKLISTS[selectedChecklistId];
+    }
+    return COMPLIANCE_CHECKLISTS[defaultChecklistId] || COMPLIANCE_CHECKLISTS.iso13485;
+  }, [selectedChecklistId, availableChecklists, defaultChecklistId]);
+
+  // -------------------------------------------------------------------------
+  // Build ComplianceData from store
+  // -------------------------------------------------------------------------
+
+  const complianceData = useMemo(() => buildComplianceData({
+    documents: documents.map(d => ({ status: d.status, type: d.type })),
+    capas: capas.map(c => ({ status: c.status, rootCauseAnalysis: c.rootCauseAnalysis })),
+    trainingItems: trainingItems.map(t => ({ status: t.status })),
+    audits: audits.map(a => ({ status: a.status })),
+    ncrs: ncrs.map(n => ({ status: n.status })),
+    risks: risks.map(r => ({ status: r.status })),
+    batchRecords: batchRecords.map(b => ({ status: b.status, productCode: b.productCode })),
+    suppliers: suppliers.map(s => ({ status: s.status })),
+    changeControls: changeControls.map(cc => ({ status: cc.status })),
+    deviations: deviations.map(d => ({ status: d.status })),
+  }), [documents, capas, trainingItems, audits, ncrs, risks, batchRecords, suppliers, changeControls, deviations]);
+
+  // -------------------------------------------------------------------------
+  // Toggle clause expansion
+  // -------------------------------------------------------------------------
 
   const toggleClause = (id: string) => {
     setExpandedClauses(prev => {
@@ -181,7 +281,7 @@ export function ComplianceView() {
   };
 
   // -------------------------------------------------------------------------
-  // Compliance calculations
+  // Compliance calculations — use industry-specific weights
   // -------------------------------------------------------------------------
 
   const docCompliance = documents.length > 0
@@ -204,231 +304,115 @@ export function ComplianceView() {
     ? (ncrs.filter(n => n.status === 'Closed').length / ncrs.length) * 100
     : 100;
 
+  const riskCompliance = risks.length > 0
+    ? (risks.filter(r => r.status !== 'Open').length / risks.length) * 100
+    : 100;
+
+  const batchCompliance = batchRecords.length > 0
+    ? (batchRecords.filter(b => b.status === 'Released').length / batchRecords.length) * 100
+    : 100;
+
+  const supplierCompliance = suppliers.length > 0
+    ? (suppliers.filter(s => s.status === 'Qualified').length / suppliers.length) * 100
+    : 100;
+
+  const w = industryConfig.complianceWeights;
   const overallScore = Math.round(
-    docCompliance * 0.25 +
-    capaCompliance * 0.25 +
-    trainingCompliance * 0.2 +
-    auditCompliance * 0.15 +
-    ncrResolutionRate * 0.15
+    docCompliance * w.documents +
+    capaCompliance * w.capas +
+    trainingCompliance * w.training +
+    auditCompliance * w.audits +
+    ncrResolutionRate * w.ncrs +
+    riskCompliance * w.risks +
+    batchCompliance * w.batchRecords +
+    supplierCompliance * w.suppliers
   );
 
   // -------------------------------------------------------------------------
-  // ISO 13485:2016 Compliance Checklist
+  // Build clause list from checklist + compute status
   // -------------------------------------------------------------------------
 
-  const isoChecklist = useMemo<ComplianceClause[]>(() => {
+  const complianceClauses = useMemo<ComplianceClause[]>(() => {
+    if (!activeChecklist) return [];
+
     const approvedDocs = documents.filter(d => d.status === 'Approved');
     const inReviewDocs = documents.filter(d => d.status === 'In Review');
     const closedCapas = capas.filter(c => c.status === 'Closed');
-    const openCapas = capas.filter(c => c.status !== 'Closed');
     const completedAudits = audits.filter(a => a.status === 'Completed');
     const completedTraining = trainingItems.filter(t => t.status === 'Completed');
     const closedNcrs = ncrs.filter(n => n.status === 'Closed');
-    const openNcrs = ncrs.filter(n => n.status !== 'Closed');
 
-    const computeStatus = (pct: number): ClauseStatus => {
-      if (pct >= 80) return 'Compliant';
-      if (pct >= 50) return 'Partially Compliant';
-      if (pct > 0) return 'Non-Compliant';
-      return 'Not Assessed';
+    // Map checklist status to display status
+    const mapStatus = (s: string): ClauseStatus => {
+      switch (s) {
+        case 'compliant': return 'Compliant';
+        case 'partially': return 'Partially Compliant';
+        case 'non_compliant': return 'Non-Compliant';
+        default: return 'Not Assessed';
+      }
     };
 
-    return [
-      // §4 Quality Management System
-      {
-        id: '4.1',
-        number: '4.1',
-        name: 'General Requirements',
-        status: computeStatus(docCompliance),
-        evidenceCount: documents.length,
-        evidence: documents.slice(0, 5).map(d => ({
-          type: 'Document',
-          reference: d.documentNumber,
-          title: d.title,
-        })),
-      },
-      {
-        id: '4.2',
-        number: '4.2',
-        name: 'Documentation Requirements',
-        status: computeStatus(docCompliance),
-        evidenceCount: approvedDocs.length,
-        evidence: approvedDocs.slice(0, 5).map(d => ({
-          type: 'Document',
-          reference: d.documentNumber,
-          title: d.title,
-        })),
-      },
-      {
-        id: '4.2.3',
-        number: '4.2.3',
-        name: 'Document Control',
-        status: computeStatus(
-          documents.length > 0
-            ? ((approvedDocs.length + inReviewDocs.length) / documents.length) * 100
-            : 0
-        ),
-        evidenceCount: approvedDocs.length + inReviewDocs.length,
-        evidence: [...approvedDocs, ...inReviewDocs].slice(0, 5).map(d => ({
-          type: 'Document',
-          reference: d.documentNumber,
-          title: `${d.title} (${d.status})`,
-        })),
-      },
-      {
-        id: '4.2.4',
-        number: '4.2.4',
-        name: 'Record Control',
-        status: computeStatus(docCompliance),
-        evidenceCount: documents.filter(d => d.type === 'Record' || d.type === 'Form').length,
-        evidence: documents.filter(d => d.type === 'Record' || d.type === 'Form').slice(0, 5).map(d => ({
-          type: 'Document',
-          reference: d.documentNumber,
-          title: d.title,
-        })),
-      },
+    // Build evidence for a clause based on category
+    const buildEvidence = (clause: ChecklistClause): { type: string; reference: string; title: string }[] => {
+      const evidence: { type: string; reference: string; title: string }[] = [];
+      switch (clause.category) {
+        case 'quality_system':
+          evidence.push(...approvedDocs.slice(0, 3).map(d => ({
+            type: 'Document', reference: d.documentNumber, title: d.title,
+          })));
+          evidence.push(...inReviewDocs.slice(0, 2).map(d => ({
+            type: 'Document', reference: d.documentNumber, title: `${d.title} (${d.status})`,
+          })));
+          break;
+        case 'management':
+          evidence.push(...audits.slice(0, 5).map(a => ({
+            type: 'Audit', reference: a.auditNumber, title: a.title,
+          })));
+          break;
+        case 'resources':
+          evidence.push(...trainingItems.slice(0, 5).map(t => ({
+            type: 'Training', reference: t.type, title: t.title,
+          })));
+          break;
+        case 'realization':
+          evidence.push(...risks.slice(0, 3).map(r => ({
+            type: 'Risk', reference: r.riskNumber, title: r.title,
+          })));
+          evidence.push(...batchRecords.slice(0, 2).map(b => ({
+            type: 'Batch Record', reference: b.lotNumber, title: b.productName,
+          })));
+          break;
+        case 'measurement':
+          evidence.push(...completedAudits.slice(0, 3).map(a => ({
+            type: 'Audit', reference: a.auditNumber, title: a.title,
+          })));
+          evidence.push(...ncrs.slice(0, 2).map(n => ({
+            type: 'NCR', reference: n.ncrNumber, title: n.title,
+          })));
+          break;
+        case 'improvement':
+          evidence.push(...closedCapas.slice(0, 5).map(c => ({
+            type: 'CAPA', reference: c.capaNumber, title: c.title,
+          })));
+          break;
+      }
+      return evidence;
+    };
 
-      // §5 Management Responsibility
-      {
-        id: '5',
-        number: '5',
-        name: 'Management Responsibility',
-        status: computeStatus(auditCompliance),
-        evidenceCount: audits.length,
-        evidence: audits.slice(0, 5).map(a => ({
-          type: 'Audit',
-          reference: a.auditNumber,
-          title: a.title,
-        })),
-      },
-
-      // §6 Resource Management
-      {
-        id: '6',
-        number: '6',
-        name: 'Resource Management',
-        status: computeStatus(trainingCompliance),
-        evidenceCount: trainingItems.length,
-        evidence: trainingItems.slice(0, 5).map(t => ({
-          type: 'Training',
-          reference: t.type,
-          title: t.title,
-        })),
-      },
-
-      // §7 Product Realization
-      {
-        id: '7.1',
-        number: '7.1',
-        name: 'Planning of Product Realization',
-        status: computeStatus(risks.length > 0 ? ((risks.filter(r => r.status !== 'Open').length / risks.length) * 100) : 0),
-        evidenceCount: risks.length,
-        evidence: risks.slice(0, 5).map(r => ({
-          type: 'Risk',
-          reference: r.riskNumber,
-          title: r.title,
-        })),
-      },
-      {
-        id: '7.5',
-        number: '7.5',
-        name: 'Production and Service Provision',
-        status: computeStatus(
-          store.batchRecords.length > 0
-            ? (store.batchRecords.filter(b => b.status === 'Released').length / store.batchRecords.length) * 100
-            : 0
-        ),
-        evidenceCount: store.batchRecords.length,
-        evidence: store.batchRecords.slice(0, 5).map(b => ({
-          type: 'Batch Record',
-          reference: b.lotNumber,
-          title: b.productName,
-        })),
-      },
-      {
-        id: '7.5.6',
-        number: '7.5.6',
-        name: 'Validation of Processes',
-        status: computeStatus(docCompliance),
-        evidenceCount: documents.filter(d => d.type === 'Validation Protocol').length,
-        evidence: documents.filter(d => d.type === 'Validation Protocol').slice(0, 5).map(d => ({
-          type: 'Document',
-          reference: d.documentNumber,
-          title: d.title,
-        })),
-      },
-      {
-        id: '7.5.9',
-        number: '7.5.9',
-        name: 'Traceability',
-        status: computeStatus(
-          store.batchRecords.length > 0
-            ? (store.batchRecords.filter(b => b.productCode).length / store.batchRecords.length) * 100
-            : 0
-        ),
-        evidenceCount: store.batchRecords.filter(b => b.productCode).length,
-        evidence: store.batchRecords.filter(b => b.productCode).slice(0, 5).map(b => ({
-          type: 'Batch Record',
-          reference: b.lotNumber,
-          title: `${b.productName} (${b.productCode})`,
-        })),
-      },
-
-      // §8 Measurement, Analysis, Improvement
-      {
-        id: '8.2',
-        number: '8.2',
-        name: 'Monitoring and Measurement',
-        status: computeStatus(auditCompliance),
-        evidenceCount: completedAudits.length,
-        evidence: completedAudits.slice(0, 5).map(a => ({
-          type: 'Audit',
-          reference: a.auditNumber,
-          title: a.title,
-        })),
-      },
-      {
-        id: '8.3',
-        number: '8.3',
-        name: 'Non-Conforming Product',
-        status: computeStatus(ncrResolutionRate),
-        evidenceCount: ncrs.length,
-        evidence: ncrs.slice(0, 5).map(n => ({
-          type: 'NCR',
-          reference: n.ncrNumber,
-          title: n.title,
-        })),
-      },
-      {
-        id: '8.4',
-        number: '8.4',
-        name: 'Analysis of Data',
-        status: computeStatus(
-          capas.length > 0
-            ? (capas.filter(c => c.rootCauseAnalysis).length / capas.length) * 100
-            : 0
-        ),
-        evidenceCount: capas.filter(c => c.rootCauseAnalysis).length,
-        evidence: capas.filter(c => c.rootCauseAnalysis).slice(0, 5).map(c => ({
-          type: 'CAPA',
-          reference: c.capaNumber,
-          title: c.title,
-        })),
-      },
-      {
-        id: '8.5',
-        number: '8.5',
-        name: 'Improvement',
-        status: computeStatus(capaCompliance),
-        evidenceCount: closedCapas.length,
-        evidence: closedCapas.slice(0, 5).map(c => ({
-          type: 'CAPA',
-          reference: c.capaNumber,
-          title: c.title,
-        })),
-      },
-    ];
-  }, [documents, capas, ncrs, audits, trainingItems, risks, store.batchRecords, docCompliance, capaCompliance, trainingCompliance, auditCompliance, ncrResolutionRate]);
+    return activeChecklist.clauses.map(clause => {
+      const rawStatus = clause.computeStatus(complianceData);
+      return {
+        id: clause.id,
+        number: clause.clause,
+        name: clause.title,
+        description: clause.description,
+        category: clause.category,
+        status: mapStatus(rawStatus),
+        evidenceCount: buildEvidence(clause).length,
+        evidence: buildEvidence(clause),
+      };
+    });
+  }, [activeChecklist, documents, capas, audits, trainingItems, ncrs, risks, batchRecords, complianceData]);
 
   // -------------------------------------------------------------------------
   // Compliance Gaps
@@ -462,7 +446,7 @@ export function ComplianceView() {
     }
 
     // CAPA gaps
-    const openCapas = capas.filter(c => c.status !== 'Closed');
+    const openCapasList = capas.filter(c => c.status !== 'Closed');
     const overdueCapas = capas.filter(c => c.status !== 'Closed' && new Date(c.dueDate) < new Date());
     if (overdueCapas.length > 0) {
       gaps.push({
@@ -474,13 +458,13 @@ export function ComplianceView() {
         recommendedAction: 'Escalate overdue CAPAs and allocate additional resources for closure.',
       });
     }
-    if (openCapas.length > 5) {
+    if (openCapasList.length > 5) {
       gaps.push({
         id: 'gap-open-capa',
         title: 'High Open CAPA Count',
         severity: 'Major',
         clause: '8.5',
-        description: `${openCapas.length} CAPAs are open, indicating potential systemic quality issues.`,
+        description: `${openCapasList.length} CAPAs are open, indicating potential systemic quality issues.`,
         recommendedAction: 'Conduct management review of open CAPAs and prioritize closure.',
       });
     }
@@ -512,8 +496,7 @@ export function ComplianceView() {
     }
 
     // Supplier gaps
-    const disqualifiedSuppliers = store.suppliers.filter(s => s.status === 'Disqualified');
-    const expiredSupplierReviews = store.suppliers.filter(s => s.nextReviewDate && new Date(s.nextReviewDate) < new Date());
+    const expiredSupplierReviews = suppliers.filter(s => s.nextReviewDate && new Date(s.nextReviewDate) < new Date());
     if (expiredSupplierReviews.length > 0) {
       gaps.push({
         id: 'gap-supplier-review',
@@ -539,25 +522,20 @@ export function ComplianceView() {
     }
 
     return gaps;
-  }, [documents, capas, ncrs, trainingItems, store.suppliers, changeControls]);
+  }, [documents, capas, ncrs, trainingItems, suppliers, changeControls]);
 
   // -------------------------------------------------------------------------
-  // Applicable standards
+  // Clause section grouping (by category, works for all checklists)
   // -------------------------------------------------------------------------
 
-  const applicableStandards = orgSettings?.applicable_standards || ['ISO 13485:2016'];
-
-  // -------------------------------------------------------------------------
-  // Clause section grouping
-  // -------------------------------------------------------------------------
-
-  const clauseSections = [
-    { section: '§4', title: 'Quality Management System', clauses: isoChecklist.filter(c => c.number.startsWith('4')) },
-    { section: '§5', title: 'Management Responsibility', clauses: isoChecklist.filter(c => c.number.startsWith('5')) },
-    { section: '§6', title: 'Resource Management', clauses: isoChecklist.filter(c => c.number.startsWith('6')) },
-    { section: '§7', title: 'Product Realization', clauses: isoChecklist.filter(c => c.number.startsWith('7')) },
-    { section: '§8', title: 'Measurement, Analysis, Improvement', clauses: isoChecklist.filter(c => c.number.startsWith('8')) },
-  ];
+  const clauseSections = useMemo(() => {
+    return CATEGORY_SECTIONS
+      .map(section => ({
+        ...section,
+        clauses: complianceClauses.filter(c => c.category === section.key),
+      }))
+      .filter(section => section.clauses.length > 0);
+  }, [complianceClauses]);
 
   // -------------------------------------------------------------------------
   // Summary counts
@@ -565,9 +543,22 @@ export function ComplianceView() {
 
   const statusCounts = useMemo(() => {
     const counts = { Compliant: 0, 'Partially Compliant': 0, 'Non-Compliant': 0, 'Not Assessed': 0 };
-    isoChecklist.forEach(c => { counts[c.status]++; });
+    complianceClauses.forEach(c => { counts[c.status]++; });
     return counts;
-  }, [isoChecklist]);
+  }, [complianceClauses]);
+
+  // -------------------------------------------------------------------------
+  // Sub-metrics for the weighted score display
+  // -------------------------------------------------------------------------
+
+  const subMetrics = useMemo(() => [
+    { label: `Document Compliance (${Math.round(w.documents * 100)}%)`, value: docCompliance, color: 'hsl(142, 76%, 36%)' },
+    { label: `CAPA Compliance (${Math.round(w.capas * 100)}%)`, value: capaCompliance, color: 'hsl(0, 84%, 60%)' },
+    { label: `Training (${Math.round(w.training * 100)}%)`, value: trainingCompliance, color: 'hsl(217, 91%, 60%)' },
+    { label: `Audits (${Math.round(w.audits * 100)}%)`, value: auditCompliance, color: 'hsl(280, 67%, 58%)' },
+    { label: `NCR Resolution (${Math.round(w.ncrs * 100)}%)`, value: ncrResolutionRate, color: 'hsl(38, 92%, 50%)' },
+    { label: `Risk Management (${Math.round(w.risks * 100)}%)`, value: riskCompliance, color: 'hsl(200, 80%, 50%)' },
+  ], [w, docCompliance, capaCompliance, trainingCompliance, auditCompliance, ncrResolutionRate, riskCompliance]);
 
   // -------------------------------------------------------------------------
   // Permission check
@@ -590,11 +581,33 @@ export function ComplianceView() {
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Shield className="h-6 w-6 text-primary" />Compliance
-        </h1>
-        <p className="text-muted-foreground mt-1">Regulatory compliance tracking, ISO 13485:2016 checklist, and gap analysis</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Shield className="h-6 w-6 text-primary" aria-hidden="true" />Compliance
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Regulatory compliance tracking for {industryConfig.label} — {industryConfig.primaryStandard}
+          </p>
+        </div>
+        {/* Checklist selector dropdown */}
+        {availableChecklists.length > 1 && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground whitespace-nowrap">Checklist:</span>
+            <Select value={selectedChecklistId} onValueChange={setSelectedChecklistId}>
+              <SelectTrigger className="w-[260px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {availableChecklists.map(checklist => (
+                  <SelectItem key={checklist.id} value={checklist.id}>
+                    {checklist.standard}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* ----------------------------------------------------------------- */}
@@ -605,16 +618,16 @@ export function ComplianceView() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Overall Compliance Score</CardTitle>
-            <CardDescription>Weighted composite of five key areas</CardDescription>
+            <CardDescription>Weighted composite — {industryConfig.label} weights</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center">
-            <ComplianceGauge score={overallScore} />
-            <div className="w-full mt-4 space-y-2.5">
-              <MetricBar label="Document Compliance (25%)" value={docCompliance} color="hsl(142, 76%, 36%)" />
-              <MetricBar label="CAPA Compliance (25%)" value={capaCompliance} color="hsl(0, 84%, 60%)" />
-              <MetricBar label="Training Compliance (20%)" value={trainingCompliance} color="hsl(217, 91%, 60%)" />
-              <MetricBar label="Audit Compliance (15%)" value={auditCompliance} color="hsl(280, 67%, 58%)" />
-              <MetricBar label="NCR Resolution Rate (15%)" value={ncrResolutionRate} color="hsl(38, 92%, 50%)" />
+            <div className="w-full max-w-[200px]">
+              <ComplianceGauge score={overallScore} />
+            </div>
+            <div className="w-full mt-4 space-y-2.5" aria-live="polite" aria-label="Compliance score details">
+              {subMetrics.map(m => (
+                <MetricBar key={m.label} label={m.label} value={m.value} color={m.color} />
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -779,32 +792,47 @@ export function ComplianceView() {
             Applicable Standards
           </CardTitle>
           <CardDescription>
-            Standards applicable to your organization ({orgSettings?.industry_type?.replace('_', ' ') || 'N/A'})
+            Standards applicable to your organization ({industryConfig.label})
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
-            {applicableStandards.map(standard => (
-              <div
-                key={standard}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border bg-muted/30"
-              >
-                <Shield className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium">{standard}</span>
-              </div>
-            ))}
+            {applicableStandards.map(standard => {
+              const checklistId = standardToChecklistId(standard);
+              const isActive = checklistId === (activeChecklist?.id || '');
+              return (
+                <button
+                  key={standard}
+                  onClick={() => {
+                    const cid = standardToChecklistId(standard);
+                    if (COMPLIANCE_CHECKLISTS[cid]) {
+                      setSelectedChecklistId(cid);
+                    }
+                  }}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
+                    isActive
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                      : 'bg-muted/30 hover:bg-muted/50'
+                  }`}
+                >
+                  <Shield className={`h-4 w-4 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <span className={`text-sm font-medium ${isActive ? 'text-primary' : ''}`}>{standard}</span>
+                  {isActive && <CheckCircle2 className="h-3.5 w-3.5 text-primary" />}
+                </button>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
 
       {/* ----------------------------------------------------------------- */}
-      {/* ISO 13485:2016 Compliance Checklist                               */}
+      {/* Compliance Checklist (industry-specific)                          */}
       {/* ----------------------------------------------------------------- */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <ListChecks className="h-5 w-5 text-primary" />
-            ISO 13485:2016 Compliance Checklist
+            {activeChecklist?.name || 'Compliance Checklist'}
           </CardTitle>
           <CardDescription>
             Assessment of compliance by clause — status calculated from actual QMS data
@@ -818,12 +846,12 @@ export function ComplianceView() {
               const sectionPct = sectionTotal > 0 ? Math.round((sectionCompliant / sectionTotal) * 100) : 0;
 
               return (
-                <div key={section.section} className="border rounded-lg overflow-hidden">
+                <div key={section.key} className="border rounded-lg overflow-hidden">
                   {/* Section header */}
                   <div className="flex items-center justify-between p-3 bg-muted/30">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm">{section.section}</span>
-                      <span className="text-sm text-muted-foreground">{section.title}</span>
+                      <span className="font-semibold text-sm">{section.label}</span>
+                      <Badge variant="outline" className="text-xs">{section.clauses.length} clauses</Badge>
                     </div>
                     <div className="flex items-center gap-2">
                       <Progress value={sectionPct} className="w-24 h-1.5" />
@@ -859,9 +887,12 @@ export function ComplianceView() {
                           </div>
                         </button>
 
-                        {/* Expanded evidence */}
+                        {/* Expanded evidence + description */}
                         {expandedClauses.has(clause.id) && (
                           <div className="px-4 pb-3 pl-11">
+                            {clause.description && (
+                              <p className="text-xs text-muted-foreground mb-2">{clause.description}</p>
+                            )}
                             <div className="rounded-lg border bg-muted/10 p-3">
                               <p className="text-xs font-medium text-muted-foreground mb-2">
                                 Supporting Evidence ({clause.evidence.length} of {clause.evidenceCount})

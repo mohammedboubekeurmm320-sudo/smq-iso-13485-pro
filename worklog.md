@@ -131,3 +131,34 @@ Stage Summary:
 - All modules compiled successfully
 - Fixed lucide-react deprecated icon import
 - Project builds cleanly
+
+---
+Task ID: Phase-5
+Agent: Main Agent (with 4 subagents + 1 rebuild)
+Task: Phase 5 — Multi-industry & Polish
+
+Work Log:
+- Added INDUSTRY_CONFIG to qms.ts with industry-specific weights, standards, modules, terminology
+- Created compliance-checklists.ts with 3 regulatory checklists (ISO 13485, ICH Q10, IVDR)
+- Updated SetupWizard: added missing biotech industry, fixed "Cosmétique / IVD" → "IVD"
+- Updated Sidebar: dynamic primary standard from INDUSTRY_CONFIG
+- Updated DashboardView: industry-aware KPI cards, compliance weights, conditional batch records
+- Updated ComplianceView: industry-specific checklists, standard switching, weighted scores
+- Created i18n system: types.ts, en.ts, fr.ts, index.tsx with ~200 translation strings
+- Updated Sidebar, DashboardView, SetupWizard with i18n translations
+- Created ThemeProvider and ThemeToggle for dark mode switching
+- Added accessibility: aria-labels, roles, keyboard nav across 8 components
+- Created ResponsiveTable wrapper for mobile table scrolling
+- Responsive chart sizing (h-48 sm:h-56 lg:h-72)
+- Skip-to-content link added to AppLayout
+- REBUILT all Phase 3-4 infrastructure after accidental deletion by subagents
+- 57 files recreated: API routes, Supabase config, services, auth context, hooks, migrations
+
+Stage Summary:
+- Full multi-industry support: 5 industries with specific standards, modules, compliance weights
+- 3 regulatory compliance checklists (ISO 13485, ICH Q10, IVDR)
+- Complete i18n system with EN/FR translations
+- Dark mode fully functional with system preference detection
+- Comprehensive accessibility improvements across 8 key components
+- All Phase 3-4 infrastructure rebuilt and verified
+- bun run lint = 0 errors, npx next build = compiled successfully (31 dynamic routes + middleware)

@@ -7,14 +7,15 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { OrganizationProvider, useOrganization } from '@/contexts/OrganizationContext';
 import { SetupWizard } from '@/components/setup/SetupWizard';
 import { GlobalSearch } from '@/components/shared/GlobalSearch';
+import { useI18n } from '@/lib/i18n';
 import type { ActiveSection, OrgSettings } from '@/types/qms';
 import {
   Bell,
   ChevronDown,
   LogOut,
   User,
-  Settings,
   Menu,
+  Globe,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -39,6 +40,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { currentUser, logout, switchUser } = useAuth();
   const { currentOrg, orgSettings, updateSettings } = useOrganization();
+  const { locale, setLocale, t } = useI18n();
   const storeUpdateOrganization = useQMSStore(state => state.updateOrganization);
   const profiles = useQMSStore(state => state.profiles);
   const capas = useQMSStore(state => state.capas);
@@ -135,6 +137,18 @@ function AppLayoutInner({ children }: AppLayoutProps) {
               )}
             </Button>
 
+            {/* Locale Switcher */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLocale(locale === 'en' ? 'fr' : 'en')}
+              className="flex items-center gap-1.5 h-9 px-2"
+              title={locale === 'en' ? 'Switch to French' : 'Passer en Anglais'}
+            >
+              <Globe className="h-4 w-4" />
+              <span className="text-xs font-medium uppercase">{locale}</span>
+            </Button>
+
             {/* User menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -163,7 +177,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuLabel className="text-xs text-muted-foreground">Switch User (Demo)</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-xs text-muted-foreground">{t.auth.switchUser} ({t.auth.demoMode})</DropdownMenuLabel>
                 {profiles.filter(p => p.id !== currentUser?.id).map(p => (
                   <DropdownMenuItem key={p.id} onClick={() => switchUser(p.id)}>
                     <User className="mr-2 h-4 w-4" />
@@ -173,7 +187,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout}>
                   <LogOut className="mr-2 h-4 w-4" />
-                  <span>Log out</span>
+                  <span>{t.auth.logout}</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

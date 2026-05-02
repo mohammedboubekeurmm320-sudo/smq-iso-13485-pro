@@ -46,54 +46,61 @@ import {
 } from '@/components/ui/table';
 import type { IndustryType, OrgSettings } from '@/types/qms';
 import { CORE_MODULES, OPTIONAL_MODULES, STANDARDS_BY_INDUSTRY } from '@/types/qms';
+import { useTranslation } from '@/lib/i18n';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const INDUSTRY_OPTIONS: { id: IndustryType; label: string; description: string; icon: React.ReactNode }[] = [
-  {
-    id: 'medical_device',
-    label: 'Dispositif Médical',
-    description: 'ISO 13485, MDR, FDA 21 CFR 820 — Dispositifs médicaux et équipements',
-    icon: <Factory className="h-8 w-8" />,
-  },
-  {
-    id: 'pharmaceutical',
-    label: 'Pharmaceutique',
-    description: 'ICH Q10, cGMP, FDA 21 CFR 210/211 — Médicaments et substances actives',
-    icon: <Pill className="h-8 w-8" />,
-  },
-  {
-    id: 'combination_product',
-    label: 'Les Deux',
-    description: 'Dispositifs médicaux et pharmaceutique — Produits combinés',
-    icon: <Layers className="h-8 w-8" />,
-  },
-  {
-    id: 'ivd',
-    label: 'Cosmétique / IVD',
-    description: 'IVDR, CLSI — Diagnostics in vitro et cosmétique',
-    icon: <FlaskConical className="h-8 w-8" />,
-  },
-];
+function useIndustryOptions() {
+  const t = useTranslation();
+  return [
+    {
+      id: 'medical_device' as IndustryType,
+      label: t.industries.medicalDevice,
+      description: 'ISO 13485, MDR, FDA 21 CFR 820',
+      icon: <Factory className="h-8 w-8" />,
+    },
+    {
+      id: 'pharmaceutical' as IndustryType,
+      label: t.industries.pharmaceutical,
+      description: 'ICH Q10, cGMP, FDA 21 CFR 210/211',
+      icon: <Pill className="h-8 w-8" />,
+    },
+    {
+      id: 'combination_product' as IndustryType,
+      label: t.industries.combinationProduct,
+      description: 'MDR + cGMP',
+      icon: <Layers className="h-8 w-8" />,
+    },
+    {
+      id: 'ivd' as IndustryType,
+      label: t.industries.ivd,
+      description: 'IVDR, CLSI',
+      icon: <FlaskConical className="h-8 w-8" />,
+    },
+  ];
+}
 
-const MODULE_INFO: Record<string, { label: string; icon: React.ReactNode; description: string }> = {
-  documents: { label: 'Documents', icon: <FileText className="h-5 w-5" />, description: 'Gestion du cycle de vie documentaire' },
-  capa: { label: 'CAPA', icon: <Shield className="h-5 w-5" />, description: 'Actions correctives et préventives' },
-  ncr: { label: 'Non-Conformités', icon: <AlertTriangle className="h-5 w-5" />, description: 'Gestion des non-conformités' },
-  audits: { label: 'Audits', icon: <ClipboardCheck className="h-5 w-5" />, description: 'Planification et suivi des audits' },
-  training: { label: 'Formation', icon: <GraduationCap className="h-5 w-5" />, description: 'Suivi de la formation et compétences' },
-  reports: { label: 'Rapports', icon: <BarChart3 className="h-5 w-5" />, description: 'Tableaux de bord et rapports' },
-  compliance: { label: 'Conformité', icon: <GitBranch className="h-5 w-5" />, description: 'Indicateurs de conformité réglementaire' },
-  risks: { label: 'Risques', icon: <AlertOctagon className="h-5 w-5" />, description: 'Analyse des risques ISO 14971' },
-  batch_records: { label: 'Lots de Fabrication', icon: <Package className="h-5 w-5" />, description: 'Enregistrements de lot et libération QA' },
-  suppliers: { label: 'Fournisseurs', icon: <Truck className="h-5 w-5" />, description: 'Qualification et suivi des fournisseurs' },
-  forms: { label: 'Formulaires', icon: <FileSpreadsheet className="h-5 w-5" />, description: 'Formulaires électroniques et enregistrements' },
-  change_control: { label: 'Contrôle des Changements', icon: <ArrowLeftRight className="h-5 w-5" />, description: 'Gestion des demandes de changement' },
-  deviations: { label: 'Déviations', icon: <AlertOctagon className="h-5 w-5" />, description: 'Enregistrement et suivi des déviations' },
-  oos_oot: { label: 'OOS/OOT', icon: <TestTube className="h-5 w-5" />, description: 'Investigations hors spécification / hors tendance' },
-};
+function useModuleInfo() {
+  const t = useTranslation();
+  return {
+    documents: { label: t.modules.documents.title, icon: <FileText className="h-5 w-5" />, description: '' },
+    capa: { label: t.modules.capa.title, icon: <Shield className="h-5 w-5" />, description: '' },
+    ncr: { label: t.modules.ncr.title, icon: <AlertTriangle className="h-5 w-5" />, description: '' },
+    audits: { label: t.modules.audit.title, icon: <ClipboardCheck className="h-5 w-5" />, description: '' },
+    training: { label: t.modules.training.title, icon: <GraduationCap className="h-5 w-5" />, description: '' },
+    reports: { label: t.modules.reports.title, icon: <BarChart3 className="h-5 w-5" />, description: '' },
+    compliance: { label: t.modules.compliance.title, icon: <GitBranch className="h-5 w-5" />, description: '' },
+    risks: { label: t.modules.risk.title, icon: <AlertOctagon className="h-5 w-5" />, description: '' },
+    batch_records: { label: t.modules.batch.title, icon: <Package className="h-5 w-5" />, description: '' },
+    suppliers: { label: t.modules.supplier.title, icon: <Truck className="h-5 w-5" />, description: '' },
+    forms: { label: t.nav.forms, icon: <FileSpreadsheet className="h-5 w-5" />, description: '' },
+    change_control: { label: t.nav.changeControl, icon: <ArrowLeftRight className="h-5 w-5" />, description: '' },
+    deviations: { label: t.modules.deviation.title, icon: <AlertOctagon className="h-5 w-5" />, description: '' },
+    oos_oot: { label: t.nav.oosOot, icon: <TestTube className="h-5 w-5" />, description: '' },
+  };
+}
 
 function getRecommendedModules(industry: IndustryType): string[] {
   const base = [...CORE_MODULES];
@@ -111,37 +118,6 @@ function getRecommendedModules(industry: IndustryType): string[] {
   }
 }
 
-const ORG_SIZES = [
-  { value: '1-10', label: '1–10 employés' },
-  { value: '11-50', label: '11–50 employés' },
-  { value: '51-200', label: '51–200 employés' },
-  { value: '200+', label: '200+ employés' },
-];
-
-const TEAM_ROLES = [
-  { value: 'admin', label: 'Administrateur' },
-  { value: 'quality_manager', label: 'Responsable Qualité' },
-  { value: 'auditor', label: 'Auditeur' },
-  { value: 'document_controller', label: 'Gestionnaire Documents' },
-  { value: 'executive', label: 'Direction' },
-  { value: 'operator', label: 'Opérateur' },
-];
-
-const COUNTRIES = [
-  { value: 'FR', label: 'France' },
-  { value: 'DE', label: 'Allemagne' },
-  { value: 'CH', label: 'Suisse' },
-  { value: 'BE', label: 'Belgique' },
-  { value: 'UK', label: 'Royaume-Uni' },
-  { value: 'NL', label: 'Pays-Bas' },
-  { value: 'IT', label: 'Italie' },
-  { value: 'ES', label: 'Espagne' },
-  { value: 'US', label: 'États-Unis' },
-  { value: 'CA', label: 'Canada' },
-  { value: 'JP', label: 'Japon' },
-  { value: 'OTHER', label: 'Autre' },
-];
-
 interface TeamMember {
   id: string;
   email: string;
@@ -153,16 +129,8 @@ interface SetupWizardProps {
   onCancel?: () => void;
 }
 
-const STEPS = [
-  { number: 1, label: 'Organisation' },
-  { number: 2, label: 'Secteur' },
-  { number: 3, label: 'Normes' },
-  { number: 4, label: 'Modules' },
-  { number: 5, label: 'Équipe' },
-  { number: 6, label: 'Récapitulatif' },
-];
-
 export function SetupWizard({ onComplete, onCancel }: SetupWizardProps) {
+  const t = useTranslation();
   const [currentStep, setCurrentStep] = useState(1);
 
   // Step 1 state
@@ -182,6 +150,15 @@ export function SetupWizard({ onComplete, onCancel }: SetupWizardProps) {
 
   // Step 5 state
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+
+  const STEPS = [
+    { number: 1, label: t.setup.organization },
+    { number: 2, label: t.setup.industry },
+    { number: 3, label: t.setup.standards },
+    { number: 4, label: t.setup.modules },
+    { number: 5, label: t.setup.team },
+    { number: 6, label: t.setup.summary },
+  ];
 
   // Derived values
   const availableStandards = useMemo(() => {
@@ -284,13 +261,13 @@ export function SetupWizard({ onComplete, onCancel }: SetupWizardProps) {
                 <Shield className="h-5 w-5 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-foreground">Configuration QMS</h1>
-                <p className="text-xs text-muted-foreground">Étape {currentStep} sur {STEPS.length}</p>
+                <h1 className="text-lg font-bold text-foreground">QMS {t.setup.organization}</h1>
+                <p className="text-xs text-muted-foreground">{currentStep}/{STEPS.length}</p>
               </div>
             </div>
             {onCancel && (
               <Button variant="ghost" size="sm" onClick={onCancel} className="text-muted-foreground">
-                <X className="h-4 w-4 mr-1" /> Annuler
+                <X className="h-4 w-4 mr-1" /> {t.setup.cancel}
               </Button>
             )}
           </div>
@@ -301,7 +278,6 @@ export function SetupWizard({ onComplete, onCancel }: SetupWizardProps) {
               <React.Fragment key={step.number}>
                 <button
                   onClick={() => {
-                    // Can only go back to completed steps
                     if (step.number < currentStep) {
                       setCurrentStep(step.number);
                     }
@@ -400,20 +376,20 @@ export function SetupWizard({ onComplete, onCancel }: SetupWizardProps) {
             onClick={goBack}
             disabled={currentStep === 1}
           >
-            <ChevronLeft className="h-4 w-4 mr-1" /> Précédent
+            <ChevronLeft className="h-4 w-4 mr-1" /> {t.setup.previous}
           </Button>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             {currentStep === 5 && (
-              <Badge variant="outline" className="text-xs">Étape optionnelle</Badge>
+              <Badge variant="outline" className="text-xs">{t.setup.optionalStep}</Badge>
             )}
           </div>
           {currentStep < 6 ? (
             <Button onClick={goNext} disabled={!canGoNext()}>
-              Suivant <ChevronRight className="h-4 w-4 ml-1" />
+              {t.setup.next} <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           ) : (
             <Button onClick={handleLaunch} className="bg-primary">
-              <Rocket className="h-4 w-4 mr-2" /> Lancer
+              <Rocket className="h-4 w-4 mr-2" /> {t.setup.launch}
             </Button>
           )}
         </div>
@@ -438,11 +414,35 @@ interface StepOrganisationProps {
 }
 
 function StepOrganisation({ orgName, setOrgName, country, setCountry, city, setCity, orgSize, setOrgSize }: StepOrganisationProps) {
+  const t = useTranslation();
+
+  const ORG_SIZES = [
+    { value: '1-10', label: '1–10' },
+    { value: '11-50', label: '11–50' },
+    { value: '51-200', label: '51–200' },
+    { value: '200+', label: '200+' },
+  ];
+
+  const COUNTRIES = [
+    { value: 'FR', label: 'France' },
+    { value: 'DE', label: 'Allemagne' },
+    { value: 'CH', label: 'Suisse' },
+    { value: 'BE', label: 'Belgique' },
+    { value: 'UK', label: 'Royaume-Uni' },
+    { value: 'NL', label: 'Pays-Bas' },
+    { value: 'IT', label: 'Italie' },
+    { value: 'ES', label: 'Espagne' },
+    { value: 'US', label: 'États-Unis' },
+    { value: 'CA', label: 'Canada' },
+    { value: 'JP', label: 'Japon' },
+    { value: 'OTHER', label: 'Autre' },
+  ];
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Informations de l&apos;Organisation</h2>
-        <p className="text-muted-foreground mt-1">Renseignez les informations de base de votre organisation</p>
+        <h2 className="text-2xl font-bold text-foreground">{t.setup.organization}</h2>
+        <p className="text-muted-foreground mt-1">{t.setup.companyName}</p>
       </div>
 
       <Card>
@@ -450,7 +450,7 @@ function StepOrganisation({ orgName, setOrgName, country, setCountry, city, setC
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="orgName" className="text-sm font-medium">
-                Nom de l&apos;organisation <span className="text-destructive">*</span>
+                {t.setup.companyName} <span className="text-destructive">*</span>
               </Label>
               <div className="relative">
                 <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -458,17 +458,17 @@ function StepOrganisation({ orgName, setOrgName, country, setCountry, city, setC
                   id="orgName"
                   value={orgName}
                   onChange={(e) => setOrgName(e.target.value)}
-                  placeholder="Ex: PharmaCorp France"
+                  placeholder="PharmaCorp"
                   className="pl-10"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Pays</Label>
+              <Label className="text-sm font-medium">{t.setup.selectCountry}</Label>
               <Select value={country} onValueChange={setCountry}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner un pays" />
+                  <SelectValue placeholder={t.setup.selectCountry} />
                 </SelectTrigger>
                 <SelectContent>
                   {COUNTRIES.map(c => (
@@ -479,16 +479,16 @@ function StepOrganisation({ orgName, setOrgName, country, setCountry, city, setC
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Ville</Label>
+              <Label className="text-sm font-medium">Ville / City</Label>
               <Input
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                placeholder="Ex: Paris"
+                placeholder="Paris"
               />
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label className="text-sm font-medium">Taille de l&apos;organisation</Label>
+              <Label className="text-sm font-medium">{t.setup.companySize}</Label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {ORG_SIZES.map(size => (
                   <button
@@ -513,7 +513,7 @@ function StepOrganisation({ orgName, setOrgName, country, setCountry, city, setC
 }
 
 // ============================================================================
-// Step 2: Secteur d'Activité
+// Step 2: Industry
 // ============================================================================
 
 interface StepSecteurProps {
@@ -522,15 +522,17 @@ interface StepSecteurProps {
 }
 
 function StepSecteur({ industry, onSelect }: StepSecteurProps) {
+  const t = useTranslation();
+  const industryOptions = useIndustryOptions();
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Secteur d&apos;Activité</h2>
-        <p className="text-muted-foreground mt-1">Sélectionnez votre secteur pour configurer automatiquement les normes et modules</p>
+        <h2 className="text-2xl font-bold text-foreground">{t.setup.industry}</h2>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {INDUSTRY_OPTIONS.map(opt => (
+        {industryOptions.map(opt => (
           <Card
             key={opt.id}
             className={`cursor-pointer transition-all hover:shadow-md ${
@@ -553,7 +555,7 @@ function StepSecteur({ industry, onSelect }: StepSecteurProps) {
                   <h3 className="font-semibold text-lg">{opt.label}</h3>
                   <p className="text-sm text-muted-foreground mt-1">{opt.description}</p>
                   {industry === opt.id && (
-                    <Badge className="mt-2" variant="default">Sélectionné</Badge>
+                    <Badge className="mt-2" variant="default">{t.setup.selected}</Badge>
                   )}
                 </div>
               </div>
@@ -566,7 +568,7 @@ function StepSecteur({ industry, onSelect }: StepSecteurProps) {
 }
 
 // ============================================================================
-// Step 3: Normes Applicables
+// Step 3: Standards
 // ============================================================================
 
 interface StepNormesProps {
@@ -576,21 +578,19 @@ interface StepNormesProps {
 }
 
 function StepNormes({ availableStandards, selectedStandards, toggleStandard }: StepNormesProps) {
+  const t = useTranslation();
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Normes Applicables</h2>
-        <p className="text-muted-foreground mt-1">
-          Sélectionnez les normes applicables à votre organisation.
-          Au moins une norme doit être sélectionnée.
-        </p>
+        <h2 className="text-2xl font-bold text-foreground">{t.setup.applicableStandards}</h2>
       </div>
 
       {availableStandards.length === 0 ? (
         <Card>
           <CardContent className="pt-6 text-center text-muted-foreground py-12">
             <AlertTriangle className="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
-            <p>Veuillez d&apos;abord sélectionner un secteur d&apos;activité</p>
+            <p>{t.setup.industry}</p>
           </CardContent>
         </Card>
       ) : (
@@ -598,7 +598,7 @@ function StepNormes({ availableStandards, selectedStandards, toggleStandard }: S
           <CardContent className="pt-6 space-y-1">
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm text-muted-foreground">
-                {selectedStandards.length} norme(s) sélectionnée(s)
+                {selectedStandards.length} {t.setup.selected.toLowerCase()}
               </p>
               <Button
                 variant="outline"
@@ -613,7 +613,7 @@ function StepNormes({ availableStandards, selectedStandards, toggleStandard }: S
                   }
                 }}
               >
-                {selectedStandards.length === availableStandards.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+                {selectedStandards.length === availableStandards.length ? '✕' : '✓'}
               </Button>
             </div>
             {availableStandards.map(standard => {
@@ -656,26 +656,25 @@ interface StepModulesProps {
 }
 
 function StepModules({ activeModules, toggleModule }: StepModulesProps) {
+  const t = useTranslation();
+  const moduleInfo = useModuleInfo();
   const coreModules = CORE_MODULES as readonly string[];
   const optionalModules = OPTIONAL_MODULES as readonly string[];
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Modules</h2>
-        <p className="text-muted-foreground mt-1">
-          Les modules de base sont inclus. Activez les modules optionnels selon vos besoins.
-        </p>
+        <h2 className="text-2xl font-bold text-foreground">{t.setup.modules}</h2>
       </div>
 
       {/* Core modules */}
       <div>
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-          <Lock className="h-4 w-4" /> Modules de base
+          <Lock className="h-4 w-4" /> {t.setup.coreModules}
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {coreModules.map(mod => {
-            const info = MODULE_INFO[mod];
+            const info = moduleInfo[mod as keyof typeof moduleInfo];
             if (!info) return null;
             return (
               <Card key={mod} className="border-2 border-primary/20 bg-primary/5">
@@ -689,7 +688,6 @@ function StepModules({ activeModules, toggleModule }: StepModulesProps) {
                         <p className="font-medium text-sm">{info.label}</p>
                         <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{info.description}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -702,11 +700,11 @@ function StepModules({ activeModules, toggleModule }: StepModulesProps) {
       {/* Optional modules */}
       <div>
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-          Modules optionnels
+          {t.setup.optionalModules}
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {optionalModules.map(mod => {
-            const info = MODULE_INFO[mod];
+            const info = moduleInfo[mod as keyof typeof moduleInfo];
             if (!info) return null;
             const isActive = activeModules.includes(mod);
             return (
@@ -728,7 +726,6 @@ function StepModules({ activeModules, toggleModule }: StepModulesProps) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{info.label}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{info.description}</p>
                     </div>
                     <Checkbox checked={isActive} onCheckedChange={() => toggleModule(mod)} />
                   </div>
@@ -743,7 +740,7 @@ function StepModules({ activeModules, toggleModule }: StepModulesProps) {
 }
 
 // ============================================================================
-// Step 5: Équipe
+// Step 5: Team
 // ============================================================================
 
 interface StepEquipeProps {
@@ -754,13 +751,22 @@ interface StepEquipeProps {
 }
 
 function StepEquipe({ teamMembers, addTeamMember, removeTeamMember, updateTeamMember }: StepEquipeProps) {
+  const t = useTranslation();
+
+  const TEAM_ROLES = [
+    { value: 'admin', label: 'Admin' },
+    { value: 'quality_manager', label: 'Quality Manager' },
+    { value: 'auditor', label: 'Auditor' },
+    { value: 'document_controller', label: 'Document Controller' },
+    { value: 'executive', label: 'Executive' },
+    { value: 'operator', label: 'Operator' },
+  ];
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Équipe</h2>
-        <p className="text-muted-foreground mt-1">
-          Ajoutez les membres de votre équipe (optionnel). Vous pourrez les ajouter plus tard.
-        </p>
+        <h2 className="text-2xl font-bold text-foreground">{t.setup.team}</h2>
+        <p className="text-muted-foreground mt-1">{t.setup.optionalStep}</p>
       </div>
 
       <Card>
@@ -769,7 +775,7 @@ function StepEquipe({ teamMembers, addTeamMember, removeTeamMember, updateTeamMe
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Email</TableHead>
+                  <TableHead>{t.auth.email}</TableHead>
                   <TableHead className="w-[200px]">Rôle</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
@@ -782,7 +788,7 @@ function StepEquipe({ teamMembers, addTeamMember, removeTeamMember, updateTeamMe
                         type="email"
                         value={member.email}
                         onChange={(e) => updateTeamMember(member.id, 'email', e.target.value)}
-                        placeholder="email@entreprise.com"
+                        placeholder="email@company.com"
                         className="h-9"
                       />
                     </TableCell>
@@ -812,13 +818,12 @@ function StepEquipe({ teamMembers, addTeamMember, removeTeamMember, updateTeamMe
           {teamMembers.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
               <Users className="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
-              <p className="text-sm">Aucun membre ajouté pour le moment</p>
-              <p className="text-xs mt-1">Vous pourrez inviter des membres plus tard depuis les paramètres</p>
+              <p className="text-sm">{t.common.noData}</p>
             </div>
           )}
 
           <Button variant="outline" onClick={addTeamMember} className="w-full">
-            <Plus className="h-4 w-4 mr-2" /> Ajouter un membre
+            <Plus className="h-4 w-4 mr-2" /> +
           </Button>
         </CardContent>
       </Card>
@@ -827,7 +832,7 @@ function StepEquipe({ teamMembers, addTeamMember, removeTeamMember, updateTeamMe
 }
 
 // ============================================================================
-// Step 6: Récapitulatif
+// Step 6: Summary
 // ============================================================================
 
 interface StepRecapitulatifProps {
@@ -842,14 +847,16 @@ interface StepRecapitulatifProps {
 }
 
 function StepRecapitulatif({ orgName, country, city, orgSize, industry, selectedStandards, activeModules, teamMembers }: StepRecapitulatifProps) {
-  const industryLabel = INDUSTRY_OPTIONS.find(o => o.id === industry)?.label || industry;
-  const countryLabel = COUNTRIES.find(c => c.value === country)?.label || country;
+  const t = useTranslation();
+  const industryOptions = useIndustryOptions();
+  const moduleInfo = useModuleInfo();
+
+  const industryLabel = industryOptions.find(o => o.id === industry)?.label || industry;
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Récapitulatif</h2>
-        <p className="text-muted-foreground mt-1">Vérifiez vos choix avant de lancer la configuration</p>
+        <h2 className="text-2xl font-bold text-foreground">{t.setup.summary}</h2>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -857,40 +864,40 @@ function StepRecapitulatif({ orgName, country, city, orgSize, industry, selected
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <Building2 className="h-4 w-4" /> Organisation
+              <Building2 className="h-4 w-4" /> {t.setup.organization}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-sm text-muted-foreground">Nom</span>
+              <span className="text-sm text-muted-foreground">{t.setup.companyName}</span>
               <span className="text-sm font-medium">{orgName}</span>
             </div>
             {country && (
               <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Pays</span>
-                <span className="text-sm font-medium">{countryLabel}</span>
+                <span className="text-sm text-muted-foreground">{t.setup.selectCountry}</span>
+                <span className="text-sm font-medium">{country}</span>
               </div>
             )}
             {city && (
               <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Ville</span>
+                <span className="text-sm text-muted-foreground">Ville / City</span>
                 <span className="text-sm font-medium">{city}</span>
               </div>
             )}
             {orgSize && (
               <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Taille</span>
-                <span className="text-sm font-medium">{ORG_SIZES.find(s => s.value === orgSize)?.label || orgSize}</span>
+                <span className="text-sm text-muted-foreground">{t.setup.companySize}</span>
+                <span className="text-sm font-medium">{orgSize}</span>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Secteur */}
+        {/* Industry */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <Factory className="h-4 w-4" /> Secteur d&apos;Activité
+              <Factory className="h-4 w-4" /> {t.setup.industry}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -898,11 +905,11 @@ function StepRecapitulatif({ orgName, country, city, orgSize, industry, selected
           </CardContent>
         </Card>
 
-        {/* Normes */}
+        {/* Standards */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <Shield className="h-4 w-4" /> Normes Applicables
+              <Shield className="h-4 w-4" /> {t.setup.applicableStandards}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -918,13 +925,13 @@ function StepRecapitulatif({ orgName, country, city, orgSize, industry, selected
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <Package className="h-4 w-4" /> Modules Actifs ({activeModules.length})
+              <Package className="h-4 w-4" /> {t.setup.modules} ({activeModules.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
               {activeModules.map(mod => {
-                const info = MODULE_INFO[mod];
+                const info = moduleInfo[mod as keyof typeof moduleInfo];
                 return (
                   <Badge key={mod} variant="secondary" className="text-xs">
                     {info?.label || mod}
@@ -939,7 +946,7 @@ function StepRecapitulatif({ orgName, country, city, orgSize, industry, selected
         <Card className={teamMembers.length > 0 ? 'md:col-span-2' : ''}>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-              <Users className="h-4 w-4" /> Équipe
+              <Users className="h-4 w-4" /> {t.setup.team}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -947,15 +954,15 @@ function StepRecapitulatif({ orgName, country, city, orgSize, industry, selected
               <div className="space-y-2">
                 {teamMembers.map(member => (
                   <div key={member.id} className="flex items-center justify-between text-sm">
-                    <span>{member.email || 'Email non renseigné'}</span>
+                    <span>{member.email || '—'}</span>
                     <Badge variant="outline" className="text-xs">
-                      {TEAM_ROLES.find(r => r.value === member.role)?.label || member.role}
+                      {member.role.replace('_', ' ')}
                     </Badge>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">Aucun membre ajouté — vous pourrez les inviter plus tard</p>
+              <p className="text-sm text-muted-foreground">{t.common.noData}</p>
             )}
           </CardContent>
         </Card>
