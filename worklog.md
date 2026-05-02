@@ -162,3 +162,36 @@ Stage Summary:
 - Comprehensive accessibility improvements across 8 key components
 - All Phase 3-4 infrastructure rebuilt and verified
 - bun run lint = 0 errors, npx next build = compiled successfully (31 dynamic routes + middleware)
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Phase 6 — Tests & Conformity
+
+Work Log:
+- Installed testing dependencies: vitest, @testing-library/react, @testing-library/jest-dom, @testing-library/user-event, jsdom, msw, @vitejs/plugin-react, happy-dom, @playwright/test
+- Created vitest.config.ts with jsdom environment, path aliases, coverage config
+- Created test setup file (src/__tests__/setup.ts) with Next.js router mocks and jest-dom integration
+- Created test directory structure: unit/, integration/, component/, e2e/, factories/
+- Created test data factories (src/__tests__/factories/index.ts) for all 17+ QMS entity types
+- Created 10 test files with 824 total tests:
+  - Unit: validation.test.ts (228 tests) — Zod schema validation for all 14 entity schemas
+  - Unit: compliance-checklists.test.ts (171 tests) — ISO 13485, ICH Q10, IVDR checklists + registry + buildComplianceData
+  - Unit: utils.test.ts (21 tests) — cn() and formatDate() utilities
+  - Unit: errors.test.ts (35 tests) — QMSError, ComplianceError, COMPLIANCE_CODES
+  - Unit: demo-store.test.ts (87 tests) — Zustand store CRUD, audit trail, org management
+  - Unit: api-client.test.ts (73 tests) — createCrudApi factory, apiFetch, entity APIs
+  - Unit: response.test.ts (32 tests) — apiSuccess, apiError, apiPaginated
+  - Unit: supabase-services.test.ts (77 tests) — BaseService CRUD, case mapping, audit trail
+  - Integration: api-routes.test.ts (48 tests) — Document/CAPA/NCR pipelines, filtering, pagination
+  - Component: shared-components.test.tsx (52 tests) — ThemeToggle, Button, Input, GlobalSearch
+- Created Playwright E2E config (playwright.config.ts) and smoke test suite (e2e/smoke.spec.ts, 7 tests)
+- Created Validation Protocol PDF (18 pages, IQ/OQ/PQ test plan for ISO 13485:2016 & 21 CFR Part 11)
+- Added test scripts to package.json: test, test:watch, test:coverage, test:unit, test:integration, test:component, test:e2e
+- Verified: all 824 tests pass (3.63s), lint clean, build successful
+
+Stage Summary:
+- Phase 6 complete with 824 unit/integration/component tests + 7 E2E test cases + comprehensive validation protocol
+- Test coverage across all critical QMS modules: validation schemas, compliance engine, store CRUD, API client, response helpers, Supabase services, React components
+- IQ/OQ/PQ validation protocol document generated as PDF for regulatory compliance
+- Zero lint errors, zero build errors
