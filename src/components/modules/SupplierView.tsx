@@ -214,7 +214,7 @@ export function SupplierView() {
             <Truck className="h-6 w-6 text-primary" />
             Suppliers
           </h1>
-          <p className="text-muted-foreground mt-1">Supplier qualification and management</p>
+          <p className="text-muted-foreground mt-1">Supplier qualification and management (ISO 13485 §7.4)</p>
         </div>
         {hasPermission('supplier.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>

@@ -258,7 +258,7 @@ export function ChangeControlView() {
             <ArrowLeftRight className="h-6 w-6 text-primary" />
             Change Control
           </h1>
-          <p className="text-muted-foreground mt-1">Change management and approval workflow</p>
+          <p className="text-muted-foreground mt-1">Change management and approval workflow (ISO 13485 §7.1)</p>
         </div>
         {hasPermission('ncr.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>

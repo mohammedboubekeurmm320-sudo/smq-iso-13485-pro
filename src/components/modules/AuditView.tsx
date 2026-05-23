@@ -219,7 +219,7 @@ export function AuditView() {
             <ClipboardCheck className="h-6 w-6 text-primary" />
             Audits
           </h1>
-          <p className="text-muted-foreground mt-1">Plan, conduct and track quality audits</p>
+          <p className="text-muted-foreground mt-1">Plan, conduct and track quality audits (ISO 13485 §8.2.4)</p>
         </div>
         {hasPermission('audit.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>

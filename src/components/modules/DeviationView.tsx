@@ -239,7 +239,7 @@ export function DeviationView() {
             <AlertTriangle className="h-6 w-6 text-primary" />
             Deviations
           </h1>
-          <p className="text-muted-foreground mt-1">Deviation recording, investigation, and management</p>
+          <p className="text-muted-foreground mt-1">Deviation recording, investigation, and management (ISO 13485 §8.3)</p>
         </div>
         {hasPermission('ncr.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>

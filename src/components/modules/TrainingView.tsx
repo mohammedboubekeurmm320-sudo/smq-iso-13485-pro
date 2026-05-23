@@ -213,7 +213,7 @@ export function TrainingView() {
             <GraduationCap className="h-6 w-6 text-primary" />
             Training
           </h1>
-          <p className="text-muted-foreground mt-1">Training management and compliance tracking</p>
+          <p className="text-muted-foreground mt-1">Training management and compliance tracking (ISO 13485 §6.2)</p>
         </div>
         {hasPermission('training.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>

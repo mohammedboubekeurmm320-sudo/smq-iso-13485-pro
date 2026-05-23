@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { Capa, CapaStatus, CapaType, CapaPriority, CapaSource, RootCauseCategory } from '@/types/qms';
 import {
   Shield, Plus, Search, Eye, ArrowRight, CheckCircle2, AlertTriangle,
-  Clock, XCircle, ChevronDown, ChevronUp, AlertCircle,
+  Clock, XCircle, ChevronDown, ChevronUp, AlertCircle, Link2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -178,7 +178,7 @@ export function CapaView() {
             <Shield className="h-6 w-6 text-primary" />
             CAPA Management
           </h1>
-          <p className="text-muted-foreground mt-1">Corrective and Preventive Actions</p>
+          <p className="text-muted-foreground mt-1">Corrective and Preventive Actions (ISO 13485 §8.5.2 / §8.5.3)</p>
         </div>
         {hasPermission('capa.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -459,6 +459,12 @@ export function CapaView() {
                   <Badge variant="outline" className={selectedCapa.type === 'Corrective' ? 'border-red-300 text-red-700' : 'border-blue-300 text-blue-700'}>{selectedCapa.type}</Badge>
                   {selectedCapa.priority && <Badge className={cn(priorityColors[selectedCapa.priority])} variant="secondary">{selectedCapa.priority}</Badge>}
                   {selectedCapa.source && <Badge variant="outline">{selectedCapa.source}</Badge>}
+                  {selectedCapa.sourceReferenceId && (
+                    <Badge variant="outline" className="border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400">
+                      <Link2 className="h-3 w-3 mr-1" />
+                      Linked Non-Conformance
+                    </Badge>
+                  )}
                 </div>
 
                 {/* Status Flow */}
