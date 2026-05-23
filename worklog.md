@@ -221,3 +221,35 @@ Stage Summary:
 - CAPA detail dialog enhanced with linked NCR badge
 - All 15 QMS modules remain functional
 - Build passes successfully
+---
+Task ID: Netlify-Integration
+Agent: Main Agent (with 12 parallel subagents)
+Task: Integrate Netlify advanced templates into all QMS modules
+
+Work Log:
+- Analyzed Netlify version vs local codebase in detail (2 comparison subagents)
+- Created shared WizardForm component with step navigation, progress bar, validation
+- Enhanced CAPA module: simple dialog → 6-step wizard (Change Request, Description & Justification, Proposed Change, Risk & Impact Assessment, Approval & Assignment, Linked Records & Review) + e-signature for transitions
+- Enhanced Audit module: basic dialog → 5-step comprehensive wizard (Planning, Schedule & Team, Checklist, Execution & Findings, Response & Closure) with dynamic team/checklist/finding tables
+- Enhanced Risk module: simple dialog → 6-step wizard (Identification, Risk Assessment P×I×D, Evaluation, Mitigation Plan, Assignment & Links, Review) with 5×5 visual risk matrix
+- Enhanced Training module: simple dialog → 6-step wizard (Details, Content & Materials, Assignment & Schedule, Competency Assessment, Compliance & Certification, Review) with conditional fields
+- Enhanced Change Control module: simple dialog → 6-step wizard (Change Request, Description & Justification, Proposed Change, Risk & Impact, Approval & Assignment, Linked Records & Review) + bug fix for permission keys
+- Enhanced Deviation module: simple dialog → 5-step wizard (Identification, Deviation Details, Product & Lot Info, Risk & Assessment, Review) + bug fix for permission keys
+- Enhanced Batch Record module: added Raw Materials & Components sub-table, Step Templates with step types, materials indicator in main table
+- Enhanced Supplier module: added contact info, address, emergency contact, qualification method with icons/badges, re-qualification timeline visualization
+- Enhanced OOS/OOT module: basic form → 7-step wizard (Identification, Analytical Data, Phase I Investigation with checklist, Phase II Investigation, Disposition & Impact, Actions & CAPA, Review) with FDA/ICH references
+- Enhanced Dynamic Forms module: basic builder → 6-step wizard (Template Info, Field Builder, Field Configuration, Workflow & Rules, Compliance, Review) with 21 CFR Part 11 settings
+- Enhanced Compliance module: added Audit Trail table with 5 filters, CSV export, pagination, Pending Signatures section, 8 Report Template cards
+- Enhanced Reports module: 4 KPI cards → 8 with trends, functional time range filter, 9 report templates, enhanced previews with Recharts (PieChart, BarChart, LineChart, AreaChart), Management Review report
+- Fixed Emergency icon → Siren in SupplierView (lucide-react compatibility)
+- Updated types in qms.ts: added QualificationMethod, DeviationProductStage, RawMaterial, StepType, FormTemplateWorkflow, FormTemplateCompliance, changecontrol.* permissions, deviation.* permissions
+- Updated mock-data.ts with enriched supplier data, batch step types, raw materials
+
+Stage Summary:
+- Total code: 12,102 lines → 21,917 lines (+81% increase)
+- All 15 modules now have rich, production-quality forms matching or exceeding Netlify version
+- Multi-step wizards implemented for: CAPA (6), Audit (5), Risk (6), Training (6), Change Control (6), Deviation (5), OOS/OOT (7), Dynamic Forms (6)
+- Electronic Signatures added to modules that were missing them (CAPA, Risk, Training status transitions)
+- Permission key bugs fixed in ChangeControl and Deviation modules
+- Build passes with 0 errors
+- Dev server running on port 3000 (HTTP 200)

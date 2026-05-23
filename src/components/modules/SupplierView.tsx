@@ -4,10 +4,12 @@ import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn, formatDate } from '@/lib/utils';
-import type { Supplier, SupplierCategory, SupplierStatus } from '@/types/qms';
+import type { Supplier, SupplierCategory, SupplierStatus, QualificationMethod } from '@/types/qms';
 import {
   Truck, Plus, Search, ArrowRight, CheckCircle2, XCircle, AlertTriangle,
   Award, FileText, Edit3, Save, Star, CalendarClock, TrendingUp,
+  Globe, User, Mail, Phone, MapPin, Shield, ClipboardCheck,
+  Building2, Siren,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,6 +40,26 @@ const supplierCategories: SupplierCategory[] = [
   'Raw Material', 'Packaging', 'Equipment', 'Service',
   'Contract Manufacturer', 'Laboratory', 'Other',
 ];
+
+const qualificationMethods: QualificationMethod[] = [
+  'On-Site Audit', 'Questionnaire', 'Certificate Review', 'Third-Party Assessment', 'Historical Performance',
+];
+
+const qualificationMethodIcons: Record<QualificationMethod, React.ReactNode> = {
+  'On-Site Audit': <Shield className="h-3 w-3" />,
+  'Questionnaire': <ClipboardCheck className="h-3 w-3" />,
+  'Certificate Review': <Award className="h-3 w-3" />,
+  'Third-Party Assessment': <Building2 className="h-3 w-3" />,
+  'Historical Performance': <TrendingUp className="h-3 w-3" />,
+};
+
+const qualificationMethodBadgeColors: Record<QualificationMethod, string> = {
+  'On-Site Audit': 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
+  'Questionnaire': 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400',
+  'Certificate Review': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  'Third-Party Assessment': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  'Historical Performance': 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+};
 
 function getScoreColorClass(score: number): string {
   if (score >= 80) return 'text-green-600';
@@ -71,6 +93,20 @@ function isReviewOverdue(nextReviewDate?: string): boolean {
   return reviewDate < new Date();
 }
 
+function getDaysUntilReview(nextReviewDate?: string): number | null {
+  if (!nextReviewDate) return null;
+  const reviewDate = new Date(nextReviewDate);
+  const now = new Date();
+  return Math.ceil((reviewDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function getRequalStatus(nextReviewDate?: string): 'overdue' | 'due-soon' | 'ok' | 'none' {
+  if (!nextReviewDate) return 'none';
+  if (isReviewOverdue(nextReviewDate)) return 'overdue';
+  if (isReviewApproaching(nextReviewDate)) return 'due-soon';
+  return 'ok';
+}
+
 export function SupplierView() {
   const { currentUser, hasPermission } = useAuth();
   const store = useQMSStore();
@@ -87,7 +123,7 @@ export function SupplierView() {
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
 
-  // Create form state
+  // Create form state — existing
   const [formAutoCode, setFormAutoCode] = useState(true);
   const [formCode, setFormCode] = useState('');
   const [formName, setFormName] = useState('');
@@ -95,6 +131,21 @@ export function SupplierView() {
   const [formQualDate, setFormQualDate] = useState('');
   const [formNextReviewDate, setFormNextReviewDate] = useState('');
   const [formCertifications, setFormCertifications] = useState('');
+
+  // Create form state — new fields
+  const [formWebsite, setFormWebsite] = useState('');
+  const [formPrimaryContactName, setFormPrimaryContactName] = useState('');
+  const [formPrimaryContactEmail, setFormPrimaryContactEmail] = useState('');
+  const [formPrimaryContactPhone, setFormPrimaryContactPhone] = useState('');
+  const [formStreet, setFormStreet] = useState('');
+  const [formCity, setFormCity] = useState('');
+  const [formStateProvince, setFormStateProvince] = useState('');
+  const [formPostalCode, setFormPostalCode] = useState('');
+  const [formCountry, setFormCountry] = useState('');
+  const [formEmergencyContactName, setFormEmergencyContactName] = useState('');
+  const [formEmergencyContactPhone, setFormEmergencyContactPhone] = useState('');
+  const [formQualificationMethod, setFormQualificationMethod] = useState<QualificationMethod>('On-Site Audit');
+  const [formQualificationDocRef, setFormQualificationDocRef] = useState('');
 
   // Inline performance score editing
   const [editingScore, setEditingScore] = useState(false);
@@ -104,7 +155,10 @@ export function SupplierView() {
   const filteredSuppliers = suppliers.filter(s => {
     const matchesSearch = searchTerm === '' ||
       s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.supplierCode.toLowerCase().includes(searchTerm.toLowerCase());
+      s.supplierCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.primaryContactName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.city || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.country || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || s.status === statusFilter;
     const matchesCategory = categoryFilter === 'all' || s.category === categoryFilter;
     return matchesSearch && matchesStatus && matchesCategory;
@@ -139,6 +193,19 @@ export function SupplierView() {
     setFormQualDate('');
     setFormNextReviewDate('');
     setFormCertifications('');
+    setFormWebsite('');
+    setFormPrimaryContactName('');
+    setFormPrimaryContactEmail('');
+    setFormPrimaryContactPhone('');
+    setFormStreet('');
+    setFormCity('');
+    setFormStateProvince('');
+    setFormPostalCode('');
+    setFormCountry('');
+    setFormEmergencyContactName('');
+    setFormEmergencyContactPhone('');
+    setFormQualificationMethod('On-Site Audit');
+    setFormQualificationDocRef('');
   };
 
   const handleCreate = () => {
@@ -153,6 +220,19 @@ export function SupplierView() {
       nextReviewDate: formNextReviewDate ? new Date(formNextReviewDate).toISOString() : undefined,
       certifications: formCertifications ? formCertifications.split(',').map(c => c.trim()).filter(Boolean) : [],
       performanceScore: 0,
+      website: formWebsite || undefined,
+      primaryContactName: formPrimaryContactName || undefined,
+      primaryContactEmail: formPrimaryContactEmail || undefined,
+      primaryContactPhone: formPrimaryContactPhone || undefined,
+      street: formStreet || undefined,
+      city: formCity || undefined,
+      stateProvince: formStateProvince || undefined,
+      postalCode: formPostalCode || undefined,
+      country: formCountry || undefined,
+      emergencyContactName: formEmergencyContactName || undefined,
+      emergencyContactPhone: formEmergencyContactPhone || undefined,
+      qualificationMethod: formQualificationMethod,
+      qualificationDocRef: formQualificationDocRef || undefined,
       organizationId: 'org-001',
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
@@ -279,7 +359,7 @@ export function SupplierView() {
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search suppliers..."
+            placeholder="Search suppliers, contacts, locations..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9"
@@ -315,6 +395,7 @@ export function SupplierView() {
                   <TableHead>Name</TableHead>
                   <TableHead className="w-[130px]">Category</TableHead>
                   <TableHead className="w-[130px]">Status</TableHead>
+                  <TableHead className="w-[130px]">Qual. Method</TableHead>
                   <TableHead className="w-[140px]">Performance</TableHead>
                   <TableHead className="w-[110px]">Next Review</TableHead>
                 </TableRow>
@@ -323,12 +404,29 @@ export function SupplierView() {
                 {filteredSuppliers.map(supplier => (
                   <TableRow key={supplier.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => openDetail(supplier)}>
                     <TableCell className="font-mono text-xs">{supplier.supplierCode}</TableCell>
-                    <TableCell><p className="font-medium">{supplier.name}</p></TableCell>
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{supplier.name}</p>
+                        {supplier.city && supplier.country && (
+                          <p className="text-xs text-muted-foreground">{supplier.city}, {supplier.country}</p>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell><Badge variant="outline">{supplier.category}</Badge></TableCell>
                     <TableCell>
                       <Badge className={cn('text-xs', statusColors[supplier.status])} variant="secondary">
                         {supplier.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {supplier.qualificationMethod ? (
+                        <Badge className={cn('text-[10px] gap-1', qualificationMethodBadgeColors[supplier.qualificationMethod])} variant="secondary">
+                          {qualificationMethodIcons[supplier.qualificationMethod]}
+                          {supplier.qualificationMethod}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">-</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {supplier.performanceScore !== undefined && supplier.performanceScore > 0 ? (
@@ -369,7 +467,7 @@ export function SupplierView() {
                 ))}
                 {filteredSuppliers.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No suppliers found</TableCell>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No suppliers found</TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -378,54 +476,240 @@ export function SupplierView() {
         </CardContent>
       </Card>
 
-      {/* Create Supplier Dialog */}
+      {/* ====================== Create Supplier Dialog ====================== */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Create New Supplier</DialogTitle></DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="autoCode" className="text-sm">Auto-generate supplier code</Label>
-              <input
-                id="autoCode"
-                type="checkbox"
-                checked={formAutoCode}
-                onChange={(e) => setFormAutoCode(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-            </div>
-            {!formAutoCode && (
-              <div className="grid gap-2">
-                <Label>Supplier Code *</Label>
-                <Input value={formCode} onChange={(e) => setFormCode(e.target.value)} placeholder="SUP-XXX" />
+          <div className="grid gap-5 py-2">
+            {/* Basic Information */}
+            <div>
+              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                <Truck className="h-4 w-4" /> Basic Information
+              </h4>
+              <div className="grid gap-3">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="autoCode" className="text-sm">Auto-generate supplier code</Label>
+                  <input
+                    id="autoCode"
+                    type="checkbox"
+                    checked={formAutoCode}
+                    onChange={(e) => setFormAutoCode(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                </div>
+                {!formAutoCode && (
+                  <div className="grid gap-2">
+                    <Label>Supplier Code *</Label>
+                    <Input value={formCode} onChange={(e) => setFormCode(e.target.value)} placeholder="SUP-XXX" />
+                  </div>
+                )}
+                <div className="grid gap-2">
+                  <Label>Name *</Label>
+                  <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Supplier name" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Category</Label>
+                    <Select value={formCategory} onValueChange={(v) => setFormCategory(v as SupplierCategory)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {supplierCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Website</Label>
+                    <div className="relative">
+                      <Globe className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        value={formWebsite}
+                        onChange={(e) => setFormWebsite(e.target.value)}
+                        placeholder="https://example.com"
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Qualification Date</Label>
+                    <Input type="date" value={formQualDate} onChange={(e) => setFormQualDate(e.target.value)} />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Next Review Date</Label>
+                    <Input type="date" value={formNextReviewDate} onChange={(e) => setFormNextReviewDate(e.target.value)} />
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Certifications (comma separated)</Label>
+                  <Input value={formCertifications} onChange={(e) => setFormCertifications(e.target.value)} placeholder="ISO 9001, ISO 13485, ..." />
+                </div>
               </div>
-            )}
-            <div className="grid gap-2">
-              <Label>Name *</Label>
-              <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Supplier name" />
             </div>
-            <div className="grid gap-2">
-              <Label>Category</Label>
-              <Select value={formCategory} onValueChange={(v) => setFormCategory(v as SupplierCategory)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {supplierCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Qualification Date</Label>
-                <Input type="date" value={formQualDate} onChange={(e) => setFormQualDate(e.target.value)} />
+
+            <Separator />
+
+            {/* Primary Contact */}
+            <div>
+              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                <User className="h-4 w-4" /> Primary Contact
+              </h4>
+              <div className="grid gap-3">
+                <div className="grid gap-2">
+                  <Label>Contact Name</Label>
+                  <div className="relative">
+                    <User className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={formPrimaryContactName}
+                      onChange={(e) => setFormPrimaryContactName(e.target.value)}
+                      placeholder="Full name"
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Email</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        value={formPrimaryContactEmail}
+                        onChange={(e) => setFormPrimaryContactEmail(e.target.value)}
+                        placeholder="email@example.com"
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Phone</Label>
+                    <div className="relative">
+                      <Phone className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        value={formPrimaryContactPhone}
+                        onChange={(e) => setFormPrimaryContactPhone(e.target.value)}
+                        placeholder="+1 555 1234567"
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Label>Next Review Date</Label>
-                <Input type="date" value={formNextReviewDate} onChange={(e) => setFormNextReviewDate(e.target.value)} />
+            </div>
+
+            <Separator />
+
+            {/* Address */}
+            <div>
+              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                <MapPin className="h-4 w-4" /> Address
+              </h4>
+              <div className="grid gap-3">
+                <div className="grid gap-2">
+                  <Label>Street</Label>
+                  <Input
+                    value={formStreet}
+                    onChange={(e) => setFormStreet(e.target.value)}
+                    placeholder="Street address"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>City</Label>
+                    <Input
+                      value={formCity}
+                      onChange={(e) => setFormCity(e.target.value)}
+                      placeholder="City"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>State / Province</Label>
+                    <Input
+                      value={formStateProvince}
+                      onChange={(e) => setFormStateProvince(e.target.value)}
+                      placeholder="State or province"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Postal Code</Label>
+                    <Input
+                      value={formPostalCode}
+                      onChange={(e) => setFormPostalCode(e.target.value)}
+                      placeholder="Postal / ZIP code"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Country</Label>
+                    <Input
+                      value={formCountry}
+                      onChange={(e) => setFormCountry(e.target.value)}
+                      placeholder="Country"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="grid gap-2">
-              <Label>Certifications (comma separated)</Label>
-              <Input value={formCertifications} onChange={(e) => setFormCertifications(e.target.value)} placeholder="ISO 9001, ISO 13485, ..." />
+
+            <Separator />
+
+            {/* Emergency Contact */}
+            <div>
+              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                <Siren className="h-4 w-4" /> Emergency Contact
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Contact Name</Label>
+                  <Input
+                    value={formEmergencyContactName}
+                    onChange={(e) => setFormEmergencyContactName(e.target.value)}
+                    placeholder="Emergency contact name"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Phone</Label>
+                  <Input
+                    value={formEmergencyContactPhone}
+                    onChange={(e) => setFormEmergencyContactPhone(e.target.value)}
+                    placeholder="+1 555 9999999"
+                  />
+                </div>
+              </div>
             </div>
+
+            <Separator />
+
+            {/* Qualification */}
+            <div>
+              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                <Shield className="h-4 w-4" /> Qualification
+              </h4>
+              <div className="grid gap-3">
+                <div className="grid gap-2">
+                  <Label>Qualification Method *</Label>
+                  <Select value={formQualificationMethod} onValueChange={(v) => setFormQualificationMethod(v as QualificationMethod)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {qualificationMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Qualification Documents Reference</Label>
+                  <div className="relative">
+                    <FileText className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={formQualificationDocRef}
+                      onChange={(e) => setFormQualificationDocRef(e.target.value)}
+                      placeholder="QA-AUD-2024-XXX"
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <Button
               className="w-full"
               onClick={handleCreate}
@@ -437,9 +721,9 @@ export function SupplierView() {
         </DialogContent>
       </Dialog>
 
-      {/* Detail Dialog */}
+      {/* ====================== Detail Dialog ====================== */}
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
           {selectedSupplier && (
             <>
               <DialogHeader>
@@ -449,12 +733,18 @@ export function SupplierView() {
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                {/* Status Badge */}
+                {/* Status Badge & Category */}
                 <div className="flex flex-wrap gap-2">
                   <Badge className={cn(statusColors[selectedSupplier.status])} variant="secondary">
                     {selectedSupplier.status}
                   </Badge>
                   {selectedSupplier.category && <Badge variant="outline">{selectedSupplier.category}</Badge>}
+                  {selectedSupplier.qualificationMethod && (
+                    <Badge className={cn('gap-1', qualificationMethodBadgeColors[selectedSupplier.qualificationMethod])} variant="secondary">
+                      {qualificationMethodIcons[selectedSupplier.qualificationMethod]}
+                      {selectedSupplier.qualificationMethod}
+                    </Badge>
+                  )}
                 </div>
 
                 {/* Status Flow Visualization */}
@@ -486,6 +776,84 @@ export function SupplierView() {
                   )}
                 </div>
 
+                {/* Contact Information Section */}
+                {(selectedSupplier.primaryContactName || selectedSupplier.primaryContactEmail || selectedSupplier.primaryContactPhone || selectedSupplier.website) && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
+                      <User className="h-4 w-4" /> Contact Information
+                    </h4>
+                    <Card>
+                      <CardContent className="pt-3 pb-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                          {selectedSupplier.primaryContactName && (
+                            <div className="flex items-center gap-2">
+                              <User className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                              <span className="text-muted-foreground">Primary:</span>
+                              <span className="font-medium">{selectedSupplier.primaryContactName}</span>
+                            </div>
+                          )}
+                          {selectedSupplier.primaryContactEmail && (
+                            <div className="flex items-center gap-2">
+                              <Mail className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                              <span className="text-muted-foreground">Email:</span>
+                              <a href={`mailto:${selectedSupplier.primaryContactEmail}`} className="font-medium text-primary hover:underline truncate">
+                                {selectedSupplier.primaryContactEmail}
+                              </a>
+                            </div>
+                          )}
+                          {selectedSupplier.primaryContactPhone && (
+                            <div className="flex items-center gap-2">
+                              <Phone className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                              <span className="text-muted-foreground">Phone:</span>
+                              <span className="font-medium">{selectedSupplier.primaryContactPhone}</span>
+                            </div>
+                          )}
+                          {selectedSupplier.website && (
+                            <div className="flex items-center gap-2">
+                              <Globe className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                              <span className="text-muted-foreground">Web:</span>
+                              <a href={selectedSupplier.website} target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline truncate">
+                                {selectedSupplier.website}
+                              </a>
+                            </div>
+                          )}
+                          {selectedSupplier.emergencyContactName && (
+                            <div className="flex items-center gap-2 sm:col-span-2">
+                              <Siren className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
+                              <span className="text-muted-foreground">Emergency:</span>
+                              <span className="font-medium">{selectedSupplier.emergencyContactName}</span>
+                              {selectedSupplier.emergencyContactPhone && (
+                                <span className="text-muted-foreground">({selectedSupplier.emergencyContactPhone})</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Address Section */}
+                {(selectedSupplier.street || selectedSupplier.city || selectedSupplier.country) && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
+                      <MapPin className="h-4 w-4" /> Address
+                    </h4>
+                    <Card>
+                      <CardContent className="pt-3 pb-3">
+                        <div className="text-sm">
+                          {selectedSupplier.street && <p className="font-medium">{selectedSupplier.street}</p>}
+                          <p>
+                            {[selectedSupplier.city, selectedSupplier.stateProvince].filter(Boolean).join(', ')}
+                            {selectedSupplier.postalCode ? ` ${selectedSupplier.postalCode}` : ''}
+                          </p>
+                          {selectedSupplier.country && <p className="text-muted-foreground">{selectedSupplier.country}</p>}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
                 {/* Supplier Metadata */}
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                   <div>
@@ -514,24 +882,6 @@ export function SupplierView() {
                       <span className="font-medium">{formatDate(selectedSupplier.qualificationDate)}</span>
                     </div>
                   )}
-                  {selectedSupplier.nextReviewDate && (
-                    <div>
-                      <span className="text-muted-foreground">Next Review:</span>{' '}
-                      <span className={cn(
-                        'font-medium',
-                        isReviewOverdue(selectedSupplier.nextReviewDate) ? 'text-red-600' :
-                        isReviewApproaching(selectedSupplier.nextReviewDate) ? 'text-amber-600' : ''
-                      )}>
-                        {formatDate(selectedSupplier.nextReviewDate)}
-                      </span>
-                      {isReviewOverdue(selectedSupplier.nextReviewDate) && (
-                        <Badge variant="destructive" className="ml-2 text-[10px]">Overdue</Badge>
-                      )}
-                      {isReviewApproaching(selectedSupplier.nextReviewDate) && !isReviewOverdue(selectedSupplier.nextReviewDate) && (
-                        <Badge variant="outline" className="ml-2 text-[10px] border-amber-300 text-amber-700">Due Soon</Badge>
-                      )}
-                    </div>
-                  )}
                   <div>
                     <span className="text-muted-foreground">Created:</span>{' '}
                     <span className="font-medium">{formatDate(selectedSupplier.createdAt)}</span>
@@ -539,6 +889,121 @@ export function SupplierView() {
                 </div>
 
                 <Separator />
+
+                {/* Qualification Details Section */}
+                <div>
+                  <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
+                    <Shield className="h-4 w-4" /> Qualification Details
+                  </h4>
+                  <Card>
+                    <CardContent className="pt-3 pb-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Method:</span>{' '}
+                          {selectedSupplier.qualificationMethod ? (
+                            <Badge className={cn('ml-1 gap-1', qualificationMethodBadgeColors[selectedSupplier.qualificationMethod])} variant="secondary">
+                              {qualificationMethodIcons[selectedSupplier.qualificationMethod]}
+                              {selectedSupplier.qualificationMethod}
+                            </Badge>
+                          ) : <span className="text-muted-foreground">Not specified</span>}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Documents Ref:</span>{' '}
+                          {selectedSupplier.qualificationDocRef ? (
+                            <span className="font-mono font-medium ml-1">{selectedSupplier.qualificationDocRef}</span>
+                          ) : <span className="text-muted-foreground">Not specified</span>}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Next Review:</span>{' '}
+                          {selectedSupplier.nextReviewDate ? (
+                            <span className={cn(
+                              'font-medium ml-1',
+                              isReviewOverdue(selectedSupplier.nextReviewDate) ? 'text-red-600' :
+                              isReviewApproaching(selectedSupplier.nextReviewDate) ? 'text-amber-600' : ''
+                            )}>
+                              {formatDate(selectedSupplier.nextReviewDate)}
+                            </span>
+                          ) : <span className="text-muted-foreground">Not scheduled</span>}
+                        </div>
+                        {selectedSupplier.qualificationDate && (
+                          <div>
+                            <span className="text-muted-foreground">Qualified On:</span>{' '}
+                            <span className="font-medium ml-1">{formatDate(selectedSupplier.qualificationDate)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Re-qualification Timeline Visualization */}
+                <div>
+                  <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
+                    <CalendarClock className="h-4 w-4" /> Re-qualification Timeline
+                  </h4>
+                  {(() => {
+                    const requalStatus = getRequalStatus(selectedSupplier.nextReviewDate);
+                    const daysLeft = getDaysUntilReview(selectedSupplier.nextReviewDate);
+
+                    if (requalStatus === 'none') {
+                      return (
+                        <div className="bg-muted/50 rounded-md p-3 text-sm text-muted-foreground">
+                          No re-qualification review scheduled.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-2">
+                        {/* Visual timeline bar */}
+                        <div className="relative h-3 w-full bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              'h-full rounded-full transition-all',
+                              requalStatus === 'overdue' ? 'bg-red-500' :
+                              requalStatus === 'due-soon' ? 'bg-amber-500' :
+                              'bg-green-500'
+                            )}
+                            style={{
+                              width: requalStatus === 'overdue' ? '100%' :
+                              `${Math.max(5, Math.min(95, daysLeft !== null ? 100 - (daysLeft / 365 * 100) : 50))}%`
+                            }}
+                          />
+                        </div>
+                        {/* Status indicators */}
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium',
+                            requalStatus === 'overdue' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                            requalStatus === 'due-soon' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                            'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          )}>
+                            {requalStatus === 'overdue' ? (
+                              <><XCircle className="h-3 w-3" /> Overdue</>
+                            ) : requalStatus === 'due-soon' ? (
+                              <><AlertTriangle className="h-3 w-3" /> Due Soon</>
+                            ) : (
+                              <><CheckCircle2 className="h-3 w-3" /> On Track</>
+                            )}
+                          </div>
+                          {daysLeft !== null && (
+                            <span className={cn(
+                              'text-sm',
+                              requalStatus === 'overdue' ? 'text-red-600 font-medium' :
+                              requalStatus === 'due-soon' ? 'text-amber-600' :
+                              'text-muted-foreground'
+                            )}>
+                              {daysLeft < 0
+                                ? `${Math.abs(daysLeft)} days overdue`
+                                : `${daysLeft} days remaining`
+                              }
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
 
                 {/* Certifications */}
                 {selectedSupplier.certifications && selectedSupplier.certifications.length > 0 && (
@@ -588,7 +1053,6 @@ export function SupplierView() {
                     <Card>
                       <CardContent className="pt-3 pb-3">
                         <div className="flex items-center gap-4">
-                          {/* Score bar */}
                           <div className="flex-1">
                             <div className="flex items-center justify-between mb-1">
                               <span className={cn(

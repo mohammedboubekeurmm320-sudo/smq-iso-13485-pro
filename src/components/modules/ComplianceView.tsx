@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -20,17 +20,36 @@ import {
   ArrowRight,
   Clock,
   ListChecks,
+  Download,
+  Search,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  BarChart3,
+  TrendingUp,
+  GraduationCap,
+  ClipboardCheck,
+  ShieldAlert,
+  FolderOpen,
+  Truck,
+  Package,
+  PenLine,
+  Users,
+  Eye,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
 import { INDUSTRY_CONFIG } from '@/types/qms';
-import type { IndustryType } from '@/types/qms';
+import type { IndustryType, AuditAction } from '@/types/qms';
 import {
   getChecklistById,
   getChecklistForIndustry,
@@ -79,7 +98,103 @@ const CATEGORY_SECTIONS: { key: ClauseCategory; label: string }[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Standard → checklist ID mapping
+// Audit trail filter constants
+// ---------------------------------------------------------------------------
+
+const AUDIT_ACTIONS: AuditAction[] = ['CREATE', 'UPDATE', 'DELETE', 'APPROVE', 'REJECT', 'SIGN', 'LOGIN', 'EXPORT'];
+
+const TABLE_MODULES = [
+  { value: 'all', label: 'All Modules' },
+  { value: 'Document', label: 'Documents' },
+  { value: 'Capa', label: 'CAPA' },
+  { value: 'NonConformance', label: 'NCR' },
+  { value: 'Audit', label: 'Audits' },
+  { value: 'Risk', label: 'Risks' },
+  { value: 'Training', label: 'Training' },
+  { value: 'BatchRecord', label: 'Batch Records' },
+  { value: 'Supplier', label: 'Suppliers' },
+  { value: 'ChangeControl', label: 'Change Controls' },
+  { value: 'Deviation', label: 'Deviations' },
+  { value: 'FormTemplate', label: 'Form Templates' },
+  { value: 'FormInstance', label: 'Form Instances' },
+  { value: 'Profile', label: 'Profiles' },
+];
+
+const ITEMS_PER_PAGE = 20;
+
+// ---------------------------------------------------------------------------
+// Report templates
+// ---------------------------------------------------------------------------
+
+const REPORT_TEMPLATES = [
+  {
+    id: 'rt-capa',
+    title: 'CAPA Summary',
+    description: 'Overview of all CAPAs with status breakdown, aging analysis, and effectiveness metrics.',
+    icon: ClipboardCheck,
+    color: 'text-red-500',
+    bg: 'bg-red-100 dark:bg-red-900/30',
+  },
+  {
+    id: 'rt-ncr',
+    title: 'NCR Trend',
+    description: 'Trend analysis of non-conformances by type, severity, and source over time.',
+    icon: TrendingUp,
+    color: 'text-amber-500',
+    bg: 'bg-amber-100 dark:bg-amber-900/30',
+  },
+  {
+    id: 'rt-training',
+    title: 'Training Compliance',
+    description: 'Training completion rates, overdue items, and competency gap analysis.',
+    icon: GraduationCap,
+    color: 'text-green-500',
+    bg: 'bg-green-100 dark:bg-green-900/30',
+  },
+  {
+    id: 'rt-audit',
+    title: 'Audit Findings',
+    description: 'Summary of audit findings, classification, and corrective action status.',
+    icon: ShieldAlert,
+    color: 'text-purple-500',
+    bg: 'bg-purple-100 dark:bg-purple-900/30',
+  },
+  {
+    id: 'rt-risk',
+    title: 'Risk Assessment',
+    description: 'Risk matrix, RPN distribution, and mitigation effectiveness report.',
+    icon: BarChart3,
+    color: 'text-orange-500',
+    bg: 'bg-orange-100 dark:bg-orange-900/30',
+  },
+  {
+    id: 'rt-docs',
+    title: 'Document Status',
+    description: 'Document lifecycle status, review cycle tracking, and approval metrics.',
+    icon: FolderOpen,
+    color: 'text-teal-500',
+    bg: 'bg-teal-100 dark:bg-teal-900/30',
+  },
+  {
+    id: 'rt-supplier',
+    title: 'Supplier Performance',
+    description: 'Supplier qualification status, performance scores, and review schedule.',
+    icon: Truck,
+    color: 'text-indigo-500',
+    bg: 'bg-indigo-100 dark:bg-indigo-900/30',
+  },
+  {
+    id: 'rt-batch',
+    title: 'Batch Release',
+    description: 'Batch record status, QA release metrics, and manufacturing compliance.',
+    icon: Package,
+    color: 'text-cyan-500',
+    bg: 'bg-cyan-100 dark:bg-cyan-900/30',
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Standard -> checklist ID mapping
 // ---------------------------------------------------------------------------
 
 function standardToChecklistId(standard: string): string {
@@ -88,6 +203,30 @@ function standardToChecklistId(standard: string): string {
   if (standard.includes('ISO 13485')) return 'iso13485';
   // Default fallback
   return 'iso13485';
+}
+
+// ---------------------------------------------------------------------------
+// CSV Export utility
+// ---------------------------------------------------------------------------
+
+function exportAuditTrailCSV(data: { timestamp: string; action: string; tableName: string; recordId: string; user: string; details: string }[]) {
+  const headers = ['Timestamp', 'Action', 'Table/Module', 'Record ID', 'User', 'Details'];
+  const csvRows = [
+    headers.join(','),
+    ...data.map(row =>
+      [row.timestamp, row.action, row.tableName, row.recordId, `"${row.user}"`, `"${row.details.replace(/"/g, '""')}"`].join(',')
+    ),
+  ];
+  const csvString = csvRows.join('\n');
+  const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +330,97 @@ function ClauseStatusBadge({ status }: { status: ClauseStatus }) {
 }
 
 // ---------------------------------------------------------------------------
+// Action badge for audit trail
+// ---------------------------------------------------------------------------
+
+function AuditActionBadge({ action }: { action: AuditAction }) {
+  const config: Record<AuditAction, { className: string }> = {
+    'CREATE': { className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+    'UPDATE': { className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+    'DELETE': { className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+    'APPROVE': { className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    'REJECT': { className: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' },
+    'SIGN': { className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+    'LOGIN': { className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+    'EXPORT': { className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  };
+  const c = config[action];
+  return (
+    <Badge className={cn('text-xs font-mono', c.className)} variant="secondary">
+      {action}
+    </Badge>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Compliance Category Card (enhanced with percentage bar & expand)
+// ---------------------------------------------------------------------------
+
+interface CategoryCardData {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  value: number;
+  numerator: number;
+  denominator: number;
+  color: string;
+  details: string[];
+}
+
+function ComplianceCategoryCard({ card, expanded, onToggle }: { card: CategoryCardData; expanded: boolean; onToggle: () => void }) {
+  const barColor = card.value >= 80 ? 'hsl(142, 76%, 36%)' : card.value >= 60 ? 'hsl(38, 92%, 50%)' : 'hsl(0, 84%, 60%)';
+
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <button
+        className="w-full p-4 hover:bg-muted/20 transition-colors text-left"
+        onClick={onToggle}
+        aria-expanded={expanded}
+      >
+        <div className="flex items-center gap-3 mb-2">
+          <div className={cn('p-2 rounded-lg', card.color)}>
+            {card.icon}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold">{card.label}</span>
+              <span className="text-sm font-bold" style={{ color: barColor }}>{Math.round(card.value)}%</span>
+            </div>
+            <div className="w-full h-2 bg-muted rounded-full overflow-hidden mt-1">
+              <div
+                className="h-full rounded-full transition-all duration-700"
+                style={{ width: `${card.value}%`, backgroundColor: barColor }}
+              />
+            </div>
+          </div>
+          <div className="shrink-0 ml-1">
+            {expanded ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">{card.numerator}/{card.denominator} compliant</p>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 pt-0">
+          <Separator className="mb-3" />
+          <ul className="space-y-1.5">
+            {card.details.map((detail, idx) => (
+              <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                <ArrowRight className="h-3 w-3 mt-0.5 shrink-0 text-primary" />
+                <span>{detail}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
@@ -209,8 +439,21 @@ export function ComplianceView() {
   const deviations = store.deviations;
   const batchRecords = store.batchRecords;
   const suppliers = store.suppliers;
+  const auditTrails = store.auditTrails;
 
   const [expandedClauses, setExpandedClauses] = useState<Set<string>>(new Set());
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+
+  // -------------------------------------------------------------------------
+  // Audit trail filter state
+  // -------------------------------------------------------------------------
+
+  const [auditActionFilter, setAuditActionFilter] = useState<string>('all');
+  const [auditTableFilter, setAuditTableFilter] = useState<string>('all');
+  const [auditDateFrom, setAuditDateFrom] = useState<string>('');
+  const [auditDateTo, setAuditDateTo] = useState<string>('');
+  const [auditSearch, setAuditSearch] = useState<string>('');
+  const [auditPage, setAuditPage] = useState(1);
 
   // -------------------------------------------------------------------------
   // Industry config
@@ -276,6 +519,15 @@ export function ComplianceView() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleCategory = (key: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
@@ -561,6 +813,245 @@ export function ComplianceView() {
   ], [w, docCompliance, capaCompliance, trainingCompliance, auditCompliance, ncrResolutionRate, riskCompliance]);
 
   // -------------------------------------------------------------------------
+  // Compliance category cards (enhanced)
+  // -------------------------------------------------------------------------
+
+  const categoryCards = useMemo<CategoryCardData[]>(() => [
+    {
+      key: 'documents',
+      label: 'Document Control',
+      icon: <FileText className="h-4 w-4 text-green-600" />,
+      value: docCompliance,
+      numerator: documents.filter(d => d.status === 'Approved').length,
+      denominator: documents.length,
+      color: 'bg-green-100 dark:bg-green-900/30',
+      details: [
+        `${documents.filter(d => d.status === 'Approved').length} Approved`,
+        `${documents.filter(d => d.status === 'In Review').length} In Review`,
+        `${documents.filter(d => d.status === 'Draft').length} Draft`,
+        `${documents.filter(d => d.status === 'Obsolete').length} Obsolete`,
+      ],
+    },
+    {
+      key: 'capas',
+      label: 'CAPA Management',
+      icon: <ClipboardCheck className="h-4 w-4 text-red-600" />,
+      value: capaCompliance,
+      numerator: capas.filter(c => c.status === 'Closed').length,
+      denominator: capas.length,
+      color: 'bg-red-100 dark:bg-red-900/30',
+      details: [
+        `${capas.filter(c => c.status === 'Open').length} Open`,
+        `${capas.filter(c => c.status === 'Investigation').length} Investigation`,
+        `${capas.filter(c => c.status === 'Implementation').length} Implementation`,
+        `${capas.filter(c => c.status === 'Effectiveness Check').length} Effectiveness Check`,
+        `${capas.filter(c => c.status === 'Closed').length} Closed`,
+      ],
+    },
+    {
+      key: 'training',
+      label: 'Training Compliance',
+      icon: <GraduationCap className="h-4 w-4 text-blue-600" />,
+      value: trainingCompliance,
+      numerator: trainingItems.filter(t => t.status === 'Completed').length,
+      denominator: trainingItems.length,
+      color: 'bg-blue-100 dark:bg-blue-900/30',
+      details: [
+        `${trainingItems.filter(t => t.status === 'Completed').length} Completed`,
+        `${trainingItems.filter(t => t.status === 'In Progress').length} In Progress`,
+        `${trainingItems.filter(t => t.status === 'Planned').length} Planned`,
+        `${trainingItems.filter(t => t.status === 'Overdue').length} Overdue`,
+      ],
+    },
+    {
+      key: 'audits',
+      label: 'Audit Management',
+      icon: <ShieldAlert className="h-4 w-4 text-purple-600" />,
+      value: auditCompliance,
+      numerator: audits.filter(a => a.status === 'Completed').length,
+      denominator: audits.length,
+      color: 'bg-purple-100 dark:bg-purple-900/30',
+      details: [
+        `${audits.filter(a => a.status === 'Planned').length} Planned`,
+        `${audits.filter(a => a.status === 'In Progress').length} In Progress`,
+        `${audits.filter(a => a.status === 'Completed').length} Completed`,
+      ],
+    },
+    {
+      key: 'ncrs',
+      label: 'NCR Resolution',
+      icon: <TriangleAlert className="h-4 w-4 text-amber-600" />,
+      value: ncrResolutionRate,
+      numerator: ncrs.filter(n => n.status === 'Closed').length,
+      denominator: ncrs.length,
+      color: 'bg-amber-100 dark:bg-amber-900/30',
+      details: [
+        `${ncrs.filter(n => n.status === 'Open').length} Open`,
+        `${ncrs.filter(n => n.status === 'Under Investigation').length} Under Investigation`,
+        `${ncrs.filter(n => n.status === 'Pending Disposition').length} Pending Disposition`,
+        `${ncrs.filter(n => n.status === 'Closed').length} Closed`,
+      ],
+    },
+    {
+      key: 'risks',
+      label: 'Risk Management',
+      icon: <BarChart3 className="h-4 w-4 text-orange-600" />,
+      value: riskCompliance,
+      numerator: risks.filter(r => r.status !== 'Open').length,
+      denominator: risks.length,
+      color: 'bg-orange-100 dark:bg-orange-900/30',
+      details: [
+        `${risks.filter(r => r.status === 'Open').length} Open`,
+        `${risks.filter(r => r.status === 'Mitigated').length} Mitigated`,
+        `${risks.filter(r => r.status === 'Accepted').length} Accepted`,
+        `${risks.filter(r => r.status === 'Closed').length} Closed`,
+      ],
+    },
+    {
+      key: 'batch',
+      label: 'Batch Records',
+      icon: <Package className="h-4 w-4 text-cyan-600" />,
+      value: batchCompliance,
+      numerator: batchRecords.filter(b => b.status === 'Released').length,
+      denominator: batchRecords.length,
+      color: 'bg-cyan-100 dark:bg-cyan-900/30',
+      details: [
+        `${batchRecords.filter(b => b.status === 'In Progress').length} In Progress`,
+        `${batchRecords.filter(b => b.status === 'Pending QA Review').length} Pending QA Review`,
+        `${batchRecords.filter(b => b.status === 'Released').length} Released`,
+        `${batchRecords.filter(b => b.status === 'Rejected').length} Rejected`,
+      ],
+    },
+    {
+      key: 'suppliers',
+      label: 'Supplier Qualification',
+      icon: <Truck className="h-4 w-4 text-indigo-600" />,
+      value: supplierCompliance,
+      numerator: suppliers.filter(s => s.status === 'Qualified').length,
+      denominator: suppliers.length,
+      color: 'bg-indigo-100 dark:bg-indigo-900/30',
+      details: [
+        `${suppliers.filter(s => s.status === 'Qualified').length} Qualified`,
+        `${suppliers.filter(s => s.status === 'Conditional').length} Conditional`,
+        `${suppliers.filter(s => s.status === 'Under Evaluation').length} Under Evaluation`,
+        `${suppliers.filter(s => s.status === 'Disqualified').length} Disqualified`,
+      ],
+    },
+  ], [docCompliance, capaCompliance, trainingCompliance, auditCompliance, ncrResolutionRate, riskCompliance, batchCompliance, supplierCompliance, documents, capas, trainingItems, audits, ncrs, risks, batchRecords, suppliers]);
+
+  // -------------------------------------------------------------------------
+  // Pending Signatures counts
+  // -------------------------------------------------------------------------
+
+  const pendingSignatures = useMemo(() => {
+    const docsAwaitingApproval = documents.filter(d => d.status === 'In Review').length;
+    const openCapasCount = capas.filter(c => c.status !== 'Closed').length;
+    // Pending signatures = documents in review + change controls pending approval
+    const pendingSigs = documents.filter(d => d.status === 'In Review').length +
+      changeControls.filter(cc => cc.status === 'Under Review' || cc.status === 'Requested').length;
+    return { docsAwaitingApproval, openCapasCount, pendingSigs };
+  }, [documents, capas, changeControls]);
+
+  // -------------------------------------------------------------------------
+  // Audit trail: filtered data
+  // -------------------------------------------------------------------------
+
+  const filteredAuditTrail = useMemo(() => {
+    let data = [...auditTrails];
+
+    // Action filter
+    if (auditActionFilter !== 'all') {
+      data = data.filter(entry => entry.action === auditActionFilter);
+    }
+
+    // Table/module filter
+    if (auditTableFilter !== 'all') {
+      data = data.filter(entry => entry.tableName === auditTableFilter);
+    }
+
+    // Date range filter
+    if (auditDateFrom) {
+      const from = new Date(auditDateFrom);
+      data = data.filter(entry => new Date(entry.createdAt) >= from);
+    }
+    if (auditDateTo) {
+      const to = new Date(auditDateTo);
+      to.setHours(23, 59, 59, 999);
+      data = data.filter(entry => new Date(entry.createdAt) <= to);
+    }
+
+    // Search filter
+    if (auditSearch.trim()) {
+      const q = auditSearch.toLowerCase();
+      data = data.filter(entry =>
+        (entry.action || '').toLowerCase().includes(q) ||
+        (entry.tableName || '').toLowerCase().includes(q) ||
+        (entry.recordId || '').toLowerCase().includes(q) ||
+        (entry.userEmail || '').toLowerCase().includes(q) ||
+        JSON.stringify(entry.newValues || {}).toLowerCase().includes(q) ||
+        JSON.stringify(entry.oldValues || {}).toLowerCase().includes(q)
+      );
+    }
+
+    // Sort by most recent first
+    data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return data;
+  }, [auditTrails, auditActionFilter, auditTableFilter, auditDateFrom, auditDateTo, auditSearch]);
+
+  // -------------------------------------------------------------------------
+  // Audit trail: pagination
+  // -------------------------------------------------------------------------
+
+  const totalPages = Math.max(1, Math.ceil(filteredAuditTrail.length / ITEMS_PER_PAGE));
+  const paginatedAuditTrail = useMemo(() => {
+    const start = (auditPage - 1) * ITEMS_PER_PAGE;
+    return filteredAuditTrail.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredAuditTrail, auditPage]);
+
+  // Reset page when filters change
+  const handleFilterChange = useCallback(() => {
+    setAuditPage(1);
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // Audit trail: format details for display
+  // -------------------------------------------------------------------------
+
+  const formatAuditDetails = useCallback((entry: typeof auditTrails[0]) => {
+    const parts: string[] = [];
+    if (entry.oldValues) {
+      const keys = Object.keys(entry.oldValues);
+      if (keys.length > 0) {
+        parts.push(`From: ${keys.map(k => `${k}=${entry.oldValues![k]}`).join(', ')}`);
+      }
+    }
+    if (entry.newValues) {
+      const keys = Object.keys(entry.newValues);
+      if (keys.length > 0) {
+        parts.push(`To: ${keys.map(k => `${k}=${entry.newValues![k]}`).join(', ')}`);
+      }
+    }
+    return parts.length > 0 ? parts.join(' | ') : '—';
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // CSV export handler
+  // -------------------------------------------------------------------------
+
+  const handleExportCSV = useCallback(() => {
+    const exportData = filteredAuditTrail.map(entry => ({
+      timestamp: formatDate(entry.createdAt),
+      action: entry.action,
+      tableName: entry.tableName,
+      recordId: entry.recordId || '—',
+      user: entry.userEmail || entry.userId || '—',
+      details: formatAuditDetails(entry),
+    }));
+    exportAuditTrailCSV(exportData);
+  }, [filteredAuditTrail, formatAuditDetails]);
+
+  // -------------------------------------------------------------------------
   // Permission check
   // -------------------------------------------------------------------------
 
@@ -783,6 +1274,133 @@ export function ComplianceView() {
       </div>
 
       {/* ----------------------------------------------------------------- */}
+      {/* Enhanced Compliance Category Cards                                */}
+      {/* ----------------------------------------------------------------- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-primary" />
+            Compliance by Category
+          </CardTitle>
+          <CardDescription>Click any card to expand status breakdown</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {categoryCards.map(card => (
+              <ComplianceCategoryCard
+                key={card.key}
+                card={card}
+                expanded={expandedCategories.has(card.key)}
+                onToggle={() => toggleCategory(card.key)}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* Pending Signatures Section                                        */}
+      {/* ----------------------------------------------------------------- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <PenLine className="h-5 w-5 text-primary" />
+            Pending Signatures & Approvals
+          </CardTitle>
+          <CardDescription>Items requiring your attention and approval</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="flex items-center gap-4 p-4 rounded-lg border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50">
+              <div className="p-3 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                <FileText className="h-6 w-6 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-amber-700 dark:text-amber-400">{pendingSignatures.docsAwaitingApproval}</p>
+                <p className="text-sm text-muted-foreground">Documents Awaiting Approval</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 p-4 rounded-lg border bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/50">
+              <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900/30">
+                <ClipboardCheck className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-red-700 dark:text-red-400">{pendingSignatures.openCapasCount}</p>
+                <p className="text-sm text-muted-foreground">Open CAPAs</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 p-4 rounded-lg border bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-900/50">
+              <div className="p-3 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                <PenLine className="h-6 w-6 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-purple-700 dark:text-purple-400">{pendingSignatures.pendingSigs}</p>
+                <p className="text-sm text-muted-foreground">Pending Signatures</p>
+              </div>
+            </div>
+          </div>
+          <Separator className="my-4" />
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Eye className="h-3.5 w-3.5" />
+              Review Documents
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <ClipboardCheck className="h-3.5 w-3.5" />
+              Review CAPAs
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Users className="h-3.5 w-3.5" />
+              View All Pending
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* Report Templates Section                                          */}
+      {/* ----------------------------------------------------------------- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-primary" />
+            Report Templates
+          </CardTitle>
+          <CardDescription>Generate compliance reports from QMS data</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {REPORT_TEMPLATES.map(template => {
+              const Icon = template.icon;
+              return (
+                <div key={template.id} className="p-4 rounded-lg border hover:shadow-md transition-shadow">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className={cn('p-2 rounded-lg', template.bg)}>
+                      <Icon className={cn('h-5 w-5', template.color)} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold">{template.title}</p>
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{template.description}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="flex-1 gap-1 text-xs">
+                      <Eye className="h-3 w-3" />
+                      Generate
+                    </Button>
+                    <Button variant="outline" size="sm" className="flex-1 gap-1 text-xs">
+                      <Download className="h-3 w-3" />
+                      Export
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ----------------------------------------------------------------- */}
       {/* Applicable Standards                                              */}
       {/* ----------------------------------------------------------------- */}
       <Card>
@@ -921,6 +1539,162 @@ export function ComplianceView() {
                 </div>
               );
             })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* Audit Trail Table                                                 */}
+      {/* ----------------------------------------------------------------- */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Clock className="h-5 w-5 text-primary" />
+            Audit Trail
+            <Badge variant="outline" className="ml-auto">{filteredAuditTrail.length} entries</Badge>
+          </CardTitle>
+          <CardDescription>Complete record of all system actions for regulatory compliance</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Filter bar */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+            <Select
+              value={auditActionFilter}
+              onValueChange={(v) => { setAuditActionFilter(v); handleFilterChange(); }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Action type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Actions</SelectItem>
+                {AUDIT_ACTIONS.map(action => (
+                  <SelectItem key={action} value={action}>{action}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={auditTableFilter}
+              onValueChange={(v) => { setAuditTableFilter(v); handleFilterChange(); }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Table/Module" />
+              </SelectTrigger>
+              <SelectContent>
+                {TABLE_MODULES.map(mod => (
+                  <SelectItem key={mod.value} value={mod.value}>{mod.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Input
+              type="date"
+              value={auditDateFrom}
+              onChange={(e) => { setAuditDateFrom(e.target.value); handleFilterChange(); }}
+              placeholder="From date"
+              className="text-sm"
+            />
+
+            <Input
+              type="date"
+              value={auditDateTo}
+              onChange={(e) => { setAuditDateTo(e.target.value); handleFilterChange(); }}
+              placeholder="To date"
+              className="text-sm"
+            />
+
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                value={auditSearch}
+                onChange={(e) => { setAuditSearch(e.target.value); handleFilterChange(); }}
+                placeholder="Search audit trail..."
+                className="pl-8 text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Actions bar */}
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-muted-foreground">
+              Showing {((auditPage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(auditPage * ITEMS_PER_PAGE, filteredAuditTrail.length)} of {filteredAuditTrail.length} entries
+            </p>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportCSV}>
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </Button>
+          </div>
+
+          {/* Table */}
+          <div className="border rounded-lg overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[160px]">Timestamp</TableHead>
+                  <TableHead className="w-[100px]">Action</TableHead>
+                  <TableHead className="w-[130px]">Table/Module</TableHead>
+                  <TableHead className="w-[100px]">Record ID</TableHead>
+                  <TableHead className="w-[160px]">User</TableHead>
+                  <TableHead>Details</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginatedAuditTrail.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      No audit trail entries match the current filters.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedAuditTrail.map(entry => (
+                    <TableRow key={entry.id}>
+                      <TableCell className="text-xs font-mono whitespace-nowrap">
+                        {formatDate(entry.createdAt)}
+                      </TableCell>
+                      <TableCell>
+                        <AuditActionBadge action={entry.action} />
+                      </TableCell>
+                      <TableCell className="text-xs">{entry.tableName}</TableCell>
+                      <TableCell className="text-xs font-mono">{entry.recordId || '—'}</TableCell>
+                      <TableCell className="text-xs">{entry.userEmail || entry.userId || '—'}</TableCell>
+                      <TableCell className="text-xs max-w-[300px] truncate" title={formatAuditDetails(entry)}>
+                        {formatAuditDetails(entry)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between mt-4">
+            <p className="text-sm text-muted-foreground">
+              Page {auditPage} of {totalPages}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={auditPage <= 1}
+                onClick={() => setAuditPage(p => Math.max(1, p - 1))}
+                className="gap-1"
+              >
+                <ChevronLeftIcon className="h-4 w-4" />
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={auditPage >= totalPages}
+                onClick={() => setAuditPage(p => Math.min(totalPages, p + 1))}
+                className="gap-1"
+              >
+                Next
+                <ChevronRightIcon className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

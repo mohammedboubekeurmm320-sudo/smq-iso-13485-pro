@@ -10,6 +10,8 @@ export type Permission =
   | 'documents.create' | 'documents.read' | 'documents.update' | 'documents.delete' | 'documents.approve'
   | 'capa.create' | 'capa.read' | 'capa.update' | 'capa.delete' | 'capa.approve'
   | 'ncr.create' | 'ncr.read' | 'ncr.update' | 'ncr.delete' | 'ncr.approve'
+  | 'deviation.create' | 'deviation.read' | 'deviation.update' | 'deviation.delete' | 'deviation.approve'
+  | 'changecontrol.create' | 'changecontrol.read' | 'changecontrol.update' | 'changecontrol.delete' | 'changecontrol.approve'
   | 'audit.create' | 'audit.read' | 'audit.update' | 'audit.delete'
   | 'training.create' | 'training.read' | 'training.update' | 'training.delete'
   | 'risk.create' | 'risk.read' | 'risk.update' | 'risk.delete'
@@ -24,6 +26,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'documents.create', 'documents.read', 'documents.update', 'documents.delete', 'documents.approve',
     'capa.create', 'capa.read', 'capa.update', 'capa.delete', 'capa.approve',
     'ncr.create', 'ncr.read', 'ncr.update', 'ncr.delete', 'ncr.approve',
+    'deviation.create', 'deviation.read', 'deviation.update', 'deviation.delete', 'deviation.approve',
+    'changecontrol.create', 'changecontrol.read', 'changecontrol.update', 'changecontrol.delete', 'changecontrol.approve',
     'audit.create', 'audit.read', 'audit.update', 'audit.delete',
     'training.create', 'training.read', 'training.update', 'training.delete',
     'risk.create', 'risk.read', 'risk.update', 'risk.delete',
@@ -37,6 +41,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'documents.create', 'documents.read', 'documents.update', 'documents.approve',
     'capa.create', 'capa.read', 'capa.update', 'capa.approve',
     'ncr.create', 'ncr.read', 'ncr.update', 'ncr.approve',
+    'deviation.create', 'deviation.read', 'deviation.update', 'deviation.approve',
+    'changecontrol.create', 'changecontrol.read', 'changecontrol.update', 'changecontrol.approve',
     'audit.create', 'audit.read', 'audit.update',
     'training.create', 'training.read', 'training.update',
     'risk.create', 'risk.read', 'risk.update',
@@ -50,6 +56,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'documents.read',
     'capa.read',
     'ncr.read',
+    'deviation.read',
+    'changecontrol.read',
     'audit.create', 'audit.read', 'audit.update',
     'training.read',
     'risk.read',
@@ -63,6 +71,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'documents.create', 'documents.read', 'documents.update', 'documents.delete', 'documents.approve',
     'capa.read',
     'ncr.read',
+    'deviation.read',
+    'changecontrol.create', 'changecontrol.read', 'changecontrol.update',
     'audit.read',
     'training.create', 'training.read', 'training.update',
     'batch.read',
@@ -74,6 +84,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'documents.read',
     'capa.read',
     'ncr.read',
+    'deviation.read',
+    'changecontrol.read',
     'audit.read',
     'training.read',
     'risk.read',
@@ -86,6 +98,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'documents.read',
     'capa.read',
     'ncr.create', 'ncr.read',
+    'deviation.create', 'deviation.read',
     'batch.create', 'batch.read', 'batch.update',
     'training.read',
     'supplier.read',
@@ -347,6 +360,8 @@ export interface NonConformance {
 
 export type BatchStatus = 'In Progress' | 'Pending QA Review' | 'Released' | 'Rejected' | 'Quarantine';
 export type BatchStepStatus = 'Pending' | 'In Progress' | 'Completed' | 'Failed';
+export type StepType = 'Weighing' | 'Mixing' | 'Filtration' | 'Filling' | 'Inspection' | 'Labeling' | 'Packaging' | 'QC Testing' | 'Other';
+export type RawMaterialStatus = 'Verified' | 'Pending' | 'Rejected';
 
 export interface BatchStep {
   id: string;
@@ -357,10 +372,19 @@ export interface BatchStep {
   expectedValue?: string;
   actualValue?: string;
   status: BatchStepStatus;
+  stepType?: StepType;
   operatorId?: string;
   performedAt?: string;
   signatureHash?: string;
   createdAt: string;
+}
+
+export interface RawMaterial {
+  id: string;
+  material: string;
+  lotNumber: string;
+  supplier: string;
+  status: RawMaterialStatus;
 }
 
 export interface BatchRecord {
@@ -371,6 +395,7 @@ export interface BatchRecord {
   batchSize?: number;
   batchSizeUnit?: string;
   masterFormulaId?: string;
+  sopReference?: string;
   manufacturingDate: string;
   expiryDate?: string;
   status: BatchStatus;
@@ -381,6 +406,7 @@ export interface BatchRecord {
   createdById?: string;
   createdAt: string;
   steps?: BatchStep[];
+  rawMaterials?: RawMaterial[];
 }
 
 // ============================================================================
@@ -389,6 +415,7 @@ export interface BatchRecord {
 
 export type SupplierCategory = 'Raw Material' | 'Packaging' | 'Equipment' | 'Service' | 'Contract Manufacturer' | 'Laboratory' | 'Other';
 export type SupplierStatus = 'Qualified' | 'Conditional' | 'Disqualified' | 'Under Evaluation';
+export type QualificationMethod = 'On-Site Audit' | 'Questionnaire' | 'Certificate Review' | 'Third-Party Assessment' | 'Historical Performance';
 
 export interface Supplier {
   id: string;
@@ -401,6 +428,19 @@ export interface Supplier {
   certifications?: string[];
   performanceScore?: number;
   qualificationDocId?: string;
+  website?: string;
+  primaryContactName?: string;
+  primaryContactEmail?: string;
+  primaryContactPhone?: string;
+  street?: string;
+  city?: string;
+  stateProvince?: string;
+  postalCode?: string;
+  country?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  qualificationMethod?: QualificationMethod;
+  qualificationDocRef?: string;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
@@ -414,7 +454,7 @@ export interface FormFieldDefinition {
   id: string;
   name: string;
   label: string;
-  type: 'text' | 'number' | 'date' | 'select' | 'checkbox' | 'textarea' | 'signature' | 'table';
+  type: 'text' | 'number' | 'date' | 'select' | 'checkbox' | 'textarea' | 'signature' | 'table' | 'rating' | 'file' | 'repeater';
   required?: boolean;
   options?: string[];
   placeholder?: string;
@@ -422,13 +462,33 @@ export interface FormFieldDefinition {
   validation?: { min?: number; max?: number; pattern?: string };
 }
 
+export interface FormTemplateWorkflow {
+  requiresApproval: boolean;
+  workflowType: 'single' | 'sequential' | 'parallel';
+  allowDraftSaves: boolean;
+  lockAfterSubmission: boolean;
+  eSignatureRequired: boolean;
+}
+
+export interface FormTemplateCompliance {
+  regulatoryReference: string;
+  retentionPeriod: string;
+  dataClassification: 'Internal' | 'Confidential' | 'Regulatory' | 'GxP Critical';
+  auditTrailEnabled: boolean;
+  printFriendlyLayout: boolean;
+  cfrPart11Compliance: boolean;
+}
+
 export interface FormTemplate {
   id: string;
   documentId: string;
   title: string;
   version: string;
+  description?: string;
   fields: FormFieldDefinition[];
   isActive: boolean;
+  workflow?: FormTemplateWorkflow;
+  compliance?: FormTemplateCompliance;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
@@ -634,7 +694,7 @@ export interface NavItem {
 export type ChangeControlType = 'Planned' | 'Unplanned' | 'Emergency';
 export type ChangeControlStatus = 'Requested' | 'Under Review' | 'Approved' | 'In Implementation' | 'Completed' | 'Rejected';
 export type ChangeControlPriority = 'Critical' | 'High' | 'Medium' | 'Low';
-export type ChangeControlCategory = 'Process' | 'Equipment' | 'Facility' | 'Document' | 'Material' | 'Computer System' | 'Organizational';
+export type ChangeControlCategory = 'Process' | 'Equipment' | 'Facility' | 'Document' | 'Material' | 'Computer System' | 'Organizational' | 'Manufacturing' | 'Regulatory' | 'Supply Chain' | 'Warehouse' | 'Other';
 
 export interface ChangeControl {
   id: string;
@@ -647,16 +707,25 @@ export interface ChangeControl {
   description: string;
   justification: string;
   proposedChange: string;
+  detailedChangeDescription?: string;
+  businessComplianceJustification?: string;
   riskAssessment?: string;
   impactAnalysis?: string;
+  affectedAreas?: string;
+  impactOnValidatedSystems?: boolean;
   implementationPlan?: string;
   implementationDate?: string;
+  estimatedCostImpact?: string;
   completionDate?: string;
+  regulatoryTrigger?: string;
+  emergencyFlag?: boolean;
   linkedDocumentId?: string;
   linkedCapaId?: string;
+  additionalReferences?: string;
   assignedTo: string;
   requestedBy: string;
   approvedBy?: string;
+  approver?: string;
   dueDate: string;
   createdById?: string;
   organizationId?: string;
@@ -673,6 +742,8 @@ export type DeviationStatus = 'Open' | 'Under Investigation' | 'Pending QA Revie
 export type DeviationSeverity = 'Critical' | 'Major' | 'Minor';
 export type DeviationCategory = 'Process' | 'Equipment' | 'Material' | 'Environment' | 'Personnel' | 'Documentation';
 
+export type DeviationProductStage = 'Raw Material' | 'In-Process' | 'Finished Product' | 'Stability' | 'Other';
+
 export interface Deviation {
   id: string;
   devNumber: string;
@@ -687,6 +758,16 @@ export interface Deviation {
   riskAssessment?: string;
   correctiveAction?: string;
   preventiveAction?: string;
+  sopReference?: string;
+  expectedResult?: string;
+  actualResult?: string;
+  productStage?: DeviationProductStage;
+  quarantine?: boolean;
+  impactOnValidatedState?: string;
+  impactOnRegulatoryFiling?: string;
+  containmentAction?: string;
+  detectedDate?: string;
+  isPlannedDeviation?: boolean;
   lotNumber?: string;
   productCode?: string;
   quantityAffected?: number;

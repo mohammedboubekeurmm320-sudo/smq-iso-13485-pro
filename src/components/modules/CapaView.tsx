@@ -3,10 +3,13 @@
 import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Capa, CapaStatus, CapaType, CapaPriority, CapaSource, RootCauseCategory } from '@/types/qms';
+import type { Capa, CapaStatus, CapaType, CapaPriority, CapaSource, RootCauseCategory, SignatureType } from '@/types/qms';
+import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import {
   Shield, Plus, Search, Eye, ArrowRight, CheckCircle2, AlertTriangle,
   Clock, XCircle, ChevronDown, ChevronUp, AlertCircle, Link2,
+  ChevronLeft, ChevronRight, FileText, ClipboardCheck, Wrench,
+  BarChart3, UserCheck, ListChecks, Zap, DollarSign,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +17,9 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -24,6 +30,9 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const statusColors: Record<CapaStatus, string> = {
   'Open': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
@@ -42,14 +51,38 @@ const priorityColors: Record<CapaPriority, string> = {
 
 const statusFlow: CapaStatus[] = ['Open', 'Investigation', 'Implementation', 'Effectiveness Check', 'Closed'];
 
+const WIZARD_STEPS = [
+  { id: 0, label: 'Change Request', icon: FileText },
+  { id: 1, label: 'Description & Justification', icon: ClipboardCheck },
+  { id: 2, label: 'Proposed Change', icon: Wrench },
+  { id: 3, label: 'Risk & Impact', icon: BarChart3 },
+  { id: 4, label: 'Approval & Assignment', icon: UserCheck },
+  { id: 5, label: 'Linked Records & Review', icon: ListChecks },
+];
+
+const riskRatingLabels = ['N/A', '1 - Very Low', '2 - Low', '3 - Medium', '4 - High', '5 - Very High'];
+
+const riskRatingColor = (val: number): string => {
+  if (val <= 1) return 'text-green-600 dark:text-green-400';
+  if (val <= 2) return 'text-green-500 dark:text-green-400';
+  if (val <= 3) return 'text-amber-500 dark:text-amber-400';
+  if (val <= 4) return 'text-orange-500 dark:text-orange-400';
+  return 'text-red-500 dark:text-red-400';
+};
+
+const rpnColor = (rpn: number): string => {
+  if (rpn <= 20) return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-300 dark:border-green-700';
+  if (rpn <= 60) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-300 dark:border-amber-700';
+  if (rpn <= 100) return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border-orange-300 dark:border-orange-700';
+  return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-300 dark:border-red-700';
+};
+
 function getNextStatus(current: CapaStatus): CapaStatus | null {
   const idx = statusFlow.indexOf(current);
   return idx < statusFlow.length - 1 ? statusFlow[idx + 1] : null;
 }
 
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(' ');
-}
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function CapaView() {
   const { currentUser, hasPermission } = useAuth();
@@ -58,6 +91,7 @@ export function CapaView() {
   const profiles = store.profiles;
   const documents = store.documents;
 
+  // ── View state ──
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -67,18 +101,53 @@ export function CapaView() {
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [prereqError, setPrereqError] = useState<string | null>(null);
 
-  // Create form state
+  // ── Wizard state ──
+  const [wizardStep, setWizardStep] = useState(0);
+
+  // ── Step 1 - Change Request ──
   const [formTitle, setFormTitle] = useState('');
   const [formType, setFormType] = useState<CapaType>('Corrective');
   const [formPriority, setFormPriority] = useState<CapaPriority>('Medium');
   const [formSource, setFormSource] = useState<CapaSource>('Non-Conformance');
+  const [formCategory, setFormCategory] = useState('');
+  const [formEmergency, setFormEmergency] = useState(false);
   const [formDescription, setFormDescription] = useState('');
+  const [formRegulatoryTrigger, setFormRegulatoryTrigger] = useState('');
+
+  // ── Step 2 - Description & Justification ──
   const [formProblemStatement, setFormProblemStatement] = useState('');
+  const [formJustification, setFormJustification] = useState('');
+
+  // ── Step 3 - Proposed Change ──
+  const [formProposedChange, setFormProposedChange] = useState('');
+  const [formImplementationPlan, setFormImplementationPlan] = useState('');
+  const [formImplementationDate, setFormImplementationDate] = useState('');
+  const [formEstimatedCost, setFormEstimatedCost] = useState('');
+
+  // ── Step 4 - Risk & Impact Assessment ──
+  const [formRiskProbability, setFormRiskProbability] = useState(3);
+  const [formRiskImpact, setFormRiskImpact] = useState(3);
+  const [formRiskDetection, setFormRiskDetection] = useState(3);
+  const [formImpactAnalysis, setFormImpactAnalysis] = useState('');
+  const [formAffectedAreas, setFormAffectedAreas] = useState('');
+  const [formImpactOnValidatedSystems, setFormImpactOnValidatedSystems] = useState(false);
+
+  // ── Step 5 - Approval & Assignment ──
   const [formRootCauseCategory, setFormRootCauseCategory] = useState<RootCauseCategory>('Method');
   const [formAssignedTo, setFormAssignedTo] = useState('');
+  const [formApprover, setFormApprover] = useState('');
   const [formDueDate, setFormDueDate] = useState('');
-  const [formLinkedDocId, setFormLinkedDocId] = useState('');
 
+  // ── Step 6 - Linked Records ──
+  const [formLinkedDocId, setFormLinkedDocId] = useState('');
+  const [formLinkedCapaId, setFormLinkedCapaId] = useState('');
+  const [formAdditionalReferences, setFormAdditionalReferences] = useState('');
+
+  // ── Electronic Signature ──
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{ capa: Capa; nextStatus: CapaStatus } | null>(null);
+
+  // ── Computed ──
   const filteredCapas = capas.filter(c => {
     const matchesSearch = searchTerm === '' ||
       c.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -104,8 +173,49 @@ export function CapaView() {
 
   const approvedSops = documents.filter(d => d.type === 'SOP' && d.status === 'Approved');
 
+  const computedRpn = formRiskProbability * formRiskImpact * formRiskDetection;
+
+  // ── Step validation ──
+  const isStepValid = (step: number): boolean => {
+    switch (step) {
+      case 0:
+        return formTitle.trim() !== '' && formDescription.trim() !== '';
+      case 1:
+        return formProblemStatement.trim() !== '' && formJustification.trim() !== '';
+      case 2:
+        return formProposedChange.trim() !== '' && formImplementationPlan.trim() !== '';
+      case 3:
+        return formImpactAnalysis.trim() !== '' && formAffectedAreas.trim() !== '';
+      case 4:
+        return formAssignedTo !== '' && formApprover !== '' && formDueDate !== '';
+      case 5:
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  // ── Navigation ──
+  const goToStep = (step: number) => {
+    if (step >= 0 && step < WIZARD_STEPS.length) {
+      setWizardStep(step);
+    }
+  };
+
+  const goNext = () => {
+    if (wizardStep < WIZARD_STEPS.length - 1 && isStepValid(wizardStep)) {
+      setWizardStep(wizardStep + 1);
+    }
+  };
+
+  const goPrev = () => {
+    if (wizardStep > 0) {
+      setWizardStep(wizardStep - 1);
+    }
+  };
+
+  // ── Create ──
   const handleCreate = () => {
-    // Prerequisite check: verify an Approved SOP exists
     const prereqResult = store.checkPrerequisites('CAPA', 'org-001');
     if (!prereqResult.met) {
       setPrereqError(`Prerequisite not met: ${prereqResult.missing.map(p => p.description).join(', ')}`);
@@ -127,7 +237,8 @@ export function CapaView() {
       assignedTo: formAssignedTo,
       dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
       createdDate: new Date().toISOString(),
-      linkedDocumentId: formLinkedDocId || undefined,
+      linkedDocumentId: formLinkedDocId && formLinkedDocId !== 'none' ? formLinkedDocId : undefined,
+      linkedCapaId: formLinkedCapaId && formLinkedCapaId !== 'none' ? formLinkedCapaId : undefined,
       createdById: currentUser?.id,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
@@ -139,35 +250,488 @@ export function CapaView() {
   };
 
   const resetForm = () => {
+    setWizardStep(0);
     setFormTitle('');
     setFormType('Corrective');
     setFormPriority('Medium');
     setFormSource('Non-Conformance');
+    setFormCategory('');
+    setFormEmergency(false);
     setFormDescription('');
+    setFormRegulatoryTrigger('');
     setFormProblemStatement('');
+    setFormJustification('');
+    setFormProposedChange('');
+    setFormImplementationPlan('');
+    setFormImplementationDate('');
+    setFormEstimatedCost('');
+    setFormRiskProbability(3);
+    setFormRiskImpact(3);
+    setFormRiskDetection(3);
+    setFormImpactAnalysis('');
+    setFormAffectedAreas('');
+    setFormImpactOnValidatedSystems(false);
     setFormRootCauseCategory('Method');
     setFormAssignedTo('');
+    setFormApprover('');
     setFormDueDate('');
     setFormLinkedDocId('');
+    setFormLinkedCapaId('');
+    setFormAdditionalReferences('');
     setPrereqError(null);
   };
 
+  // ── Status advancement with e-signature ──
   const handleAdvanceStatus = (capa: Capa) => {
     const next = getNextStatus(capa.status);
     if (!next) return;
+    setPendingStatusChange({ capa, nextStatus: next });
+    setShowSignatureModal(true);
+  };
+
+  const handleSignatureComplete = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
+    if (!pendingStatusChange) return;
+    const { capa, nextStatus } = pendingStatusChange;
     store.updateCapa(capa.id, {
-      status: next,
-      closedDate: next === 'Closed' ? new Date().toISOString() : undefined,
+      status: nextStatus,
+      closedDate: nextStatus === 'Closed' ? new Date().toISOString() : undefined,
     });
     if (selectedCapa?.id === capa.id) {
-      setSelectedCapa({ ...capa, status: next });
+      setSelectedCapa({ ...capa, status: nextStatus, closedDate: nextStatus === 'Closed' ? new Date().toISOString() : undefined });
     }
+    setShowSignatureModal(false);
+    setPendingStatusChange(null);
   };
 
   const openDetail = (capa: Capa) => {
     setSelectedCapa(capa);
     setShowDetailDialog(true);
   };
+
+  // ── Helper: get linked CAPA ──
+  const getLinkedCapa = (capaId?: string) => {
+    if (!capaId) return null;
+    return capas.find(c => c.id === capaId);
+  };
+
+  // ── Render: Wizard Step Content ──
+  const renderStepContent = () => {
+    switch (wizardStep) {
+      // ── Step 1: Change Request ──
+      case 0:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="capa-title">Title *</Label>
+              <Input id="capa-title" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="Enter CAPA title" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Type *</Label>
+                <Select value={formType} onValueChange={(v) => setFormType(v as CapaType)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Corrective">Corrective</SelectItem>
+                    <SelectItem value="Preventive">Preventive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Priority *</Label>
+                <Select value={formPriority} onValueChange={(v) => setFormPriority(v as CapaPriority)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Critical">Critical</SelectItem>
+                    <SelectItem value="High">High</SelectItem>
+                    <SelectItem value="Medium">Medium</SelectItem>
+                    <SelectItem value="Low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Source</Label>
+                <Select value={formSource} onValueChange={(v) => setFormSource(v as CapaSource)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Non-Conformance">Non-Conformance</SelectItem>
+                    <SelectItem value="Audit Finding">Audit Finding</SelectItem>
+                    <SelectItem value="Customer Complaint">Customer Complaint</SelectItem>
+                    <SelectItem value="Management Review">Management Review</SelectItem>
+                    <SelectItem value="Process Monitoring">Process Monitoring</SelectItem>
+                    <SelectItem value="Supplier Issue">Supplier Issue</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Category</Label>
+                <Input value={formCategory} onChange={(e) => setFormCategory(e.target.value)} placeholder="e.g., Process, Equipment" />
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="emergency-flag"
+                checked={formEmergency}
+                onCheckedChange={(checked) => setFormEmergency(checked === true)}
+              />
+              <Label htmlFor="emergency-flag" className="flex items-center gap-2 cursor-pointer">
+                <Zap className="h-4 w-4 text-amber-500" />
+                Emergency Change
+              </Label>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="capa-description">Description *</Label>
+              <Textarea id="capa-description" value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Describe the corrective or preventive action..." rows={3} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="regulatory-trigger">Regulatory Trigger Reference</Label>
+              <Input id="regulatory-trigger" value={formRegulatoryTrigger} onChange={(e) => setFormRegulatoryTrigger(e.target.value)} placeholder="e.g., ISO 13485 §8.5.2, 21 CFR 820.100" />
+            </div>
+          </div>
+        );
+
+      // ── Step 2: Description & Justification ──
+      case 1:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="problem-statement">Problem Statement *</Label>
+              <Textarea id="problem-statement" value={formProblemStatement} onChange={(e) => setFormProblemStatement(e.target.value)} placeholder="What is the problem? What went wrong or could go wrong?" rows={4} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="justification">Business / Compliance Justification *</Label>
+              <Textarea id="justification" value={formJustification} onChange={(e) => setFormJustification(e.target.value)} placeholder="Why is this CAPA necessary? What are the business or compliance implications?" rows={3} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="regulatory-trigger-detail">Regulatory Trigger Reference</Label>
+              <Input id="regulatory-trigger-detail" value={formRegulatoryTrigger} onChange={(e) => setFormRegulatoryTrigger(e.target.value)} placeholder="Applicable regulatory clause or standard reference" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Root Cause Category</Label>
+                <Select value={formRootCauseCategory} onValueChange={(v) => setFormRootCauseCategory(v as RootCauseCategory)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(['Man', 'Machine', 'Method', 'Material', 'Measurement', 'Environment', 'Management'] as RootCauseCategory[]).map(c => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Source</Label>
+                <Select value={formSource} onValueChange={(v) => setFormSource(v as CapaSource)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Non-Conformance">Non-Conformance</SelectItem>
+                    <SelectItem value="Audit Finding">Audit Finding</SelectItem>
+                    <SelectItem value="Customer Complaint">Customer Complaint</SelectItem>
+                    <SelectItem value="Management Review">Management Review</SelectItem>
+                    <SelectItem value="Process Monitoring">Process Monitoring</SelectItem>
+                    <SelectItem value="Supplier Issue">Supplier Issue</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        );
+
+      // ── Step 3: Proposed Change ──
+      case 2:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="proposed-change">Proposed Change *</Label>
+              <Textarea id="proposed-change" value={formProposedChange} onChange={(e) => setFormProposedChange(e.target.value)} placeholder="Describe the proposed change in detail..." rows={4} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="implementation-plan">Implementation Plan *</Label>
+              <Textarea id="implementation-plan" value={formImplementationPlan} onChange={(e) => setFormImplementationPlan(e.target.value)} placeholder="Step-by-step implementation plan..." rows={4} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="implementation-date">Target Implementation Date</Label>
+                <Input id="implementation-date" type="date" value={formImplementationDate} onChange={(e) => setFormImplementationDate(e.target.value)} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="estimated-cost">Estimated Cost / Impact</Label>
+                <div className="relative">
+                  <DollarSign className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input id="estimated-cost" value={formEstimatedCost} onChange={(e) => setFormEstimatedCost(e.target.value)} placeholder="e.g., $5,000" className="pl-9" />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      // ── Step 4: Risk & Impact Assessment ──
+      case 3:
+        return (
+          <div className="grid gap-4">
+            {/* Risk Assessment Grid */}
+            <div className="bg-muted/30 rounded-lg p-4 space-y-4">
+              <h4 className="font-medium text-sm flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-primary" />
+                Risk Assessment (FMEA-style)
+              </h4>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="grid gap-2">
+                  <Label>Probability (1-5)</Label>
+                  <Select value={String(formRiskProbability)} onValueChange={(v) => setFormRiskProbability(Number(v))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[1, 2, 3, 4, 5].map(n => (
+                        <SelectItem key={n} value={String(n)}>{riskRatingLabels[n]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Impact (1-5)</Label>
+                  <Select value={String(formRiskImpact)} onValueChange={(v) => setFormRiskImpact(Number(v))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[1, 2, 3, 4, 5].map(n => (
+                        <SelectItem key={n} value={String(n)}>{riskRatingLabels[n]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Detection (1-5)</Label>
+                  <Select value={String(formRiskDetection)} onValueChange={(v) => setFormRiskDetection(Number(v))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[1, 2, 3, 4, 5].map(n => (
+                        <SelectItem key={n} value={String(n)}>{riskRatingLabels[n]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {/* RPN Display */}
+              <div className="flex items-center gap-4 pt-1">
+                <div className={cn('px-4 py-2 rounded-md border text-lg font-bold', rpnColor(computedRpn))}>
+                  RPN: {computedRpn}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  P ({formRiskProbability}) × I ({formRiskImpact}) × D ({formRiskDetection})
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Impact Analysis */}
+            <div className="grid gap-2">
+              <Label htmlFor="impact-analysis">Impact Analysis *</Label>
+              <Textarea id="impact-analysis" value={formImpactAnalysis} onChange={(e) => setFormImpactAnalysis(e.target.value)} placeholder="Describe the potential impact on products, processes, and systems..." rows={3} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="affected-areas">Affected Areas *</Label>
+              <Input id="affected-areas" value={formAffectedAreas} onChange={(e) => setFormAffectedAreas(e.target.value)} placeholder="e.g., Manufacturing, QA, Supply Chain" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="impact-validated"
+                checked={formImpactOnValidatedSystems}
+                onCheckedChange={(checked) => setFormImpactOnValidatedSystems(checked === true)}
+              />
+              <Label htmlFor="impact-validated" className="cursor-pointer">
+                Impact on Validated Systems
+              </Label>
+            </div>
+            {formImpactOnValidatedSystems && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  Re-validation may be required. Ensure change control process includes validation protocol updates per 21 CFR 820 and ISO 13485 §7.5.6.
+                </p>
+              </div>
+            )}
+          </div>
+        );
+
+      // ── Step 5: Approval & Assignment ──
+      case 4:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label>Requested By</Label>
+              <Input
+                value={currentUser?.fullName || currentUser?.email || 'Unknown User'}
+                disabled
+                className="bg-muted/50"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Assigned To *</Label>
+                <Select value={formAssignedTo} onValueChange={setFormAssignedTo}>
+                  <SelectTrigger><SelectValue placeholder="Select assignee" /></SelectTrigger>
+                  <SelectContent>
+                    {profiles.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Approver *</Label>
+                <Select value={formApprover} onValueChange={setFormApprover}>
+                  <SelectTrigger><SelectValue placeholder="Select approver" /></SelectTrigger>
+                  <SelectContent>
+                    {profiles.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="due-date">Due Date *</Label>
+              <Input id="due-date" type="date" value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Root Cause Category</Label>
+              <Select value={formRootCauseCategory} onValueChange={(v) => setFormRootCauseCategory(v as RootCauseCategory)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(['Man', 'Machine', 'Method', 'Material', 'Measurement', 'Environment', 'Management'] as RootCauseCategory[]).map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        );
+
+      // ── Step 6: Linked Records & Review ──
+      case 5:
+        return (
+          <div className="grid gap-4">
+            {/* Linked Records */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Linked Document (Approved SOP)</Label>
+                <Select value={formLinkedDocId} onValueChange={setFormLinkedDocId}>
+                  <SelectTrigger><SelectValue placeholder="Select linked SOP" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {approvedSops.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.documentNumber} - {d.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Linked CAPA</Label>
+                <Select value={formLinkedCapaId} onValueChange={setFormLinkedCapaId}>
+                  <SelectTrigger><SelectValue placeholder="Select linked CAPA" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {capas.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.capaNumber} - {c.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="additional-references">Additional References</Label>
+              <Textarea id="additional-references" value={formAdditionalReferences} onChange={(e) => setFormAdditionalReferences(e.target.value)} placeholder="Any additional references, documents, or links..." rows={2} />
+            </div>
+
+            <Separator />
+
+            {/* Full Review Summary */}
+            <div className="bg-muted/30 rounded-lg p-4 space-y-3 max-h-[340px] overflow-y-auto">
+              <h4 className="font-semibold text-sm flex items-center gap-2">
+                <ListChecks className="h-4 w-4 text-primary" />
+                Review Summary
+              </h4>
+
+              {/* Step 1 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 1 — Change Request</p>
+                <p className="text-sm"><span className="font-medium">Title:</span> {formTitle || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Type:</span> {formType}</p>
+                <p className="text-sm"><span className="font-medium">Priority:</span> {formPriority}</p>
+                <p className="text-sm"><span className="font-medium">Source:</span> {formSource}</p>
+                {formCategory && <p className="text-sm"><span className="font-medium">Category:</span> {formCategory}</p>}
+                <p className="text-sm"><span className="font-medium">Emergency:</span> {formEmergency ? 'Yes' : 'No'}</p>
+                <p className="text-sm"><span className="font-medium">Description:</span> {formDescription || '—'}</p>
+                {formRegulatoryTrigger && <p className="text-sm"><span className="font-medium">Regulatory Trigger:</span> {formRegulatoryTrigger}</p>}
+              </div>
+
+              {/* Step 2 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 2 — Description & Justification</p>
+                <p className="text-sm"><span className="font-medium">Problem Statement:</span> {formProblemStatement || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Justification:</span> {formJustification || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Root Cause Category:</span> {formRootCauseCategory}</p>
+              </div>
+
+              {/* Step 3 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 3 — Proposed Change</p>
+                <p className="text-sm"><span className="font-medium">Proposed Change:</span> {formProposedChange || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Implementation Plan:</span> {formImplementationPlan || '—'}</p>
+                {formImplementationDate && <p className="text-sm"><span className="font-medium">Target Date:</span> {formImplementationDate}</p>}
+                {formEstimatedCost && <p className="text-sm"><span className="font-medium">Estimated Cost:</span> {formEstimatedCost}</p>}
+              </div>
+
+              {/* Step 4 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 4 — Risk & Impact Assessment</p>
+                <div className="flex items-center gap-3">
+                  <span className={cn('px-2 py-0.5 rounded border text-xs font-bold', rpnColor(computedRpn))}>RPN: {computedRpn}</span>
+                  <span className="text-sm text-muted-foreground">P={formRiskProbability} I={formRiskImpact} D={formRiskDetection}</span>
+                </div>
+                <p className="text-sm"><span className="font-medium">Impact Analysis:</span> {formImpactAnalysis || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Affected Areas:</span> {formAffectedAreas || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Impact on Validated Systems:</span> {formImpactOnValidatedSystems ? 'Yes' : 'No'}</p>
+              </div>
+
+              {/* Step 5 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 5 — Approval & Assignment</p>
+                <p className="text-sm"><span className="font-medium">Requested By:</span> {currentUser?.fullName || currentUser?.email || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Assigned To:</span> {formAssignedTo ? getUserName(formAssignedTo) : '—'}</p>
+                <p className="text-sm"><span className="font-medium">Approver:</span> {formApprover ? getUserName(formApprover) : '—'}</p>
+                <p className="text-sm"><span className="font-medium">Due Date:</span> {formDueDate || '—'}</p>
+              </div>
+
+              {/* Step 6 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 6 — Linked Records</p>
+                <p className="text-sm">
+                  <span className="font-medium">Linked SOP:</span>{' '}
+                  {formLinkedDocId && formLinkedDocId !== 'none'
+                    ? approvedSops.find(d => d.id === formLinkedDocId)?.documentNumber || formLinkedDocId
+                    : 'None'}
+                </p>
+                <p className="text-sm">
+                  <span className="font-medium">Linked CAPA:</span>{' '}
+                  {formLinkedCapaId && formLinkedCapaId !== 'none'
+                    ? capas.find(c => c.id === formLinkedCapaId)?.capaNumber || formLinkedCapaId
+                    : 'None'}
+                </p>
+                {formAdditionalReferences && (
+                  <p className="text-sm"><span className="font-medium">Additional References:</span> {formAdditionalReferences}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
@@ -329,121 +893,100 @@ export function CapaView() {
         </CardContent>
       </Card>
 
-      {/* Create CAPA Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      {/* ═══════════════════════════════════════════════════════════════════════
+          CREATE CAPA DIALOG — 6-STEP WIZARD
+         ═══════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={showCreateDialog} onOpenChange={(open) => { if (!open) resetForm(); setShowCreateDialog(open); }}>
+        <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create New CAPA</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-primary" />
+              Create New CAPA
+            </DialogTitle>
           </DialogHeader>
+
           {prereqError && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
               <p className="text-sm text-red-700 dark:text-red-400">{prereqError}</p>
             </div>
           )}
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label>Title *</Label>
-              <Input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="CAPA title" />
+
+          {/* Step Indicators */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              {WIZARD_STEPS.map((step, idx) => {
+                const StepIcon = step.icon;
+                const isActive = idx === wizardStep;
+                const isCompleted = idx < wizardStep;
+                const isAccessible = idx <= wizardStep;
+                return (
+                  <button
+                    key={step.id}
+                    type="button"
+                    disabled={!isAccessible}
+                    onClick={() => isAccessible && goToStep(idx)}
+                    className={cn(
+                      'flex flex-col items-center gap-1.5 transition-all px-2 py-1 rounded-lg',
+                      isActive ? 'text-primary' : isCompleted ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground',
+                      isAccessible ? 'cursor-pointer hover:bg-muted/50' : 'cursor-not-allowed opacity-50',
+                    )}
+                  >
+                    <div className={cn(
+                      'w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold border-2 transition-all',
+                      isActive ? 'border-primary bg-primary text-primary-foreground' :
+                      isCompleted ? 'border-green-500 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 dark:border-green-600' :
+                      'border-muted-foreground/30 bg-background text-muted-foreground'
+                    )}>
+                      {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : <StepIcon className="h-4 w-4" />}
+                    </div>
+                    <span className="text-[10px] sm:text-xs font-medium text-center leading-tight max-w-[80px]">{step.label}</span>
+                  </button>
+                );
+              })}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Type *</Label>
-                <Select value={formType} onValueChange={(v) => setFormType(v as CapaType)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Corrective">Corrective</SelectItem>
-                    <SelectItem value="Preventive">Preventive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Priority *</Label>
-                <Select value={formPriority} onValueChange={(v) => setFormPriority(v as CapaPriority)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Critical">Critical</SelectItem>
-                    <SelectItem value="High">High</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="Low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Source</Label>
-                <Select value={formSource} onValueChange={(v) => setFormSource(v as CapaSource)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Non-Conformance">Non-Conformance</SelectItem>
-                    <SelectItem value="Audit Finding">Audit Finding</SelectItem>
-                    <SelectItem value="Customer Complaint">Customer Complaint</SelectItem>
-                    <SelectItem value="Management Review">Management Review</SelectItem>
-                    <SelectItem value="Process Monitoring">Process Monitoring</SelectItem>
-                    <SelectItem value="Supplier Issue">Supplier Issue</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Root Cause Category</Label>
-                <Select value={formRootCauseCategory} onValueChange={(v) => setFormRootCauseCategory(v as RootCauseCategory)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {(['Man', 'Machine', 'Method', 'Material', 'Measurement', 'Environment', 'Management'] as RootCauseCategory[]).map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Description *</Label>
-              <Textarea value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Describe the CAPA..." rows={3} />
-            </div>
-            <div className="grid gap-2">
-              <Label>Problem Statement</Label>
-              <Textarea value={formProblemStatement} onChange={(e) => setFormProblemStatement(e.target.value)} placeholder="What is the problem?" rows={2} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Assigned To *</Label>
-                <Select value={formAssignedTo} onValueChange={setFormAssignedTo}>
-                  <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
-                  <SelectContent>
-                    {profiles.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Due Date *</Label>
-                <Input type="date" value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Linked Document (Approved SOP)</Label>
-              <Select value={formLinkedDocId} onValueChange={setFormLinkedDocId}>
-                <SelectTrigger><SelectValue placeholder="Select linked SOP" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {approvedSops.map(d => (
-                    <SelectItem key={d.id} value={d.id}>{d.documentNumber} - {d.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button className="w-full" onClick={handleCreate} disabled={!formTitle || !formDescription || !formAssignedTo}>
-              Create CAPA
+            {/* Progress Bar */}
+            <Progress value={((wizardStep + 1) / WIZARD_STEPS.length) * 100} className="h-2" />
+          </div>
+
+          {/* Step Content */}
+          <div className="py-2 min-h-[300px]">
+            {renderStepContent()}
+          </div>
+
+          {/* Navigation Buttons */}
+          <div className="flex items-center justify-between pt-2 border-t">
+            <Button
+              variant="outline"
+              onClick={goPrev}
+              disabled={wizardStep === 0}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Previous
             </Button>
+            <span className="text-sm text-muted-foreground">
+              Step {wizardStep + 1} of {WIZARD_STEPS.length}
+            </span>
+            {wizardStep < WIZARD_STEPS.length - 1 ? (
+              <Button onClick={goNext} disabled={!isStepValid(wizardStep)}>
+                Next
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            ) : (
+              <Button onClick={handleCreate} disabled={!isStepValid(wizardStep)}>
+                <CheckCircle2 className="h-4 w-4 mr-1" />
+                Submit CAPA
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Detail Dialog */}
+      {/* ═══════════════════════════════════════════════════════════════════════
+          DETAIL DIALOG — ENHANCED
+         ═══════════════════════════════════════════════════════════════════════ */}
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[750px] max-h-[92vh] overflow-y-auto">
           {selectedCapa && (
             <>
               <DialogHeader>
@@ -484,7 +1027,7 @@ export function CapaView() {
                   ))}
                 </div>
 
-                {/* Details */}
+                {/* Details Grid */}
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><span className="text-muted-foreground">Assigned To:</span> <span className="font-medium ml-1">{getUserName(selectedCapa.assignedTo)}</span></div>
                   <div><span className="text-muted-foreground">Due Date:</span> <span className="font-medium ml-1">{new Date(selectedCapa.dueDate).toLocaleDateString()}</span></div>
@@ -492,23 +1035,31 @@ export function CapaView() {
                   {selectedCapa.closedDate && <div><span className="text-muted-foreground">Closed:</span> <span className="font-medium ml-1">{new Date(selectedCapa.closedDate).toLocaleDateString()}</span></div>}
                 </div>
 
+                {/* ── Sections ── */}
                 <div className="space-y-3">
+                  {/* Description */}
                   <div>
                     <h4 className="font-medium text-sm mb-1">Description</h4>
                     <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCapa.description}</p>
                   </div>
+
+                  {/* Problem Statement */}
                   {selectedCapa.problemStatement && (
                     <div>
                       <h4 className="font-medium text-sm mb-1">Problem Statement</h4>
                       <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCapa.problemStatement}</p>
                     </div>
                   )}
+
+                  {/* Investigation Details */}
                   {selectedCapa.investigationDetails && (
                     <div>
                       <h4 className="font-medium text-sm mb-1">Investigation Details</h4>
                       <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCapa.investigationDetails}</p>
                     </div>
                   )}
+
+                  {/* Root Cause Analysis */}
                   {selectedCapa.rootCauseAnalysis && (
                     <div>
                       <h4 className="font-medium text-sm mb-1">Root Cause Analysis</h4>
@@ -518,6 +1069,8 @@ export function CapaView() {
                       )}
                     </div>
                   )}
+
+                  {/* 5 Whys Analysis */}
                   {selectedCapa.fiveWhys && selectedCapa.fiveWhys.length > 0 && (
                     <div>
                       <h4 className="font-medium text-sm mb-1">5 Whys Analysis</h4>
@@ -531,12 +1084,48 @@ export function CapaView() {
                       </div>
                     </div>
                   )}
+
+                  {/* Corrective Action */}
                   {selectedCapa.correctiveAction && (
                     <div>
                       <h4 className="font-medium text-sm mb-1">Corrective Action</h4>
                       <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCapa.correctiveAction}</p>
                     </div>
                   )}
+
+                  {/* ── NEW: Proposed Change Section ── */}
+                  {(selectedCapa as Record<string, unknown>).proposedChange && (
+                    <div>
+                      <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
+                        <Wrench className="h-4 w-4 text-primary" />
+                        Proposed Change
+                      </h4>
+                      <p className="text-sm text-muted-foreground bg-purple-50 dark:bg-purple-900/10 p-3 rounded-md border border-purple-200 dark:border-purple-800">
+                        {(selectedCapa as Record<string, unknown>).proposedChange as string}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* ── NEW: Risk & Impact Assessment Section (color-coded) ── */}
+                  {(selectedCapa as Record<string, unknown>).riskAssessment && (
+                    <div>
+                      <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-primary" />
+                        Risk & Impact Assessment
+                      </h4>
+                      <div className="bg-amber-50 dark:bg-amber-900/10 p-3 rounded-md border border-amber-200 dark:border-amber-800 space-y-2">
+                        <p className="text-sm text-muted-foreground">{(selectedCapa as Record<string, unknown>).riskAssessment as string}</p>
+                        {(selectedCapa as Record<string, unknown>).impactAnalysis && (
+                          <p className="text-sm"><span className="font-medium">Impact Analysis:</span> <span className="text-muted-foreground">{(selectedCapa as Record<string, unknown>).impactAnalysis as string}</span></p>
+                        )}
+                        {(selectedCapa as Record<string, unknown>).affectedAreas && (
+                          <p className="text-sm"><span className="font-medium">Affected Areas:</span> <span className="text-muted-foreground">{(selectedCapa as Record<string, unknown>).affectedAreas as string}</span></p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Effectiveness Verification */}
                   {selectedCapa.effectivenessVerificationMethod && (
                     <div>
                       <h4 className="font-medium text-sm mb-1">Effectiveness Verification</h4>
@@ -549,11 +1138,55 @@ export function CapaView() {
                       )}
                     </div>
                   )}
+
+                  {/* ── NEW: Linked CAPA Reference (clickable) ── */}
+                  {selectedCapa.linkedCapaId && (() => {
+                    const linkedCapa = getLinkedCapa(selectedCapa.linkedCapaId);
+                    return (
+                      <div>
+                        <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
+                          <Link2 className="h-4 w-4 text-primary" />
+                          Linked CAPA
+                        </h4>
+                        {linkedCapa ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedCapa(linkedCapa);
+                            }}
+                            className="text-sm text-primary underline hover:text-primary/80 bg-primary/5 p-3 rounded-md border border-primary/20 w-full text-left transition-colors"
+                          >
+                            {linkedCapa.capaNumber} — {linkedCapa.title}
+                            <Badge className={cn('ml-2 text-xs', statusColors[linkedCapa.status])} variant="secondary">{linkedCapa.status}</Badge>
+                          </button>
+                        ) : (
+                          <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCapa.linkedCapaId}</p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Linked Document */}
+                  {selectedCapa.linkedDocumentId && (
+                    <div>
+                      <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-primary" />
+                        Linked Document
+                      </h4>
+                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">
+                        {(() => {
+                          const doc = documents.find(d => d.id === selectedCapa.linkedDocumentId);
+                          return doc ? `${doc.documentNumber} — ${doc.title}` : selectedCapa.linkedDocumentId;
+                        })()}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                {/* Action Button */}
+                {/* Action Button — requires electronic signature */}
                 {hasPermission('capa.update') && selectedCapa.status !== 'Closed' && (
                   <Button className="w-full" onClick={() => handleAdvanceStatus(selectedCapa)}>
+                    <Shield className="h-4 w-4 mr-2" />
                     Advance to {getNextStatus(selectedCapa.status)}
                     <ArrowRight className="h-4 w-4 ml-2" />
                   </Button>
@@ -563,6 +1196,16 @@ export function CapaView() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ── Electronic Signature Modal ── */}
+      <ElectronicSignatureModal
+        open={showSignatureModal}
+        onClose={() => { setShowSignatureModal(false); setPendingStatusChange(null); }}
+        onSign={handleSignatureComplete}
+        recordTitle={pendingStatusChange?.capa.title || ''}
+        recordId={pendingStatusChange?.capa.id || ''}
+        signatureType="approval"
+      />
     </div>
   );
 }

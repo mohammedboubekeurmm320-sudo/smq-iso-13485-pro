@@ -6,10 +6,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import type { BatchRecord, BatchStep, BatchStatus, BatchStepStatus, SignatureType } from '@/types/qms';
+import type { BatchRecord, BatchStep, BatchStatus, BatchStepStatus, SignatureType, RawMaterial, RawMaterialStatus, StepType } from '@/types/qms';
 import {
   Package, Plus, Search, ArrowRight, CheckCircle2, Lock, AlertTriangle,
-  ShieldCheck, Play, Clock, User, FileCheck, AlertCircle,
+  ShieldCheck, Play, Clock, User, FileCheck, AlertCircle, Trash2,
+  Beaker, ClipboardList, FlaskConical,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -43,9 +45,47 @@ const stepStatusColors: Record<BatchStepStatus, string> = {
   'Failed': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 };
 
+const rawMaterialStatusColors: Record<RawMaterialStatus, string> = {
+  'Verified': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  'Pending': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  'Rejected': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+};
+
+const stepTypeIcons: Record<StepType, string> = {
+  'Weighing': '⚖️',
+  'Mixing': '🔄',
+  'Filtration': '🔬',
+  'Filling': '💉',
+  'Inspection': '🔍',
+  'Labeling': '🏷️',
+  'Packaging': '📦',
+  'QC Testing': '🧪',
+  'Other': '⚙️',
+};
+
 const batchStatusFlow: BatchStatus[] = ['In Progress', 'Pending QA Review', 'Released'];
 
 const batchSizeUnits = ['vials', 'units', 'tablets', 'kg', 'liters'];
+
+const stepTypeOptions: StepType[] = ['Weighing', 'Mixing', 'Filtration', 'Filling', 'Inspection', 'Labeling', 'Packaging', 'QC Testing', 'Other'];
+
+const rawMaterialStatusOptions: RawMaterialStatus[] = ['Verified', 'Pending', 'Rejected'];
+
+interface FormRawMaterial {
+  id: string;
+  material: string;
+  lotNumber: string;
+  supplier: string;
+  status: RawMaterialStatus;
+}
+
+interface FormStepTemplate {
+  id: string;
+  stepName: string;
+  instructions: string;
+  expectedValue: string;
+  stepType: StepType;
+}
 
 function getNextBatchStatus(current: BatchStatus): BatchStatus | null {
   const idx = batchStatusFlow.indexOf(current);
@@ -89,6 +129,13 @@ export function BatchRecordView() {
   const [formBatchSizeUnit, setFormBatchSizeUnit] = useState('vials');
   const [formMfgDate, setFormMfgDate] = useState('');
   const [formExpiryDate, setFormExpiryDate] = useState('');
+  const [formSopReference, setFormSopReference] = useState('');
+
+  // Raw materials in create form
+  const [formRawMaterials, setFormRawMaterials] = useState<FormRawMaterial[]>([]);
+
+  // Step templates in create form
+  const [formStepTemplates, setFormStepTemplates] = useState<FormStepTemplate[]>([]);
 
   // Step editing
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
@@ -134,6 +181,40 @@ export function BatchRecordView() {
     return `BN-${new Date().getFullYear()}-${String(count).padStart(3, '0')}`;
   };
 
+  const addFormRawMaterial = () => {
+    setFormRawMaterials(prev => [
+      ...prev,
+      { id: `rm-form-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, material: '', lotNumber: '', supplier: '', status: 'Pending' },
+    ]);
+  };
+
+  const removeFormRawMaterial = (id: string) => {
+    setFormRawMaterials(prev => prev.filter(rm => rm.id !== id));
+  };
+
+  const updateFormRawMaterial = (id: string, field: keyof FormRawMaterial, value: string) => {
+    setFormRawMaterials(prev =>
+      prev.map(rm => (rm.id === id ? { ...rm, [field]: value } : rm))
+    );
+  };
+
+  const addFormStepTemplate = () => {
+    setFormStepTemplates(prev => [
+      ...prev,
+      { id: `st-form-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, stepName: '', instructions: '', expectedValue: '', stepType: 'Other' },
+    ]);
+  };
+
+  const removeFormStepTemplate = (id: string) => {
+    setFormStepTemplates(prev => prev.filter(st => st.id !== id));
+  };
+
+  const updateFormStepTemplate = (id: string, field: keyof FormStepTemplate, value: string) => {
+    setFormStepTemplates(prev =>
+      prev.map(st => (st.id === id ? { ...st, [field]: value } : st))
+    );
+  };
+
   const resetForm = () => {
     setFormAutoLot(true);
     setFormLotNumber('');
@@ -143,17 +224,49 @@ export function BatchRecordView() {
     setFormBatchSizeUnit('vials');
     setFormMfgDate('');
     setFormExpiryDate('');
+    setFormSopReference('');
+    setFormRawMaterials([]);
+    setFormStepTemplates([]);
   };
 
   const handleCreate = () => {
     const lotNumber = formAutoLot ? generateLotNumber() : formLotNumber;
+    const batchId = `batch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    // Build raw materials
+    const rawMaterials: RawMaterial[] = formRawMaterials
+      .filter(rm => rm.material.trim() !== '')
+      .map(rm => ({
+        id: `rm-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        material: rm.material,
+        lotNumber: rm.lotNumber,
+        supplier: rm.supplier,
+        status: rm.status,
+      }));
+
+    // Build steps from templates
+    const steps: BatchStep[] = formStepTemplates
+      .filter(st => st.stepName.trim() !== '')
+      .map((st, idx) => ({
+        id: `step-${Date.now()}-${Math.random().toString(36).substring(2, 7)}-${idx}`,
+        batchRecordId: batchId,
+        stepOrder: idx + 1,
+        stepName: st.stepName,
+        instructions: st.instructions || undefined,
+        expectedValue: st.expectedValue || undefined,
+        stepType: st.stepType,
+        status: 'Pending' as BatchStepStatus,
+        createdAt: new Date().toISOString(),
+      }));
+
     const newBatch: BatchRecord = {
-      id: `batch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id: batchId,
       lotNumber,
       productName: formProductName,
       productCode: formProductCode || undefined,
       batchSize: formBatchSize ? parseInt(formBatchSize) : undefined,
       batchSizeUnit: formBatchSizeUnit,
+      sopReference: formSopReference || undefined,
       manufacturingDate: formMfgDate ? new Date(formMfgDate).toISOString() : new Date().toISOString(),
       expiryDate: formExpiryDate ? new Date(formExpiryDate).toISOString() : undefined,
       status: 'In Progress',
@@ -161,11 +274,16 @@ export function BatchRecordView() {
       organizationId: 'org-001',
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
-      steps: [],
+      steps,
+      rawMaterials: rawMaterials.length > 0 ? rawMaterials : undefined,
     };
     store.addBatchRecord(newBatch);
     resetForm();
     setShowCreateDialog(false);
+    toast({
+      title: 'Batch Record Created',
+      description: `${lotNumber} created with ${rawMaterials.length} material(s) and ${steps.length} step(s).`,
+    });
   };
 
   const canCompleteStep = (batch: BatchRecord, step: BatchStep): boolean => {
@@ -407,12 +525,14 @@ export function BatchRecordView() {
                   <TableHead className="w-[110px]">Mfg Date</TableHead>
                   <TableHead className="w-[130px]">Status</TableHead>
                   <TableHead className="w-[100px]">Progress</TableHead>
+                  <TableHead className="w-[80px]">Materials</TableHead>
                   <TableHead className="w-[100px]">Lock</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredBatches.map(batch => {
                   const progress = getStepProgress(batch);
+                  const materialCount = batch.rawMaterials?.length || 0;
                   return (
                     <TableRow key={batch.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => openDetail(batch)}>
                       <TableCell className="font-mono text-xs">{batch.lotNumber}</TableCell>
@@ -434,6 +554,16 @@ export function BatchRecordView() {
                         </div>
                       </TableCell>
                       <TableCell>
+                        {materialCount > 0 ? (
+                          <div className="flex items-center gap-1" title={`${materialCount} raw material(s)`}>
+                            <Beaker className="h-3.5 w-3.5 text-teal-500" />
+                            <span className="text-xs font-medium text-teal-600 dark:text-teal-400">{materialCount}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         {batch.isLocked ? (
                           <Badge variant="outline" className="text-xs"><Lock className="h-3 w-3 mr-1" />Locked</Badge>
                         ) : <span className="text-muted-foreground text-xs">Unlocked</span>}
@@ -443,7 +573,7 @@ export function BatchRecordView() {
                 })}
                 {filteredBatches.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No batch records found</TableCell>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No batch records found</TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -454,58 +584,236 @@ export function BatchRecordView() {
 
       {/* Create Batch Record Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[720px] max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Create New Batch Record</DialogTitle></DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="autoLot" className="text-sm">Auto-generate lot number</Label>
-              <input
-                id="autoLot"
-                type="checkbox"
-                checked={formAutoLot}
-                onChange={(e) => setFormAutoLot(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-            </div>
-            {!formAutoLot && (
-              <div className="grid gap-2">
-                <Label>Lot Number *</Label>
-                <Input value={formLotNumber} onChange={(e) => setFormLotNumber(e.target.value)} placeholder="BN-2024-XXX" />
+          <div className="grid gap-5 py-2">
+            {/* Basic Information */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Basic Information</h4>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="autoLot" className="text-sm">Auto-generate lot number</Label>
+                <input
+                  id="autoLot"
+                  type="checkbox"
+                  checked={formAutoLot}
+                  onChange={(e) => setFormAutoLot(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
               </div>
-            )}
-            <div className="grid gap-2">
-              <Label>Product Name *</Label>
-              <Input value={formProductName} onChange={(e) => setFormProductName(e.target.value)} placeholder="Product name" />
-            </div>
-            <div className="grid gap-2">
-              <Label>Product Code</Label>
-              <Input value={formProductCode} onChange={(e) => setFormProductCode(e.target.value)} placeholder="PROD-XXX" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Batch Size</Label>
-                <Input type="number" value={formBatchSize} onChange={(e) => setFormBatchSize(e.target.value)} placeholder="0" />
+              {!formAutoLot && (
+                <div className="grid gap-2">
+                  <Label>Lot Number *</Label>
+                  <Input value={formLotNumber} onChange={(e) => setFormLotNumber(e.target.value)} placeholder="BN-2024-XXX" />
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Product Name *</Label>
+                  <Input value={formProductName} onChange={(e) => setFormProductName(e.target.value)} placeholder="Product name" />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Product Code</Label>
+                  <Input value={formProductCode} onChange={(e) => setFormProductCode(e.target.value)} placeholder="PROD-XXX" />
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Label>Unit</Label>
-                <Select value={formBatchSizeUnit} onValueChange={setFormBatchSizeUnit}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {batchSizeUnits.map(u => <SelectItem key={u} value={u}>{u.charAt(0).toUpperCase() + u.slice(1)}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="grid gap-2">
+                  <Label>Batch Size</Label>
+                  <Input type="number" value={formBatchSize} onChange={(e) => setFormBatchSize(e.target.value)} placeholder="0" />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Unit</Label>
+                  <Select value={formBatchSizeUnit} onValueChange={setFormBatchSizeUnit}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {batchSizeUnits.map(u => <SelectItem key={u} value={u}>{u.charAt(0).toUpperCase() + u.slice(1)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>SOP Reference</Label>
+                  <Input value={formSopReference} onChange={(e) => setFormSopReference(e.target.value)} placeholder="SOP-XXX" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Manufacturing Date *</Label>
+                  <Input type="date" value={formMfgDate} onChange={(e) => setFormMfgDate(e.target.value)} />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Expiry Date</Label>
+                  <Input type="date" value={formExpiryDate} onChange={(e) => setFormExpiryDate(e.target.value)} />
+                </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Manufacturing Date *</Label>
-                <Input type="date" value={formMfgDate} onChange={(e) => setFormMfgDate(e.target.value)} />
+
+            <Separator />
+
+            {/* Raw Materials & Components Sub-table */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <Beaker className="h-4 w-4 text-teal-500" />
+                  Raw Materials &amp; Components
+                </h4>
+                <Button variant="outline" size="sm" onClick={addFormRawMaterial}>
+                  <Plus className="h-3 w-3 mr-1" />Add Material
+                </Button>
               </div>
-              <div className="grid gap-2">
-                <Label>Expiry Date</Label>
-                <Input type="date" value={formExpiryDate} onChange={(e) => setFormExpiryDate(e.target.value)} />
-              </div>
+              {formRawMaterials.length > 0 ? (
+                <div className="border rounded-md overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[180px]">Material</TableHead>
+                        <TableHead className="w-[140px]">Lot Number</TableHead>
+                        <TableHead className="w-[160px]">Supplier</TableHead>
+                        <TableHead className="w-[120px]">Status</TableHead>
+                        <TableHead className="w-[50px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {formRawMaterials.map(rm => (
+                        <TableRow key={rm.id}>
+                          <TableCell>
+                            <Input
+                              className="h-8 text-xs"
+                              placeholder="Material name"
+                              value={rm.material}
+                              onChange={(e) => updateFormRawMaterial(rm.id, 'material', e.target.value)}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-8 text-xs"
+                              placeholder="Lot #"
+                              value={rm.lotNumber}
+                              onChange={(e) => updateFormRawMaterial(rm.id, 'lotNumber', e.target.value)}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-8 text-xs"
+                              placeholder="Supplier"
+                              value={rm.supplier}
+                              onChange={(e) => updateFormRawMaterial(rm.id, 'supplier', e.target.value)}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Select value={rm.status} onValueChange={(val) => updateFormRawMaterial(rm.id, 'status', val)}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {rawMaterialStatusOptions.map(s => (
+                                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                              onClick={() => removeFormRawMaterial(rm.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="border rounded-md p-4 text-center text-muted-foreground text-xs bg-muted/20">
+                  No raw materials added. Click &quot;Add Material&quot; to define materials and components.
+                </div>
+              )}
             </div>
+
+            <Separator />
+
+            {/* Batch Step Templates */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4 text-indigo-500" />
+                  Batch Step Templates
+                </h4>
+                <Button variant="outline" size="sm" onClick={addFormStepTemplate}>
+                  <Plus className="h-3 w-3 mr-1" />Add Step
+                </Button>
+              </div>
+              {formStepTemplates.length > 0 ? (
+                <div className="space-y-3">
+                  {formStepTemplates.map((st, idx) => (
+                    <div key={st.id} className="border rounded-md p-3 space-y-2 bg-muted/10 relative">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-muted-foreground">Step {idx + 1}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                          onClick={() => removeFormStepTemplate(st.id)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="grid gap-1">
+                          <Label className="text-xs">Step Name *</Label>
+                          <Input
+                            className="h-8 text-xs"
+                            placeholder="e.g. Material Weighing"
+                            value={st.stepName}
+                            onChange={(e) => updateFormStepTemplate(st.id, 'stepName', e.target.value)}
+                          />
+                        </div>
+                        <div className="grid gap-1">
+                          <Label className="text-xs">Step Type</Label>
+                          <Select value={st.stepType} onValueChange={(val) => updateFormStepTemplate(st.id, 'stepType', val)}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {stepTypeOptions.map(t => (
+                                <SelectItem key={t} value={t}>
+                                  {stepTypeIcons[t]} {t}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="grid gap-1">
+                        <Label className="text-xs">Instructions</Label>
+                        <Textarea
+                          className="text-xs min-h-[48px]"
+                          placeholder="Step instructions..."
+                          value={st.instructions}
+                          onChange={(e) => updateFormStepTemplate(st.id, 'instructions', e.target.value)}
+                          rows={2}
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label className="text-xs">Expected Value</Label>
+                        <Input
+                          className="h-8 text-xs"
+                          placeholder="e.g. 250.0 ± 2.5 kg"
+                          value={st.expectedValue}
+                          onChange={(e) => updateFormStepTemplate(st.id, 'expectedValue', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="border rounded-md p-4 text-center text-muted-foreground text-xs bg-muted/20">
+                  No step templates added. Click &quot;Add Step&quot; to define batch processing steps.
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
             <Button
               className="w-full"
               onClick={handleCreate}
@@ -519,7 +827,7 @@ export function BatchRecordView() {
 
       {/* Detail Dialog */}
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="sm:max-w-[850px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
           {selectedBatch && (
             <>
               <DialogHeader>
@@ -540,6 +848,11 @@ export function BatchRecordView() {
                     {selectedBatch.status}
                   </Badge>
                   {selectedBatch.productCode && <Badge variant="outline">{selectedBatch.productCode}</Badge>}
+                  {selectedBatch.sopReference && (
+                    <Badge variant="outline" className="border-teal-300 text-teal-700 dark:border-teal-700 dark:text-teal-400">
+                      <FileCheck className="h-3 w-3 mr-1" />{selectedBatch.sopReference}
+                    </Badge>
+                  )}
                   {selectedBatch.isLocked && (
                     <Badge variant="outline" className="border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400">
                       <Lock className="h-3 w-3 mr-1" />Record Locked
@@ -597,6 +910,12 @@ export function BatchRecordView() {
                       <span className="font-mono font-medium">{selectedBatch.productCode}</span>
                     </div>
                   )}
+                  {selectedBatch.sopReference && (
+                    <div>
+                      <span className="text-muted-foreground">SOP Ref:</span>{' '}
+                      <span className="font-mono font-medium">{selectedBatch.sopReference}</span>
+                    </div>
+                  )}
                   <div>
                     <span className="text-muted-foreground">Mfg Date:</span>{' '}
                     <span className="font-medium">{formatDate(selectedBatch.manufacturingDate)}</span>
@@ -619,6 +938,65 @@ export function BatchRecordView() {
                     <div>
                       <span className="text-muted-foreground">Released By:</span>{' '}
                       <span className="font-medium">{getUserName(selectedBatch.qaReleasedById)}</span>
+                    </div>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* Raw Materials Section */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-medium text-sm flex items-center gap-2">
+                      <Beaker className="h-4 w-4 text-teal-500" />
+                      Raw Materials &amp; Components
+                    </h4>
+                    {selectedBatch.rawMaterials && selectedBatch.rawMaterials.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {selectedBatch.rawMaterials.filter(rm => rm.status === 'Verified').length}/{selectedBatch.rawMaterials.length} verified
+                      </span>
+                    )}
+                  </div>
+
+                  {selectedBatch.rawMaterials && selectedBatch.rawMaterials.length > 0 ? (
+                    <div className="border rounded-md overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Material</TableHead>
+                            <TableHead className="w-[140px]">Lot Number</TableHead>
+                            <TableHead className="w-[180px]">Supplier</TableHead>
+                            <TableHead className="w-[110px]">Verification Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {selectedBatch.rawMaterials.map(rm => (
+                            <TableRow key={rm.id}>
+                              <TableCell className="font-medium text-sm">
+                                <div className="flex items-center gap-2">
+                                  <FlaskConical className="h-3.5 w-3.5 text-teal-500 flex-shrink-0" />
+                                  {rm.material}
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">{rm.lotNumber}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{rm.supplier}</TableCell>
+                              <TableCell>
+                                <Badge className={cn('text-xs', rawMaterialStatusColors[rm.status])} variant="secondary">
+                                  {rm.status === 'Verified' && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                                  {rm.status === 'Pending' && <Clock className="h-3 w-3 mr-1" />}
+                                  {rm.status === 'Rejected' && <AlertCircle className="h-3 w-3 mr-1" />}
+                                  {rm.status}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 text-muted-foreground text-sm border rounded-md bg-muted/20">
+                      <Beaker className="h-6 w-6 mx-auto mb-2 text-muted-foreground/50" />
+                      No raw materials recorded for this batch
                     </div>
                   )}
                 </div>
@@ -653,7 +1031,7 @@ export function BatchRecordView() {
                               step.status === 'In Progress' ? 'bg-amber-500 text-white' :
                               step.status === 'Failed' ? 'bg-red-500 text-white' :
                               'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-                            )}>
+                            )} title={step.stepType || ''}>
                               {step.stepOrder}
                             </div>
                             {i < selectedBatch.steps!.length - 1 && (
@@ -670,6 +1048,7 @@ export function BatchRecordView() {
                             <TableRow>
                               <TableHead className="w-[40px]">#</TableHead>
                               <TableHead>Step Name</TableHead>
+                              <TableHead className="w-[100px]">Type</TableHead>
                               <TableHead className="w-[140px]">Instructions</TableHead>
                               <TableHead className="w-[110px]">Expected</TableHead>
                               <TableHead className="w-[130px]">Actual</TableHead>
@@ -684,6 +1063,13 @@ export function BatchRecordView() {
                               <TableRow key={step.id}>
                                 <TableCell className="font-mono text-xs">{step.stepOrder}</TableCell>
                                 <TableCell className="font-medium text-sm">{step.stepName}</TableCell>
+                                <TableCell>
+                                  {step.stepType ? (
+                                    <Badge variant="outline" className="text-xs">
+                                      {stepTypeIcons[step.stepType]} {step.stepType}
+                                    </Badge>
+                                  ) : '-'}
+                                </TableCell>
                                 <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">
                                   {step.instructions || '-'}
                                 </TableCell>

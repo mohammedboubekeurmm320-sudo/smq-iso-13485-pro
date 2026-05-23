@@ -5,11 +5,13 @@ import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
-import type { FormTemplate, FormInstance, FormFieldDefinition, FormInstanceStatus, SignatureType } from '@/types/qms';
+import type { FormTemplate, FormInstance, FormFieldDefinition, FormInstanceStatus, SignatureType, FormTemplateWorkflow, FormTemplateCompliance } from '@/types/qms';
 import {
   FileSpreadsheet, Plus, Search, Eye, Lock, ChevronUp, ChevronDown,
   Trash2, GripVertical, ShieldCheck, CheckCircle2, XCircle,
   FileText, LayoutTemplate, ClipboardList, PenLine,
+  ChevronLeft, ChevronRight, Star, Upload, Repeat,
+  Gavel, Scale, Printer, Clock, AlertTriangle,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -46,7 +48,26 @@ const fieldTypeIcons: Record<string, string> = {
   textarea: '¶',
   signature: '✍',
   table: '▦',
+  rating: '★',
+  file: '📎',
+  repeater: '⟳',
 };
+
+const dataClassificationColors: Record<string, string> = {
+  'Internal': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  'Confidential': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  'Regulatory': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+  'GxP Critical': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+};
+
+const WIZARD_STEPS = [
+  { id: 1, label: 'Template Info', icon: LayoutTemplate },
+  { id: 2, label: 'Field Builder', icon: ClipboardList },
+  { id: 3, label: 'Field Config', icon: FileText },
+  { id: 4, label: 'Workflow & Rules', icon: Gavel },
+  { id: 5, label: 'Compliance', icon: ShieldCheck },
+  { id: 6, label: 'Review & Submit', icon: CheckCircle2 },
+];
 
 export function FormView() {
   const { currentUser, hasPermission } = useAuth();
@@ -61,23 +82,43 @@ export function FormView() {
   const [showTemplateDetailDialog, setShowTemplateDetailDialog] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<FormTemplate | null>(null);
 
-  // Builder state
+  // Wizard state
+  const [wizardStep, setWizardStep] = useState(1);
   const [builderTitle, setBuilderTitle] = useState('');
   const [builderVersion, setBuilderVersion] = useState('1.0');
   const [builderLinkedDoc, setBuilderLinkedDoc] = useState('');
+  const [builderDescription, setBuilderDescription] = useState('');
   const [builderFields, setBuilderFields] = useState<FormFieldDefinition[]>([]);
+  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
 
-  // New field state
+  // New field state (Step 2)
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldLabel, setNewFieldLabel] = useState('');
   const [newFieldType, setNewFieldType] = useState<FormFieldDefinition['type']>('text');
-  const [newFieldRequired, setNewFieldRequired] = useState(false);
-  const [newFieldOptions, setNewFieldOptions] = useState('');
-  const [newFieldPlaceholder, setNewFieldPlaceholder] = useState('');
-  const [newFieldDefaultValue, setNewFieldDefaultValue] = useState('');
-  const [newFieldValidationMin, setNewFieldValidationMin] = useState('');
-  const [newFieldValidationMax, setNewFieldValidationMax] = useState('');
-  const [newFieldValidationPattern, setNewFieldValidationPattern] = useState('');
+
+  // Field config state (Step 3)
+  const [fieldPlaceholder, setFieldPlaceholder] = useState('');
+  const [fieldDefaultValue, setFieldDefaultValue] = useState('');
+  const [fieldRequired, setFieldRequired] = useState(false);
+  const [fieldOptions, setFieldOptions] = useState('');
+  const [fieldValidationMin, setFieldValidationMin] = useState('');
+  const [fieldValidationMax, setFieldValidationMax] = useState('');
+  const [fieldValidationPattern, setFieldValidationPattern] = useState('');
+
+  // Workflow state (Step 4)
+  const [workflowRequiresApproval, setWorkflowRequiresApproval] = useState(true);
+  const [workflowType, setWorkflowType] = useState<'single' | 'sequential' | 'parallel'>('single');
+  const [workflowAllowDraftSaves, setWorkflowAllowDraftSaves] = useState(true);
+  const [workflowLockAfterSubmission, setWorkflowLockAfterSubmission] = useState(true);
+  const [workflowESignatureRequired, setWorkflowESignatureRequired] = useState(false);
+
+  // Compliance state (Step 5)
+  const [complianceRegulatoryRef, setComplianceRegulatoryRef] = useState('');
+  const [complianceRetentionPeriod, setComplianceRetentionPeriod] = useState('Product Lifetime');
+  const [complianceDataClassification, setComplianceDataClassification] = useState<FormTemplateCompliance['dataClassification']>('Internal');
+  const [complianceAuditTrailEnabled, setComplianceAuditTrailEnabled] = useState(true);
+  const [compliancePrintFriendly, setCompliancePrintFriendly] = useState(false);
+  const [complianceCfrPart11, setComplianceCfrPart11] = useState(false);
 
   // ===== INSTANCES TAB STATE =====
   const [instanceSearch, setInstanceSearch] = useState('');
@@ -113,12 +154,8 @@ export function FormView() {
     [instances, instanceSearch, instanceTemplateFilter, instanceStatusFilter]
   );
 
-  // Template instance counts
   const getInstanceCount = (templateId: string) => instances.filter(i => i.templateId === templateId).length;
-  const getInstanceCountByStatus = (templateId: string, status: FormInstanceStatus) =>
-    instances.filter(i => i.templateId === templateId && i.status === status).length;
 
-  // Summary cards
   const templateSummary = useMemo(() => ({
     activeTemplates: templates.filter(t => t.isActive).length,
     totalInstances: instances.length,
@@ -135,14 +172,42 @@ export function FormView() {
     return profile?.fullName || profile?.email || userId;
   };
 
+  // ===== SELECTED FIELD FOR STEP 3 =====
+  const selectedField = useMemo(() =>
+    builderFields.find(f => f.id === selectedFieldId) || null,
+    [builderFields, selectedFieldId]
+  );
+
+  // Sync Step 3 config state when selected field changes
+  React.useEffect(() => {
+    if (selectedField) {
+      setFieldPlaceholder(selectedField.placeholder || '');
+      setFieldDefaultValue(selectedField.defaultValue || '');
+      setFieldRequired(selectedField.required || false);
+      setFieldOptions(selectedField.options?.join(', ') || '');
+      setFieldValidationMin(selectedField.validation?.min?.toString() || '');
+      setFieldValidationMax(selectedField.validation?.max?.toString() || '');
+      setFieldValidationPattern(selectedField.validation?.pattern || '');
+    } else {
+      setFieldPlaceholder(''); setFieldDefaultValue(''); setFieldRequired(false);
+      setFieldOptions(''); setFieldValidationMin(''); setFieldValidationMax(''); setFieldValidationPattern('');
+    }
+  }, [selectedField]);
+
   // ===== BUILDER HELPERS =====
   const resetBuilder = () => {
+    setWizardStep(1);
     setBuilderTitle(''); setBuilderVersion('1.0'); setBuilderLinkedDoc('');
-    setBuilderFields([]);
+    setBuilderDescription(''); setBuilderFields([]); setSelectedFieldId(null);
     setNewFieldName(''); setNewFieldLabel(''); setNewFieldType('text');
-    setNewFieldRequired(false); setNewFieldOptions('');
-    setNewFieldPlaceholder(''); setNewFieldDefaultValue('');
-    setNewFieldValidationMin(''); setNewFieldValidationMax(''); setNewFieldValidationPattern('');
+    setFieldPlaceholder(''); setFieldDefaultValue(''); setFieldRequired(false);
+    setFieldOptions(''); setFieldValidationMin(''); setFieldValidationMax(''); setFieldValidationPattern('');
+    setWorkflowRequiresApproval(true); setWorkflowType('single');
+    setWorkflowAllowDraftSaves(true); setWorkflowLockAfterSubmission(true);
+    setWorkflowESignatureRequired(false);
+    setComplianceRegulatoryRef(''); setComplianceRetentionPeriod('Product Lifetime');
+    setComplianceDataClassification('Internal'); setComplianceAuditTrailEnabled(true);
+    setCompliancePrintFriendly(false); setComplianceCfrPart11(false);
   };
 
   const addField = () => {
@@ -152,25 +217,14 @@ export function FormView() {
       name: newFieldName,
       label: newFieldLabel,
       type: newFieldType,
-      required: newFieldRequired,
-      options: newFieldType === 'select' ? newFieldOptions.split(',').map(o => o.trim()).filter(Boolean) : undefined,
-      placeholder: newFieldPlaceholder || undefined,
-      defaultValue: newFieldDefaultValue || undefined,
-      validation: (newFieldValidationMin || newFieldValidationMax || newFieldValidationPattern) ? {
-        min: newFieldValidationMin ? parseFloat(newFieldValidationMin) : undefined,
-        max: newFieldValidationMax ? parseFloat(newFieldValidationMax) : undefined,
-        pattern: newFieldValidationPattern || undefined,
-      } : undefined,
     };
     setBuilderFields([...builderFields, field]);
     setNewFieldName(''); setNewFieldLabel(''); setNewFieldType('text');
-    setNewFieldRequired(false); setNewFieldOptions('');
-    setNewFieldPlaceholder(''); setNewFieldDefaultValue('');
-    setNewFieldValidationMin(''); setNewFieldValidationMax(''); setNewFieldValidationPattern('');
   };
 
   const removeField = (id: string) => {
     setBuilderFields(builderFields.filter(f => f.id !== id));
+    if (selectedFieldId === id) setSelectedFieldId(null);
   };
 
   const moveFieldUp = (index: number) => {
@@ -187,15 +241,53 @@ export function FormView() {
     setBuilderFields(newFields);
   };
 
+  // Apply Step 3 field config changes back to the field
+  const applyFieldConfig = () => {
+    if (!selectedFieldId) return;
+    setBuilderFields(builderFields.map(f => {
+      if (f.id !== selectedFieldId) return f;
+      return {
+        ...f,
+        placeholder: fieldPlaceholder || undefined,
+        defaultValue: fieldDefaultValue || undefined,
+        required: fieldRequired,
+        options: f.type === 'select' ? fieldOptions.split(',').map(o => o.trim()).filter(Boolean) : undefined,
+        validation: (fieldValidationMin || fieldValidationMax || fieldValidationPattern) ? {
+          min: fieldValidationMin ? parseFloat(fieldValidationMin) : undefined,
+          max: fieldValidationMax ? parseFloat(fieldValidationMax) : undefined,
+          pattern: fieldValidationPattern || undefined,
+        } : undefined,
+      };
+    }));
+  };
+
   const handleSaveTemplate = () => {
     if (!builderTitle || builderFields.length === 0) return;
+    const workflow: FormTemplateWorkflow = {
+      requiresApproval: workflowRequiresApproval,
+      workflowType,
+      allowDraftSaves: workflowAllowDraftSaves,
+      lockAfterSubmission: workflowLockAfterSubmission,
+      eSignatureRequired: workflowESignatureRequired,
+    };
+    const compliance: FormTemplateCompliance = {
+      regulatoryReference: complianceRegulatoryRef,
+      retentionPeriod: complianceRetentionPeriod,
+      dataClassification: complianceDataClassification,
+      auditTrailEnabled: complianceAuditTrailEnabled,
+      printFriendlyLayout: compliancePrintFriendly,
+      cfrPart11Compliance: complianceCfrPart11,
+    };
     const newTemplate: FormTemplate = {
       id: `ft-${Date.now()}`,
       documentId: builderLinkedDoc || '',
       title: builderTitle,
       version: builderVersion,
+      description: builderDescription || undefined,
       fields: builderFields,
       isActive: true,
+      workflow,
+      compliance,
       organizationId: 'org-001',
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
@@ -261,7 +353,6 @@ export function FormView() {
       signatureHash: data.signatureHash,
     };
     store.updateFormInstance(instanceId, updates);
-    // Update the selected instance if it's currently shown
     if (selectedInstance && selectedInstance.id === instanceId) {
       setSelectedInstance({ ...selectedInstance, ...updates });
     }
@@ -269,8 +360,83 @@ export function FormView() {
     setPendingInstanceAction(null);
   };
 
-  const allFieldTypes: FormFieldDefinition['type'][] = ['text', 'number', 'date', 'select', 'checkbox', 'textarea', 'signature', 'table'];
+  const allFieldTypes: FormFieldDefinition['type'][] = ['text', 'number', 'date', 'select', 'checkbox', 'textarea', 'signature', 'table', 'rating', 'file', 'repeater'];
 
+  // ===== WIZARD STEP VALIDATION =====
+  const canGoNext = (): boolean => {
+    switch (wizardStep) {
+      case 1: return !!(builderTitle && builderVersion);
+      case 2: return builderFields.length > 0;
+      case 3: return true;
+      case 4: return true;
+      case 5: return true;
+      default: return false;
+    }
+  };
+
+  // ===== RENDER FIELD PREVIEW (shared) =====
+  const renderFieldPreview = (field: FormFieldDefinition, disabled = true) => (
+    <div key={field.id} className="grid gap-1.5">
+      <Label className="text-sm">
+        {field.label}
+        {field.required && <span className="text-red-500 ml-1">*</span>}
+      </Label>
+      {field.type === 'text' && (
+        <Input placeholder={field.placeholder} disabled={disabled} className="bg-white dark:bg-gray-950" />
+      )}
+      {field.type === 'number' && (
+        <Input type="number" placeholder={field.placeholder} disabled={disabled} className="bg-white dark:bg-gray-950" />
+      )}
+      {field.type === 'date' && (
+        <Input type="date" disabled={disabled} className="bg-white dark:bg-gray-950" />
+      )}
+      {field.type === 'select' && field.options && (
+        <Select disabled={disabled}>
+          <SelectTrigger className="bg-white dark:bg-gray-950"><SelectValue placeholder={`Select ${field.label.toLowerCase()}...`} /></SelectTrigger>
+        </Select>
+      )}
+      {field.type === 'checkbox' && (
+        <div className="flex items-center gap-2">
+          <Checkbox disabled={disabled} />
+          <span className="text-sm text-muted-foreground">{field.label}</span>
+        </div>
+      )}
+      {field.type === 'textarea' && (
+        <Textarea placeholder={field.placeholder} disabled={disabled} className="bg-white dark:bg-gray-950" rows={2} />
+      )}
+      {field.type === 'signature' && (
+        <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md h-20 flex items-center justify-center text-muted-foreground text-xs">
+          <PenLine className="h-5 w-5 mr-2" />Signature Area
+        </div>
+      )}
+      {field.type === 'table' && (
+        <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md h-16 flex items-center justify-center text-muted-foreground text-xs">
+          ▦ Table Field
+        </div>
+      )}
+      {field.type === 'rating' && (
+        <div className="flex items-center gap-1 text-muted-foreground">
+          {[1, 2, 3, 4, 5].map(star => (
+            <Star key={star} className="h-5 w-5" />
+          ))}
+        </div>
+      )}
+      {field.type === 'file' && (
+        <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md h-16 flex items-center justify-center text-muted-foreground text-xs">
+          <Upload className="h-4 w-4 mr-2" />File Upload Area
+        </div>
+      )}
+      {field.type === 'repeater' && (
+        <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md h-20 flex items-center justify-center text-muted-foreground text-xs">
+          <Repeat className="h-4 w-4 mr-2" />Repeater Group
+        </div>
+      )}
+    </div>
+  );
+
+  // ===========================================================================
+  // RENDER
+  // ===========================================================================
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
       {/* Header */}
@@ -370,7 +536,14 @@ export function FormView() {
                       const instanceCount = getInstanceCount(template.id);
                       return (
                         <TableRow key={template.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => openTemplateDetail(template)}>
-                          <TableCell className="font-medium">{template.title}</TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              {template.title}
+                              {template.compliance?.cfrPart11Compliance && (
+                                <Badge variant="outline" className="text-[10px] border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-400">21 CFR Part 11</Badge>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell className="font-mono text-sm">{template.version}</TableCell>
                           <TableCell>
                             <Badge variant="outline">{template.fields.length} fields</Badge>
@@ -502,212 +675,623 @@ export function FormView() {
       </Tabs>
 
       {/* ============================================================ */}
-      {/* TEMPLATE BUILDER DIALOG                                      */}
+      {/* 6-STEP TEMPLATE BUILDER WIZARD DIALOG                        */}
       {/* ============================================================ */}
       <Dialog open={showBuilderDialog} onOpenChange={setShowBuilderDialog}>
-        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <LayoutTemplate className="h-5 w-5 text-primary" />
-              Template Builder
+              Create Form Template
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            {/* Basic Info */}
-            <div className="grid grid-cols-2 gap-4">
+
+          {/* Step Indicator */}
+          <div className="flex items-center gap-1 py-2">
+            {WIZARD_STEPS.map((step, idx) => {
+              const StepIcon = step.icon;
+              const isActive = wizardStep === step.id;
+              const isComplete = wizardStep > step.id;
+              return (
+                <React.Fragment key={step.id}>
+                  <button
+                    type="button"
+                    onClick={() => { if (isComplete) setWizardStep(step.id); }}
+                    className={cn(
+                      'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors',
+                      isActive
+                        ? 'bg-primary text-primary-foreground'
+                        : isComplete
+                          ? 'bg-primary/10 text-primary cursor-pointer hover:bg-primary/20'
+                          : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    <StepIcon className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{step.label}</span>
+                    <span className="sm:hidden">{step.id}</span>
+                  </button>
+                  {idx < WIZARD_STEPS.length - 1 && (
+                    <div className={cn('h-0.5 flex-1 min-w-[8px]', isComplete ? 'bg-primary/40' : 'bg-muted')} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          <Separator />
+
+          {/* ===== STEP 1: Template Info ===== */}
+          {wizardStep === 1 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <LayoutTemplate className="h-5 w-5 text-primary" />
+                Template Info
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Title *</Label>
+                  <Input value={builderTitle} onChange={(e) => setBuilderTitle(e.target.value)} placeholder="Enter template title" />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Version</Label>
+                  <Input value={builderVersion} onChange={(e) => setBuilderVersion(e.target.value)} placeholder="e.g. 1.0" />
+                </div>
+              </div>
               <div className="grid gap-2">
-                <Label>Template Title *</Label>
-                <Input value={builderTitle} onChange={(e) => setBuilderTitle(e.target.value)} placeholder="Template name" />
+                <Label>Linked Document</Label>
+                <Select value={builderLinkedDoc} onValueChange={setBuilderLinkedDoc}>
+                  <SelectTrigger><SelectValue placeholder="Select a linked document..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {approvedDocuments.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.documentNumber} — {d.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid gap-2">
-                <Label>Version</Label>
-                <Input value={builderVersion} onChange={(e) => setBuilderVersion(e.target.value)} />
+                <Label>Description</Label>
+                <Textarea value={builderDescription} onChange={(e) => setBuilderDescription(e.target.value)} placeholder="Describe the purpose of this form template..." rows={3} />
               </div>
             </div>
-            <div className="grid gap-2">
-              <Label>Linked Document</Label>
-              <Select value={builderLinkedDoc} onValueChange={setBuilderLinkedDoc}>
-                <SelectTrigger><SelectValue placeholder="Select a linked document..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {approvedDocuments.map(d => (
-                    <SelectItem key={d.id} value={d.id}>{d.documentNumber} — {d.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          )}
 
-            <Separator />
+          {/* ===== STEP 2: Field Builder ===== */}
+          {wizardStep === 2 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <ClipboardList className="h-5 w-5 text-primary" />
+                Field Builder
+              </h3>
 
-            {/* Add Field Section */}
-            <div className="border rounded-md p-4 space-y-3">
-              <h4 className="font-medium text-sm flex items-center gap-2">
-                <Plus className="h-4 w-4 text-primary" />
-                Add Field
-              </h4>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="grid gap-1">
-                  <Label className="text-xs">Field Name *</Label>
-                  <Input value={newFieldName} onChange={(e) => setNewFieldName(e.target.value)} placeholder="fieldName" />
-                </div>
-                <div className="grid gap-1">
-                  <Label className="text-xs">Label *</Label>
-                  <Input value={newFieldLabel} onChange={(e) => setNewFieldLabel(e.target.value)} placeholder="Field Label" />
-                </div>
-                <div className="grid gap-1">
-                  <Label className="text-xs">Type</Label>
-                  <Select value={newFieldType} onValueChange={(v) => setNewFieldType(v as FormFieldDefinition['type'])}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {allFieldTypes.map(t => <SelectItem key={t} value={t}>{fieldTypeIcons[t]} {t}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="grid gap-1">
-                  <Label className="text-xs">Placeholder</Label>
-                  <Input value={newFieldPlaceholder} onChange={(e) => setNewFieldPlaceholder(e.target.value)} placeholder="Enter placeholder..." />
-                </div>
-                <div className="grid gap-1">
-                  <Label className="text-xs">Default Value</Label>
-                  <Input value={newFieldDefaultValue} onChange={(e) => setNewFieldDefaultValue(e.target.value)} placeholder="Default..." />
-                </div>
-                <div className="flex items-end gap-3">
-                  <div className="flex items-center gap-2">
-                    <Checkbox checked={newFieldRequired} onCheckedChange={(v) => setNewFieldRequired(v === true)} />
-                    <Label className="text-xs">Required</Label>
-                  </div>
-                </div>
-              </div>
-              {newFieldType === 'select' && (
-                <div className="grid gap-1">
-                  <Label className="text-xs">Options (comma-separated)</Label>
-                  <Input value={newFieldOptions} onChange={(e) => setNewFieldOptions(e.target.value)} placeholder="Option A, Option B, Option C" />
-                </div>
-              )}
-              {(newFieldType === 'number') && (
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="grid gap-1">
-                    <Label className="text-xs">Validation Min</Label>
-                    <Input type="number" value={newFieldValidationMin} onChange={(e) => setNewFieldValidationMin(e.target.value)} placeholder="Min" />
-                  </div>
-                  <div className="grid gap-1">
-                    <Label className="text-xs">Validation Max</Label>
-                    <Input type="number" value={newFieldValidationMax} onChange={(e) => setNewFieldValidationMax(e.target.value)} placeholder="Max" />
-                  </div>
-                  <div className="grid gap-1">
-                    <Label className="text-xs">Pattern (regex)</Label>
-                    <Input value={newFieldValidationPattern} onChange={(e) => setNewFieldValidationPattern(e.target.value)} placeholder="^[A-Z]+$" />
-                  </div>
-                </div>
-              )}
-              {newFieldType === 'text' && (
-                <div className="grid gap-1">
-                  <Label className="text-xs">Validation Pattern (regex)</Label>
-                  <Input value={newFieldValidationPattern} onChange={(e) => setNewFieldValidationPattern(e.target.value)} placeholder="e.g., ^[A-Za-z]+$" />
-                </div>
-              )}
-              <Button size="sm" onClick={addField} disabled={!newFieldName || !newFieldLabel}>
-                <Plus className="h-3 w-3 mr-1" />Add Field
-              </Button>
-            </div>
-
-            {/* Field List with reorder */}
-            {builderFields.length > 0 && (
-              <div className="space-y-2">
-                <h4 className="font-medium text-sm">Fields ({builderFields.length})</h4>
-                {builderFields.map((field, i) => (
-                  <div key={field.id} className="flex items-center gap-2 border rounded-md p-2 text-sm">
-                    <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <span className="text-muted-foreground font-mono text-xs w-6">{i + 1}.</span>
-                    <span className="font-medium flex-1">{field.label}</span>
-                    <Badge variant="outline" className="text-xs">
-                      {fieldTypeIcons[field.type]} {field.type}
-                    </Badge>
-                    {field.required && <Badge variant="outline" className="text-xs border-red-300 text-red-700">Required</Badge>}
-                    {field.placeholder && <span className="text-xs text-muted-foreground italic truncate max-w-[100px]">"{field.placeholder}"</span>}
-                    <div className="flex gap-0.5">
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveFieldUp(i)} disabled={i === 0}>
-                        <ChevronUp className="h-3 w-3" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveFieldDown(i)} disabled={i === builderFields.length - 1}>
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => removeField(field.id)}>
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Live Preview */}
-            {builderFields.length > 0 && (
-              <div className="border rounded-md p-4 space-y-3 bg-muted/20">
+              {/* Add Field Form */}
+              <div className="border rounded-md p-4 space-y-3">
                 <h4 className="font-medium text-sm flex items-center gap-2">
-                  <Eye className="h-4 w-4 text-primary" />
-                  Live Preview
+                  <Plus className="h-4 w-4 text-primary" />
+                  Add New Field
                 </h4>
-                <div className="space-y-3">
-                  {builderFields.map(field => (
-                    <div key={field.id} className="grid gap-1.5">
-                      <Label className="text-sm">
-                        {field.label}
-                        {field.required && <span className="text-red-500 ml-1">*</span>}
-                      </Label>
-                      {field.type === 'text' && (
-                        <Input placeholder={field.placeholder} disabled className="bg-white dark:bg-gray-950" />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Field Name *</Label>
+                    <Input value={newFieldName} onChange={(e) => setNewFieldName(e.target.value)} placeholder="fieldName" />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Label *</Label>
+                    <Input value={newFieldLabel} onChange={(e) => setNewFieldLabel(e.target.value)} placeholder="Field Label" />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Type</Label>
+                    <Select value={newFieldType} onValueChange={(v) => setNewFieldType(v as FormFieldDefinition['type'])}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {allFieldTypes.map(t => <SelectItem key={t} value={t}>{fieldTypeIcons[t]} {t}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <Button size="sm" onClick={addField} disabled={!newFieldName || !newFieldLabel}>
+                  <Plus className="h-3 w-3 mr-1" />Add Field
+                </Button>
+              </div>
+
+              {/* Field List with reorder */}
+              {builderFields.length > 0 ? (
+                <div className="space-y-2">
+                  <h4 className="font-medium text-sm">Fields ({builderFields.length})</h4>
+                  {builderFields.map((field, i) => (
+                    <div
+                      key={field.id}
+                      className={cn(
+                        'flex items-center gap-2 border rounded-md p-2 text-sm transition-colors',
+                        selectedFieldId === field.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'
                       )}
-                      {field.type === 'number' && (
-                        <Input type="number" placeholder={field.placeholder} disabled className="bg-white dark:bg-gray-950" />
-                      )}
-                      {field.type === 'date' && (
-                        <Input type="date" disabled className="bg-white dark:bg-gray-950" />
-                      )}
-                      {field.type === 'select' && field.options && (
-                        <Select disabled>
-                          <SelectTrigger className="bg-white dark:bg-gray-950"><SelectValue placeholder={`Select ${field.label.toLowerCase()}...`} /></SelectTrigger>
-                        </Select>
-                      )}
-                      {field.type === 'checkbox' && (
-                        <div className="flex items-center gap-2">
-                          <Checkbox disabled />
-                          <span className="text-sm text-muted-foreground">{field.label}</span>
-                        </div>
-                      )}
-                      {field.type === 'textarea' && (
-                        <Textarea placeholder={field.placeholder} disabled className="bg-white dark:bg-gray-950" rows={2} />
-                      )}
-                      {field.type === 'signature' && (
-                        <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md h-20 flex items-center justify-center text-muted-foreground text-xs">
-                          <PenLine className="h-5 w-5 mr-2" />Signature Area
-                        </div>
-                      )}
-                      {field.type === 'table' && (
-                        <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md h-16 flex items-center justify-center text-muted-foreground text-xs">
-                          ▦ Table Field
-                        </div>
-                      )}
+                      onClick={() => setSelectedFieldId(field.id)}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-muted-foreground font-mono text-xs w-6">{i + 1}.</span>
+                      <span className="font-medium flex-1">{field.label}</span>
+                      <Badge variant="outline" className="text-xs">
+                        {fieldTypeIcons[field.type]} {field.type}
+                      </Badge>
+                      {field.required && <Badge variant="outline" className="text-xs border-red-300 text-red-700">Required</Badge>}
+                      <div className="flex gap-0.5">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); moveFieldUp(i); }} disabled={i === 0}>
+                          <ChevronUp className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); moveFieldDown(i); }} disabled={i === builderFields.length - 1}>
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={(e) => { e.stopPropagation(); removeField(field.id); }}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-md">
+                  <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                  <p className="text-sm">No fields added yet. Use the form above to add fields.</p>
+                </div>
+              )}
+            </div>
+          )}
 
-            <Button className="w-full" onClick={handleSaveTemplate} disabled={!builderTitle || builderFields.length === 0}>
-              <LayoutTemplate className="h-4 w-4 mr-2" />Save Template
+          {/* ===== STEP 3: Field Configuration ===== */}
+          {wizardStep === 3 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Field Configuration
+              </h3>
+
+              {builderFields.length > 0 ? (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {/* Field List (sidebar) */}
+                  <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                    <h4 className="font-medium text-sm mb-2">Select a field</h4>
+                    {builderFields.map((field, i) => (
+                      <button
+                        key={field.id}
+                        type="button"
+                        onClick={() => { setSelectedFieldId(field.id); }}
+                        className={cn(
+                          'w-full text-left flex items-center gap-2 p-2 rounded-md text-sm transition-colors',
+                          selectedFieldId === field.id
+                            ? 'bg-primary/10 border border-primary/30 font-medium'
+                            : 'hover:bg-muted/50 border border-transparent'
+                        )}
+                      >
+                        <span className="text-muted-foreground font-mono text-xs w-5">{i + 1}.</span>
+                        <span className="flex-1 truncate">{field.label}</span>
+                        <Badge variant="outline" className="text-[10px]">{fieldTypeIcons[field.type]} {field.type}</Badge>
+                        {field.required && <span className="text-red-500 text-xs">*</span>}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Field Config Panel */}
+                  <div className="lg:col-span-2">
+                    {selectedField ? (
+                      <div className="border rounded-md p-4 space-y-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant="outline" className="text-xs">{fieldTypeIcons[selectedField.type]} {selectedField.type}</Badge>
+                          <span className="font-semibold">{selectedField.label}</span>
+                          <span className="text-xs text-muted-foreground font-mono">({selectedField.name})</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="grid gap-2">
+                            <Label className="text-xs">Placeholder</Label>
+                            <Input value={fieldPlaceholder} onChange={(e) => setFieldPlaceholder(e.target.value)} placeholder="Enter placeholder..." />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label className="text-xs">Default Value</Label>
+                            <Input value={fieldDefaultValue} onChange={(e) => setFieldDefaultValue(e.target.value)} placeholder="Default value..." />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={fieldRequired}
+                            onCheckedChange={(v) => setFieldRequired(v === true)}
+                          />
+                          <Label className="text-sm">Required Field</Label>
+                        </div>
+
+                        {selectedField.type === 'select' && (
+                          <div className="grid gap-2">
+                            <Label className="text-xs">Options (comma-separated)</Label>
+                            <Textarea value={fieldOptions} onChange={(e) => setFieldOptions(e.target.value)} placeholder="Option A, Option B, Option C" rows={2} />
+                          </div>
+                        )}
+
+                        {(selectedField.type === 'number') && (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="grid gap-2">
+                              <Label className="text-xs">Min Value</Label>
+                              <Input type="number" value={fieldValidationMin} onChange={(e) => setFieldValidationMin(e.target.value)} placeholder="Min" />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label className="text-xs">Max Value</Label>
+                              <Input type="number" value={fieldValidationMax} onChange={(e) => setFieldValidationMax(e.target.value)} placeholder="Max" />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label className="text-xs">Pattern (regex)</Label>
+                              <Input value={fieldValidationPattern} onChange={(e) => setFieldValidationPattern(e.target.value)} placeholder="^[0-9]+$" />
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedField.type === 'text' && (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="grid gap-2">
+                              <Label className="text-xs">Min Length</Label>
+                              <Input type="number" value={fieldValidationMin} onChange={(e) => setFieldValidationMin(e.target.value)} placeholder="Min" />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label className="text-xs">Max Length</Label>
+                              <Input type="number" value={fieldValidationMax} onChange={(e) => setFieldValidationMax(e.target.value)} placeholder="Max" />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label className="text-xs">Pattern (regex)</Label>
+                              <Input value={fieldValidationPattern} onChange={(e) => setFieldValidationPattern(e.target.value)} placeholder="e.g., ^[A-Za-z]+$" />
+                            </div>
+                          </div>
+                        )}
+
+                        <Button size="sm" onClick={applyFieldConfig}>
+                          <CheckCircle2 className="h-3 w-3 mr-1" />Apply Configuration
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-md">
+                        <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                        <p className="text-sm">Select a field from the list to configure it.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-md">
+                  <p className="text-sm">No fields to configure. Go back to Step 2 to add fields first.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ===== STEP 4: Workflow & Rules ===== */}
+          {wizardStep === 4 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Gavel className="h-5 w-5 text-primary" />
+                Workflow & Rules
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-3 border rounded-md">
+                    <Checkbox
+                      checked={workflowRequiresApproval}
+                      onCheckedChange={(v) => {
+                        setWorkflowRequiresApproval(v === true);
+                        if (!v) setWorkflowType('single');
+                      }}
+                    />
+                    <div>
+                      <Label className="font-medium">Requires Approval</Label>
+                      <p className="text-xs text-muted-foreground">Form submissions must be approved before being finalized</p>
+                    </div>
+                  </div>
+
+                  {workflowRequiresApproval && (
+                    <div className="grid gap-2 pl-4">
+                      <Label className="text-sm">Workflow Type</Label>
+                      <Select value={workflowType} onValueChange={(v) => setWorkflowType(v as 'single' | 'sequential' | 'parallel')}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="single">Single Approver</SelectItem>
+                          <SelectItem value="sequential">Sequential Approval</SelectItem>
+                          <SelectItem value="parallel">Parallel Approval</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {workflowType === 'single' && 'One approver can approve or reject the submission'}
+                        {workflowType === 'sequential' && 'Approvers review in order; each must approve before the next'}
+                        {workflowType === 'parallel' && 'Multiple approvers review simultaneously; all must approve'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-3 border rounded-md">
+                    <Checkbox
+                      checked={workflowAllowDraftSaves}
+                      onCheckedChange={(v) => setWorkflowAllowDraftSaves(v === true)}
+                    />
+                    <div>
+                      <Label className="font-medium">Allow Draft Saves</Label>
+                      <p className="text-xs text-muted-foreground">Users can save and resume forms before submission</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 border rounded-md">
+                    <Checkbox
+                      checked={workflowLockAfterSubmission}
+                      onCheckedChange={(v) => setWorkflowLockAfterSubmission(v === true)}
+                    />
+                    <div>
+                      <Label className="font-medium">Lock After Submission</Label>
+                      <p className="text-xs text-muted-foreground">Prevent editing once the form is submitted</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 border rounded-md">
+                    <Checkbox
+                      checked={workflowESignatureRequired}
+                      onCheckedChange={(v) => setWorkflowESignatureRequired(v === true)}
+                    />
+                    <div>
+                      <Label className="font-medium">E-Signature Required</Label>
+                      <p className="text-xs text-muted-foreground">Electronic signature required on submission</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== STEP 5: Compliance ===== */}
+          {wizardStep === 5 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                Compliance
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="grid gap-2">
+                    <Label>Regulatory Reference</Label>
+                    <Input value={complianceRegulatoryRef} onChange={(e) => setComplianceRegulatoryRef(e.target.value)} placeholder="e.g., ISO 13485:2016 Clause 4.2.4" />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label>Retention Period</Label>
+                    <Select value={complianceRetentionPeriod} onValueChange={setComplianceRetentionPeriod}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Product Lifetime">Product Lifetime</SelectItem>
+                        <SelectItem value="5 Years">5 Years</SelectItem>
+                        <SelectItem value="10 Years">10 Years</SelectItem>
+                        <SelectItem value="15 Years">15 Years</SelectItem>
+                        <SelectItem value="25 Years">25 Years</SelectItem>
+                        <SelectItem value="Permanent">Permanent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label>Data Classification</Label>
+                    <Select value={complianceDataClassification} onValueChange={(v) => setComplianceDataClassification(v as FormTemplateCompliance['dataClassification'])}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Internal">Internal</SelectItem>
+                        <SelectItem value="Confidential">Confidential</SelectItem>
+                        <SelectItem value="Regulatory">Regulatory</SelectItem>
+                        <SelectItem value="GxP Critical">GxP Critical</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-3 border rounded-md">
+                    <Checkbox
+                      checked={complianceAuditTrailEnabled}
+                      onCheckedChange={(v) => setComplianceAuditTrailEnabled(v === true)}
+                    />
+                    <div>
+                      <Label className="font-medium">Audit Trail Enabled</Label>
+                      <p className="text-xs text-muted-foreground">Track all changes with full audit trail</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 border rounded-md">
+                    <Checkbox
+                      checked={compliancePrintFriendly}
+                      onCheckedChange={(v) => setCompliancePrintFriendly(v === true)}
+                    />
+                    <div>
+                      <Label className="font-medium">Print-Friendly Layout</Label>
+                      <p className="text-xs text-muted-foreground">Generate print-optimized versions of form records</p>
+                    </div>
+                  </div>
+
+                  <div className={cn(
+                    'flex items-start gap-3 p-3 border rounded-md',
+                    complianceCfrPart11 && 'border-orange-300 bg-orange-50 dark:border-orange-700 dark:bg-orange-900/10'
+                  )}>
+                    <Checkbox
+                      checked={complianceCfrPart11}
+                      onCheckedChange={(v) => setComplianceCfrPart11(v === true)}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <Label className="font-medium flex items-center gap-1">
+                        21 CFR Part 11 Compliance
+                        {complianceCfrPart11 && <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />}
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Enables electronic record and signature requirements per FDA 21 CFR Part 11.
+                        All form entries will require electronic signatures and full audit trails.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== STEP 6: Review & Submit ===== */}
+          {wizardStep === 6 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-primary" />
+                Review & Submit
+              </h3>
+
+              {/* Template Info Summary */}
+              <div className="border rounded-md p-4 space-y-2">
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <LayoutTemplate className="h-4 w-4 text-primary" />
+                  Template Info
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div><span className="text-muted-foreground">Title:</span> <span className="font-medium ml-1">{builderTitle || '—'}</span></div>
+                  <div><span className="text-muted-foreground">Version:</span> <span className="font-mono ml-1">{builderVersion}</span></div>
+                  <div><span className="text-muted-foreground">Linked Doc:</span> <span className="ml-1">{builderLinkedDoc && builderLinkedDoc !== 'none' ? approvedDocuments.find(d => d.id === builderLinkedDoc)?.documentNumber || '—' : 'None'}</span></div>
+                  <div><span className="text-muted-foreground">Fields:</span> <span className="font-medium ml-1">{builderFields.length}</span></div>
+                </div>
+                {builderDescription && (
+                  <p className="text-sm text-muted-foreground mt-1">{builderDescription}</p>
+                )}
+              </div>
+
+              {/* Fields Preview */}
+              <div className="border rounded-md p-4 space-y-2">
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4 text-primary" />
+                  Field Preview ({builderFields.length} fields)
+                </h4>
+                {builderFields.length > 0 ? (
+                  <div className="max-h-[200px] overflow-y-auto space-y-1">
+                    {builderFields.map((field, i) => (
+                      <div key={field.id} className="flex items-center gap-2 py-1 text-sm border-b last:border-0">
+                        <span className="text-muted-foreground font-mono text-xs w-6">{i + 1}.</span>
+                        <span className="font-medium flex-1">{field.label}</span>
+                        <Badge variant="outline" className="text-xs">{fieldTypeIcons[field.type]} {field.type}</Badge>
+                        {field.required && <Badge variant="outline" className="text-xs border-red-300 text-red-700">Req</Badge>}
+                        {field.placeholder && <span className="text-xs text-muted-foreground italic truncate max-w-[100px]">&quot;{field.placeholder}&quot;</span>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No fields defined</p>
+                )}
+              </div>
+
+              {/* Workflow Summary */}
+              <div className="border rounded-md p-4 space-y-2">
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <Gavel className="h-4 w-4 text-primary" />
+                  Workflow & Rules
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                  <div className="flex items-center gap-1.5">
+                    {workflowRequiresApproval ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <span>Requires Approval</span>
+                  </div>
+                  {workflowRequiresApproval && (
+                    <div><span className="text-muted-foreground">Type:</span> <span className="font-medium ml-1 capitalize">{workflowType === 'single' ? 'Single Approver' : workflowType === 'sequential' ? 'Sequential' : 'Parallel'}</span></div>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    {workflowAllowDraftSaves ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <span>Allow Draft Saves</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {workflowLockAfterSubmission ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <span>Lock After Submission</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {workflowESignatureRequired ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <span>E-Signature Required</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Compliance Summary */}
+              <div className="border rounded-md p-4 space-y-2">
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-primary" />
+                  Compliance
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                  <div><span className="text-muted-foreground">Regulatory Ref:</span> <span className="font-medium ml-1">{complianceRegulatoryRef || '—'}</span></div>
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span>{complianceRetentionPeriod}</span>
+                  </div>
+                  <div>
+                    <Badge className={cn(dataClassificationColors[complianceDataClassification])} variant="secondary">
+                      {complianceDataClassification}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {complianceAuditTrailEnabled ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <span>Audit Trail</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {compliancePrintFriendly ? <Printer className="h-3.5 w-3.5 text-green-500" /> : <Printer className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <span>Print-Friendly</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {complianceCfrPart11 ? (
+                      <>
+                        <Scale className="h-3.5 w-3.5 text-orange-500" />
+                        <span className="font-medium text-orange-700 dark:text-orange-400">21 CFR Part 11</span>
+                      </>
+                    ) : (
+                      <>
+                        <Scale className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-muted-foreground">No CFR Part 11</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ===== WIZARD NAVIGATION ===== */}
+          <div className="flex items-center justify-between pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setWizardStep(Math.max(1, wizardStep - 1))}
+              disabled={wizardStep === 1}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />Back
             </Button>
+
+            <span className="text-sm text-muted-foreground">Step {wizardStep} of 6</span>
+
+            {wizardStep < 6 ? (
+              <Button
+                onClick={() => setWizardStep(wizardStep + 1)}
+                disabled={!canGoNext()}
+              >
+                Next<ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            ) : (
+              <Button
+                onClick={handleSaveTemplate}
+                disabled={!builderTitle || builderFields.length === 0}
+              >
+                <LayoutTemplate className="h-4 w-4 mr-2" />Create Template
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
 
       {/* ============================================================ */}
-      {/* TEMPLATE DETAIL DIALOG                                       */}
+      {/* ENHANCED TEMPLATE DETAIL DIALOG                              */}
       {/* ============================================================ */}
       <Dialog open={showTemplateDetailDialog} onOpenChange={setShowTemplateDetailDialog}>
-        <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
           {selectedTemplate && (
             <>
               <DialogHeader>
@@ -715,11 +1299,14 @@ export function FormView() {
                   <LayoutTemplate className="h-5 w-5 text-primary" />
                   {selectedTemplate.title}
                   <Badge variant="outline" className="font-mono text-xs">v{selectedTemplate.version}</Badge>
+                  {selectedTemplate.compliance?.cfrPart11Compliance && (
+                    <Badge variant="outline" className="text-xs border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-400">21 CFR Part 11</Badge>
+                  )}
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 {/* Template Info */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                   <div><span className="text-muted-foreground">Version:</span> <span className="font-medium ml-1">{selectedTemplate.version}</span></div>
                   <div>
                     <span className="text-muted-foreground">Active:</span>{' '}
@@ -738,9 +1325,13 @@ export function FormView() {
                   })()}
                 </div>
 
+                {selectedTemplate.description && (
+                  <p className="text-sm text-muted-foreground bg-muted/30 rounded-md p-3">{selectedTemplate.description}</p>
+                )}
+
                 <Separator />
 
-                {/* Field Configurations */}
+                {/* Field List */}
                 <div className="space-y-2">
                   <h4 className="font-semibold text-sm">Field Configurations</h4>
                   {selectedTemplate.fields.map((field, i) => (
@@ -769,6 +1360,102 @@ export function FormView() {
                     </div>
                   ))}
                 </div>
+
+                {/* Workflow Rules */}
+                {selectedTemplate.workflow && (
+                  <>
+                    <Separator />
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-sm flex items-center gap-2">
+                        <Gavel className="h-4 w-4 text-primary" />
+                        Workflow Rules
+                      </h4>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="flex items-center gap-1.5">
+                          {selectedTemplate.workflow.requiresApproval ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                          <span>Requires Approval</span>
+                        </div>
+                        {selectedTemplate.workflow.requiresApproval && (
+                          <div><span className="text-muted-foreground">Type:</span> <span className="font-medium ml-1 capitalize">{selectedTemplate.workflow.workflowType === 'single' ? 'Single Approver' : selectedTemplate.workflow.workflowType === 'sequential' ? 'Sequential' : 'Parallel'}</span></div>
+                        )}
+                        <div className="flex items-center gap-1.5">
+                          {selectedTemplate.workflow.allowDraftSaves ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                          <span>Allow Draft Saves</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {selectedTemplate.workflow.lockAfterSubmission ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                          <span>Lock After Submission</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {selectedTemplate.workflow.eSignatureRequired ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                          <span>E-Signature Required</span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Compliance Settings */}
+                {selectedTemplate.compliance && (
+                  <>
+                    <Separator />
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-sm flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4 text-primary" />
+                        Compliance
+                      </h4>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div><span className="text-muted-foreground">Regulatory Ref:</span> <span className="font-medium ml-1">{selectedTemplate.compliance.regulatoryReference || '—'}</span></div>
+                        <div><span className="text-muted-foreground">Retention:</span> <span className="font-medium ml-1">{selectedTemplate.compliance.retentionPeriod}</span></div>
+                        <div>
+                          <span className="text-muted-foreground">Classification:</span>{' '}
+                          <Badge className={cn(dataClassificationColors[selectedTemplate.compliance.dataClassification])} variant="secondary">
+                            {selectedTemplate.compliance.dataClassification}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {selectedTemplate.compliance.auditTrailEnabled ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                          <span>Audit Trail</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {selectedTemplate.compliance.printFriendlyLayout ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                          <span>Print-Friendly</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {selectedTemplate.compliance.cfrPart11Compliance ? <Scale className="h-3.5 w-3.5 text-orange-500" /> : <Scale className="h-3.5 w-3.5 text-muted-foreground" />}
+                          <span className={selectedTemplate.compliance.cfrPart11Compliance ? 'font-medium text-orange-700 dark:text-orange-400' : ''}>21 CFR Part 11</span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Template Statistics */}
+                <Separator />
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <FileSpreadsheet className="h-4 w-4 text-primary" />
+                    Template Statistics
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="border rounded-md p-3 text-center">
+                      <div className="text-2xl font-bold">{selectedTemplate.fields.length}</div>
+                      <div className="text-xs text-muted-foreground">Total Fields</div>
+                    </div>
+                    <div className="border rounded-md p-3 text-center">
+                      <div className="text-2xl font-bold">{selectedTemplate.fields.filter(f => f.required).length}</div>
+                      <div className="text-xs text-muted-foreground">Required Fields</div>
+                    </div>
+                    <div className="border rounded-md p-3 text-center">
+                      <div className="text-2xl font-bold">{getInstanceCount(selectedTemplate.id)}</div>
+                      <div className="text-xs text-muted-foreground">Instances</div>
+                    </div>
+                    <div className="border rounded-md p-3 text-center">
+                      <div className="text-2xl font-bold">{selectedTemplate.fields.filter(f => f.type === 'signature').length}</div>
+                      <div className="text-xs text-muted-foreground">Signature Fields</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -776,10 +1463,10 @@ export function FormView() {
       </Dialog>
 
       {/* ============================================================ */}
-      {/* FILL FORM DIALOG                                             */}
+      {/* ENHANCED FILL FORM DIALOG                                    */}
       {/* ============================================================ */}
       <Dialog open={showFillerDialog} onOpenChange={setShowFillerDialog}>
-        <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           {fillingTemplate && (
             <>
               <DialogHeader>
@@ -789,6 +1476,31 @@ export function FormView() {
                   <Badge variant="outline" className="font-mono text-xs">v{fillingTemplate.version}</Badge>
                 </DialogTitle>
               </DialogHeader>
+
+              {/* Compliance Badges */}
+              {fillingTemplate.compliance && (
+                <div className="flex flex-wrap gap-2">
+                  <Badge className={cn(dataClassificationColors[fillingTemplate.compliance.dataClassification])} variant="secondary">
+                    <ShieldCheck className="h-3 w-3 mr-1" />
+                    {fillingTemplate.compliance.dataClassification}
+                  </Badge>
+                  {fillingTemplate.compliance.cfrPart11Compliance && (
+                    <Badge variant="outline" className="border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-400">
+                      <Scale className="h-3 w-3 mr-1" />
+                      21 CFR Part 11
+                    </Badge>
+                  )}
+                  {fillingTemplate.compliance.auditTrailEnabled && (
+                    <Badge variant="outline" className="text-xs">
+                      <FileText className="h-3 w-3 mr-1" />
+                      Audit Trail
+                    </Badge>
+                  )}
+                </div>
+              )}
+
+              <Separator />
+
               <div className="space-y-4">
                 {fillingTemplate.fields.map(field => (
                   <div key={field.id} className="grid gap-2">
@@ -857,6 +1569,40 @@ export function FormView() {
                         <span className="text-xs">▦ Table entry area</span>
                       </div>
                     )}
+                    {field.type === 'rating' && (
+                      <div className="flex items-center gap-1">
+                        {[1, 2, 3, 4, 5].map(star => (
+                          <button
+                            key={star}
+                            type="button"
+                            onClick={() => setFormValues({ ...formValues, [field.name]: star })}
+                            className="p-0.5 hover:scale-110 transition-transform"
+                          >
+                            <Star className={cn(
+                              'h-6 w-6',
+                              (formValues[field.name] as number || 0) >= star
+                                ? 'fill-amber-400 text-amber-400'
+                                : 'text-muted-foreground/40'
+                            )} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {field.type === 'file' && (
+                      <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md h-20 flex flex-col items-center justify-center text-muted-foreground bg-muted/10">
+                        <Upload className="h-5 w-5 mb-1" />
+                        <span className="text-xs">Click or drag to upload file</span>
+                      </div>
+                    )}
+                    {field.type === 'repeater' && (
+                      <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md h-24 flex flex-col items-center justify-center text-muted-foreground bg-muted/10">
+                        <Repeat className="h-5 w-5 mb-1" />
+                        <span className="text-xs">Repeater group — add entries</span>
+                        <Button variant="outline" size="sm" className="mt-2 h-7 text-xs">
+                          <Plus className="h-3 w-3 mr-1" />Add Entry
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 <Button className="w-full" onClick={handleSubmitInstance}>
@@ -889,6 +1635,22 @@ export function FormView() {
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4">
+                  {/* Compliance Badges */}
+                  {template?.compliance && (
+                    <div className="flex flex-wrap gap-2">
+                      <Badge className={cn(dataClassificationColors[template.compliance.dataClassification])} variant="secondary">
+                        <ShieldCheck className="h-3 w-3 mr-1" />
+                        {template.compliance.dataClassification}
+                      </Badge>
+                      {template.compliance.cfrPart11Compliance && (
+                        <Badge variant="outline" className="border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-400">
+                          <Scale className="h-3 w-3 mr-1" />
+                          21 CFR Part 11
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+
                   {/* Status & Meta */}
                   <div className="flex flex-wrap gap-2">
                     <Badge className={cn(instanceStatusColors[selectedInstance.status])} variant="secondary">{selectedInstance.status}</Badge>
@@ -924,6 +1686,22 @@ export function FormView() {
                                 <span className="flex items-center gap-1"><PenLine className="h-3 w-3" />Signed</span>
                               ) : (
                                 <span className="text-muted-foreground">Not signed</span>
+                              )
+                            ) : field.type === 'rating' ? (
+                              <span className="flex items-center gap-0.5">
+                                {[1, 2, 3, 4, 5].map(star => (
+                                  <Star key={star} className={cn(
+                                    'h-4 w-4',
+                                    (value as number || 0) >= star ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30'
+                                  )} />
+                                ))}
+                                <span className="ml-1">({value || 0})</span>
+                              </span>
+                            ) : field.type === 'file' ? (
+                              value ? (
+                                <span className="flex items-center gap-1"><Upload className="h-3 w-3" />{String(value)}</span>
+                              ) : (
+                                <span className="text-muted-foreground">No file uploaded</span>
                               )
                             ) : (
                               String(value || '-')
