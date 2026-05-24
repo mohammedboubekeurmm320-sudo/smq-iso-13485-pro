@@ -28,6 +28,7 @@ import {
   Users,
   ChevronDown,
   ChevronRight,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -39,6 +40,10 @@ interface SidebarProps {
   onSectionChange: (section: ActiveSection) => void;
   collapsed: boolean;
   onToggle: () => void;
+  /** Whether this is the mobile overlay version */
+  isMobile?: boolean;
+  /** Close handler for mobile */
+  onClose?: () => void;
 }
 
 interface NavItem {
@@ -111,7 +116,7 @@ function resolveTranslationKey(obj: Record<string, unknown>, keyPath: string): s
   return typeof current === 'string' ? current : keyPath;
 }
 
-export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle, isMobile, onClose }: SidebarProps) {
   const { orgSettings } = useOrganization();
   const store = useQMSStore();
   const t = useTranslation();
@@ -128,17 +133,26 @@ export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle }:
     return activeModules.includes(module);
   };
 
+  const handleSectionChange = (section: ActiveSection) => {
+    onSectionChange(section);
+    if (isMobile && onClose) {
+      onClose();
+    }
+  };
+
   return (
     <div
       className={cn(
-        'flex flex-col h-screen bg-sidebar border-r border-sidebar-border transition-all duration-300',
-        collapsed ? 'w-16' : 'w-64'
+        'flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300',
+        // Mobile: full height using dvh for browser bar handling, desktop: h-screen
+        isMobile ? 'h-[100dvh] w-72' : 'h-screen',
+        !isMobile && (collapsed ? 'w-16' : 'w-64')
       )}
     >
-      {/* Logo / Org Name */}
-      <div className="flex items-center h-16 px-4 border-b border-sidebar-border">
-        {!collapsed && (
-          <div className="flex items-center gap-2 min-w-0">
+      {/* Logo / Org Name + Mobile Close */}
+      <div className="flex items-center h-16 px-4 border-b border-sidebar-border flex-shrink-0">
+        {(!collapsed || isMobile) && (
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
               <Shield className="w-4 h-4 text-primary-foreground" />
             </div>
@@ -148,82 +162,152 @@ export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle }:
             </div>
           </div>
         )}
-        {collapsed && (
+        {collapsed && !isMobile && (
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center mx-auto">
             <Shield className="w-4 h-4 text-primary-foreground" />
           </div>
         )}
+        {/* Mobile close button */}
+        {isMobile && onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto flex-shrink-0 h-8 w-8"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
-      {/* Navigation */}
-      <ScrollArea className="flex-1 py-2">
-        <nav className="space-y-1 px-2">
-          {NAV_GROUPS.map((group, groupIdx) => {
-            const visibleItems = group.items.filter(item => isItemVisible(item.module));
-            if (visibleItems.length === 0) return null;
+      {/* Navigation — uses native scroll on mobile for touch */}
+      {isMobile ? (
+        <nav className="flex-1 overflow-y-auto py-2 overscroll-contain -webkit-overflow-scrolling-touch">
+          <div className="space-y-1 px-2">
+            {NAV_GROUPS.map((group, groupIdx) => {
+              const visibleItems = group.items.filter(item => isItemVisible(item.module));
+              if (visibleItems.length === 0) return null;
 
-            return (
-              <div key={groupIdx}>
-                {group.labelKey && !collapsed && (
-                  <div className="px-3 py-2">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      {resolveTranslationKey(t as unknown as Record<string, unknown>, group.labelKey)}
-                    </span>
-                  </div>
-                )}
-                {group.labelKey && collapsed && (
-                  <Separator className="my-2" />
-                )}
-                {visibleItems.map((item) => {
-                  const isActive = activeSection === item.id;
-                  const badgeCount = item.showBadge && item.getBadgeCount ? item.getBadgeCount(store) : 0;
-                  const Icon = item.icon;
-                  const label = resolveTranslationKey(t as unknown as Record<string, unknown>, item.labelKey);
+              return (
+                <div key={groupIdx}>
+                  {group.labelKey && (
+                    <div className="px-3 py-2">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        {resolveTranslationKey(t as unknown as Record<string, unknown>, group.labelKey)}
+                      </span>
+                    </div>
+                  )}
+                  {visibleItems.map((item) => {
+                    const isActive = activeSection === item.id;
+                    const badgeCount = item.showBadge && item.getBadgeCount ? item.getBadgeCount(store) : 0;
+                    const Icon = item.icon;
+                    const label = resolveTranslationKey(t as unknown as Record<string, unknown>, item.labelKey);
 
-                  return (
-                    <Button
-                      key={item.id}
-                      variant="ghost"
-                      onClick={() => onSectionChange(item.id)}
-                      className={cn(
-                        'w-full justify-start gap-3 h-9 px-3 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                        isActive && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
-                        collapsed && 'justify-center px-0'
-                      )}
-                    >
-                      <Icon className={cn('h-4 w-4 flex-shrink-0', isActive && 'text-primary')} />
-                      {!collapsed && (
-                        <>
-                          <span className="truncate text-sm">{label}</span>
-                          {badgeCount > 0 && (
-                            <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] text-xs px-1.5">
-                              {badgeCount}
-                            </Badge>
-                          )}
-                        </>
-                      )}
-                      {collapsed && badgeCount > 0 && (
-                        <span className="absolute -top-1 -right-1 h-4 min-w-[16px] rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center px-1">
-                          {badgeCount}
-                        </span>
-                      )}
-                    </Button>
-                  );
-                })}
-              </div>
-            );
-          })}
+                    return (
+                      <Button
+                        key={item.id}
+                        variant="ghost"
+                        onClick={() => handleSectionChange(item.id)}
+                        className={cn(
+                          'w-full justify-start gap-3 h-10 px-3 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                          isActive && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                        )}
+                      >
+                        <Icon className={cn('h-5 w-5 flex-shrink-0', isActive && 'text-primary')} />
+                        <span className="truncate text-sm">{label}</span>
+                        {badgeCount > 0 && (
+                          <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] text-xs px-1.5">
+                            {badgeCount}
+                          </Badge>
+                        )}
+                      </Button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </nav>
-      </ScrollArea>
+      ) : (
+        <ScrollArea className="flex-1 py-2">
+          <nav className="space-y-1 px-2">
+            {NAV_GROUPS.map((group, groupIdx) => {
+              const visibleItems = group.items.filter(item => isItemVisible(item.module));
+              if (visibleItems.length === 0) return null;
+
+              return (
+                <div key={groupIdx}>
+                  {group.labelKey && !collapsed && (
+                    <div className="px-3 py-2">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        {resolveTranslationKey(t as unknown as Record<string, unknown>, group.labelKey)}
+                      </span>
+                    </div>
+                  )}
+                  {group.labelKey && collapsed && (
+                    <Separator className="my-2" />
+                  )}
+                  {visibleItems.map((item) => {
+                    const isActive = activeSection === item.id;
+                    const badgeCount = item.showBadge && item.getBadgeCount ? item.getBadgeCount(store) : 0;
+                    const Icon = item.icon;
+                    const label = resolveTranslationKey(t as unknown as Record<string, unknown>, item.labelKey);
+
+                    return (
+                      <Button
+                        key={item.id}
+                        variant="ghost"
+                        onClick={() => onSectionChange(item.id)}
+                        className={cn(
+                          'w-full justify-start gap-3 h-9 px-3 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                          isActive && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+                          collapsed && 'justify-center px-0'
+                        )}
+                      >
+                        <Icon className={cn('h-4 w-4 flex-shrink-0', isActive && 'text-primary')} />
+                        {!collapsed && (
+                          <>
+                            <span className="truncate text-sm">{label}</span>
+                            {badgeCount > 0 && (
+                              <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] text-xs px-1.5">
+                                {badgeCount}
+                              </Badge>
+                            )}
+                          </>
+                        )}
+                        {collapsed && badgeCount > 0 && (
+                          <span className="absolute -top-1 -right-1 h-4 min-w-[16px] rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center px-1">
+                            {badgeCount}
+                          </span>
+                        )}
+                      </Button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </nav>
+        </ScrollArea>
+      )}
 
       {/* Settings section at bottom */}
-      <div className="border-t border-sidebar-border py-2 px-2">
-        {!collapsed && (
+      <div className="border-t border-sidebar-border py-2 px-2 flex-shrink-0">
+        {!collapsed && !isMobile && (
           <div className="px-3 py-2">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
               <Settings className="w-3 h-3" />
               {t.nav.settings}
             </span>
+          </div>
+        )}
+        {(isMobile || !collapsed) && (
+          <div className={cn(isMobile && 'px-3 py-2')}>
+            {isMobile && (
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                <Settings className="w-3 h-3" />
+                {t.nav.settings}
+              </span>
+            )}
           </div>
         )}
         {SETTINGS_ITEMS.filter(item => isItemVisible(item.module)).map((item) => {
@@ -235,28 +319,31 @@ export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle }:
             <Button
               key={item.id}
               variant="ghost"
-              onClick={() => onSectionChange(item.id)}
+              onClick={() => handleSectionChange(item.id)}
               className={cn(
                 'w-full justify-start gap-3 h-9 px-3 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
                 isActive && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
-                collapsed && 'justify-center px-0'
+                !isMobile && collapsed && 'justify-center px-0',
+                isMobile && 'h-10'
               )}
             >
               <Icon className={cn('h-4 w-4 flex-shrink-0', isActive && 'text-primary')} />
-              {!collapsed && <span className="truncate text-sm">{label}</span>}
+              {(!collapsed || isMobile) && <span className="truncate text-sm">{label}</span>}
             </Button>
           );
         })}
 
-        {/* Collapse toggle */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggle}
-          className="w-full mt-1 justify-center h-8"
-        >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </Button>
+        {/* Collapse toggle — desktop only */}
+        {!isMobile && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggle}
+            className="w-full mt-1 justify-center h-8"
+          >
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
+        )}
       </div>
     </div>
   );

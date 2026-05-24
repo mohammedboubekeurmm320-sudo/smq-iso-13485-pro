@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { cn } from '@/lib/utils';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
@@ -47,6 +47,18 @@ function AppLayoutInner({ children }: AppLayoutProps) {
   const ncrs = useQMSStore(state => state.ncrs);
   const training = useQMSStore(state => state.training);
 
+  // Lock body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (mobileSidebarOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileSidebarOpen]);
+
   // Check if setup wizard should be shown
   const showSetupWizard = useMemo(() => {
     if (!currentOrg) return false;
@@ -78,7 +90,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
   }
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex h-[100dvh] bg-background overflow-hidden">
       {/* Mobile sidebar overlay */}
       {mobileSidebarOpen && (
         <div
@@ -87,48 +99,59 @@ function AppLayoutInner({ children }: AppLayoutProps) {
         />
       )}
 
-      {/* Sidebar - hidden on mobile by default */}
-      <div className={cn(
-        'hidden lg:flex flex-shrink-0',
-        mobileSidebarOpen && 'fixed inset-y-0 left-0 z-50 flex lg:relative'
-      )}>
+      {/* Desktop Sidebar — always visible on lg+ */}
+      <div className="hidden lg:flex flex-shrink-0">
         <Sidebar
           activeSection={activeSection}
-          onSectionChange={(section) => {
-            setActiveSection(section);
-            setMobileSidebarOpen(false);
-          }}
+          onSectionChange={setActiveSection}
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+      </div>
+
+      {/* Mobile Sidebar — slide-in overlay */}
+      <div
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 lg:hidden transition-transform duration-300 ease-in-out',
+          mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
+      >
+        <Sidebar
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+          collapsed={false}
+          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+          isMobile
+          onClose={() => setMobileSidebarOpen(false)}
         />
       </div>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
-        <header className="h-14 border-b bg-background flex items-center justify-between px-4 flex-shrink-0">
-          <div className="flex items-center gap-3">
+        <header className="h-14 border-b bg-background flex items-center justify-between px-3 md:px-4 flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
             <Button
               variant="ghost"
               size="icon"
-              className="lg:hidden"
+              className="lg:hidden flex-shrink-0"
               onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
             >
               <Menu className="h-5 w-5" />
             </Button>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-foreground capitalize">
-                {activeSection.replace(/-/g, ' ')}
-              </h2>
-            </div>
+            <h2 className="text-base md:text-lg font-semibold text-foreground capitalize truncate">
+              {activeSection.replace(/-/g, ' ')}
+            </h2>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Global Search */}
-            <GlobalSearch onNavigate={(section) => { setActiveSection(section); setMobileSidebarOpen(false); }} />
+          <div className="flex items-center gap-1 md:gap-3 flex-shrink-0">
+            {/* Global Search — hidden on very small screens */}
+            <div className="hidden sm:block">
+              <GlobalSearch onNavigate={(section) => { setActiveSection(section); setMobileSidebarOpen(false); }} />
+            </div>
 
             {/* Notifications */}
-            <Button variant="ghost" size="icon" className="relative">
+            <Button variant="ghost" size="icon" className="relative h-9 w-9">
               <Bell className="h-4 w-4" />
               {overdueCount > 0 && (
                 <span className="absolute -top-1 -right-1 h-4 min-w-[16px] rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center px-1">
@@ -142,7 +165,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
               variant="ghost"
               size="sm"
               onClick={() => setLocale(locale === 'en' ? 'fr' : 'en')}
-              className="flex items-center gap-1.5 h-9 px-2"
+              className="flex items-center gap-1 h-9 px-2"
               title={locale === 'en' ? 'Switch to French' : 'Passer en Anglais'}
             >
               <Globe className="h-4 w-4" />
@@ -194,8 +217,8 @@ function AppLayoutInner({ children }: AppLayoutProps) {
           </div>
         </header>
 
-        {/* Content area */}
-        <main className="flex-1 overflow-auto">
+        {/* Content area — scrollable */}
+        <main className="flex-1 overflow-y-auto overscroll-contain">
           {children(activeSection)}
         </main>
       </div>
