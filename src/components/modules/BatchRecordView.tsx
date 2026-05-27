@@ -10,7 +10,8 @@ import type { BatchRecord, BatchStep, BatchStatus, BatchStepStatus, SignatureTyp
 import {
   Package, Plus, Search, ArrowRight, CheckCircle2, Lock, AlertTriangle,
   ShieldCheck, Play, Clock, User, FileCheck, AlertCircle, Trash2,
-  Beaker, ClipboardList, FlaskConical,
+  Beaker, ClipboardList, FlaskConical, ChevronLeft, ChevronRight,
+  CalendarClock, ListChecks,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -71,6 +72,14 @@ const stepTypeOptions: StepType[] = ['Weighing', 'Mixing', 'Filtration', 'Fillin
 
 const rawMaterialStatusOptions: RawMaterialStatus[] = ['Verified', 'Pending', 'Rejected'];
 
+const WIZARD_STEPS = [
+  { id: 0, label: 'Batch Identification', icon: Package },
+  { id: 1, label: 'Manufacturing Dates', icon: CalendarClock },
+  { id: 2, label: 'Raw Materials', icon: Beaker },
+  { id: 3, label: 'Step Templates', icon: ClipboardList },
+  { id: 4, label: 'Summary & Submit', icon: ListChecks },
+];
+
 interface FormRawMaterial {
   id: string;
   material: string;
@@ -120,6 +129,9 @@ export function BatchRecordView() {
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [pendingReleaseBatch, setPendingReleaseBatch] = useState<BatchRecord | null>(null);
 
+  // Wizard state
+  const [wizardStep, setWizardStep] = useState(0);
+
   // Create form state
   const [formAutoLot, setFormAutoLot] = useState(true);
   const [formLotNumber, setFormLotNumber] = useState('');
@@ -130,6 +142,7 @@ export function BatchRecordView() {
   const [formMfgDate, setFormMfgDate] = useState('');
   const [formExpiryDate, setFormExpiryDate] = useState('');
   const [formSopReference, setFormSopReference] = useState('');
+  const [formSpecialInstructions, setFormSpecialInstructions] = useState('');
 
   // Raw materials in create form
   const [formRawMaterials, setFormRawMaterials] = useState<FormRawMaterial[]>([]);
@@ -216,6 +229,7 @@ export function BatchRecordView() {
   };
 
   const resetForm = () => {
+    setWizardStep(0);
     setFormAutoLot(true);
     setFormLotNumber('');
     setFormProductName('');
@@ -225,8 +239,46 @@ export function BatchRecordView() {
     setFormMfgDate('');
     setFormExpiryDate('');
     setFormSopReference('');
+    setFormSpecialInstructions('');
     setFormRawMaterials([]);
     setFormStepTemplates([]);
+  };
+
+  // ── Step validation ──
+  const isStepValid = (step: number): boolean => {
+    switch (step) {
+      case 0:
+        return formProductName.trim() !== '' && (formAutoLot || formLotNumber.trim() !== '');
+      case 1:
+        return formMfgDate.trim() !== '';
+      case 2:
+        return true; // Raw materials are optional
+      case 3:
+        return true; // Step templates are optional
+      case 4:
+        return formProductName.trim() !== '' && (formAutoLot || formLotNumber.trim() !== '') && formMfgDate.trim() !== '';
+      default:
+        return false;
+    }
+  };
+
+  // ── Navigation ──
+  const goToStep = (step: number) => {
+    if (step >= 0 && step < WIZARD_STEPS.length) {
+      setWizardStep(step);
+    }
+  };
+
+  const goNext = () => {
+    if (wizardStep < WIZARD_STEPS.length - 1 && isStepValid(wizardStep)) {
+      setWizardStep(wizardStep + 1);
+    }
+  };
+
+  const goPrev = () => {
+    if (wizardStep > 0) {
+      setWizardStep(wizardStep - 1);
+    }
   };
 
   const handleCreate = () => {
@@ -416,6 +468,344 @@ export function BatchRecordView() {
     setShowDetailDialog(true);
   };
 
+  // ── Render: Wizard Step Content ──
+  const renderStepContent = () => {
+    switch (wizardStep) {
+      // ── Step 1: Batch Identification ──
+      case 0:
+        return (
+          <div className="grid gap-4">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="autoLot" className="text-sm">Auto-generate lot number</Label>
+              <input
+                id="autoLot"
+                type="checkbox"
+                checked={formAutoLot}
+                onChange={(e) => setFormAutoLot(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+            </div>
+            {!formAutoLot && (
+              <div className="grid gap-2">
+                <Label>Lot Number *</Label>
+                <Input value={formLotNumber} onChange={(e) => setFormLotNumber(e.target.value)} placeholder="BN-2024-XXX" />
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Product Name *</Label>
+                <Input value={formProductName} onChange={(e) => setFormProductName(e.target.value)} placeholder="Product name" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Product Code</Label>
+                <Input value={formProductCode} onChange={(e) => setFormProductCode(e.target.value)} placeholder="PROD-XXX" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="grid gap-2">
+                <Label>Batch Size</Label>
+                <Input type="number" value={formBatchSize} onChange={(e) => setFormBatchSize(e.target.value)} placeholder="0" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Unit</Label>
+                <Select value={formBatchSizeUnit} onValueChange={setFormBatchSizeUnit}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {batchSizeUnits.map(u => <SelectItem key={u} value={u}>{u.charAt(0).toUpperCase() + u.slice(1)}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>SOP Reference</Label>
+                <Input value={formSopReference} onChange={(e) => setFormSopReference(e.target.value)} placeholder="SOP-XXX" />
+              </div>
+            </div>
+          </div>
+        );
+
+      // ── Step 2: Manufacturing Dates ──
+      case 1:
+        return (
+          <div className="grid gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Manufacturing Date *</Label>
+                <Input type="date" value={formMfgDate} onChange={(e) => setFormMfgDate(e.target.value)} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Expiry Date</Label>
+                <Input type="date" value={formExpiryDate} onChange={(e) => setFormExpiryDate(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="specialInstructions">Special Handling Instructions</Label>
+              <Textarea
+                id="specialInstructions"
+                value={formSpecialInstructions}
+                onChange={(e) => setFormSpecialInstructions(e.target.value)}
+                placeholder="Enter any special handling, storage, or processing instructions for this batch..."
+                rows={4}
+              />
+              <p className="text-xs text-muted-foreground">
+                Include temperature requirements, light sensitivity, humidity controls, or other special handling notes.
+              </p>
+            </div>
+            {formMfgDate && formExpiryDate && (
+              <div className="bg-muted/30 rounded-md p-3 flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  Shelf life: {Math.round((new Date(formExpiryDate).getTime() - new Date(formMfgDate).getTime()) / (1000 * 60 * 60 * 24))} days
+                </span>
+              </div>
+            )}
+          </div>
+        );
+
+      // ── Step 3: Raw Materials & Components ──
+      case 2:
+        return (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <Beaker className="h-4 w-4 text-teal-500" />
+                Raw Materials &amp; Components
+              </h4>
+              <Button variant="outline" size="sm" onClick={addFormRawMaterial}>
+                <Plus className="h-3 w-3 mr-1" />Add Material
+              </Button>
+            </div>
+            {formRawMaterials.length > 0 ? (
+              <div className="border rounded-md overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[180px]">Material</TableHead>
+                      <TableHead className="w-[140px]">Lot Number</TableHead>
+                      <TableHead className="w-[160px]">Supplier</TableHead>
+                      <TableHead className="w-[120px]">Status</TableHead>
+                      <TableHead className="w-[50px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {formRawMaterials.map(rm => (
+                      <TableRow key={rm.id}>
+                        <TableCell>
+                          <Input
+                            className="h-8 text-xs"
+                            placeholder="Material name"
+                            value={rm.material}
+                            onChange={(e) => updateFormRawMaterial(rm.id, 'material', e.target.value)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            className="h-8 text-xs"
+                            placeholder="Lot #"
+                            value={rm.lotNumber}
+                            onChange={(e) => updateFormRawMaterial(rm.id, 'lotNumber', e.target.value)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            className="h-8 text-xs"
+                            placeholder="Supplier"
+                            value={rm.supplier}
+                            onChange={(e) => updateFormRawMaterial(rm.id, 'supplier', e.target.value)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Select value={rm.status} onValueChange={(val) => updateFormRawMaterial(rm.id, 'status', val)}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {rawMaterialStatusOptions.map(s => (
+                                <SelectItem key={s} value={s}>{s}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                            onClick={() => removeFormRawMaterial(rm.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="border rounded-md p-4 text-center text-muted-foreground text-xs bg-muted/20">
+                No raw materials added. Click &quot;Add Material&quot; to define materials and components.
+              </div>
+            )}
+          </div>
+        );
+
+      // ── Step 4: Batch Step Templates ──
+      case 3:
+        return (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-indigo-500" />
+                Batch Step Templates
+              </h4>
+              <Button variant="outline" size="sm" onClick={addFormStepTemplate}>
+                <Plus className="h-3 w-3 mr-1" />Add Step
+              </Button>
+            </div>
+            {formStepTemplates.length > 0 ? (
+              <div className="space-y-3">
+                {formStepTemplates.map((st, idx) => (
+                  <div key={st.id} className="border rounded-md p-3 space-y-2 bg-muted/10 relative">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-muted-foreground">Step {idx + 1}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                        onClick={() => removeFormStepTemplate(st.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="grid gap-1">
+                        <Label className="text-xs">Step Name *</Label>
+                        <Input
+                          className="h-8 text-xs"
+                          placeholder="e.g. Material Weighing"
+                          value={st.stepName}
+                          onChange={(e) => updateFormStepTemplate(st.id, 'stepName', e.target.value)}
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label className="text-xs">Step Type</Label>
+                        <Select value={st.stepType} onValueChange={(val) => updateFormStepTemplate(st.id, 'stepType', val)}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {stepTypeOptions.map(t => (
+                              <SelectItem key={t} value={t}>
+                                {stepTypeIcons[t]} {t}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Instructions</Label>
+                      <Textarea
+                        className="text-xs min-h-[48px]"
+                        placeholder="Step instructions..."
+                        value={st.instructions}
+                        onChange={(e) => updateFormStepTemplate(st.id, 'instructions', e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Expected Value</Label>
+                      <Input
+                        className="h-8 text-xs"
+                        placeholder="e.g. 250.0 ± 2.5 kg"
+                        value={st.expectedValue}
+                        onChange={(e) => updateFormStepTemplate(st.id, 'expectedValue', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="border rounded-md p-4 text-center text-muted-foreground text-xs bg-muted/20">
+                No step templates added. Click &quot;Add Step&quot; to define batch processing steps.
+              </div>
+            )}
+          </div>
+        );
+
+      // ── Step 5: Summary & Submit ──
+      case 4:
+        return (
+          <div className="grid gap-4">
+            <div className="bg-muted/30 rounded-lg p-4 space-y-3 max-h-[400px] overflow-y-auto">
+              <h4 className="font-semibold text-sm flex items-center gap-2">
+                <ListChecks className="h-4 w-4 text-primary" />
+                Review Summary
+              </h4>
+
+              {/* Step 1 Summary — Batch Identification */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 1 — Batch Identification</p>
+                <p className="text-sm"><span className="font-medium">Lot Number:</span> {formAutoLot ? <span className="text-muted-foreground italic">Auto-generated</span> : formLotNumber || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Product Name:</span> {formProductName || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Product Code:</span> {formProductCode || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Batch Size:</span> {formBatchSize ? `${formBatchSize} ${formBatchSizeUnit}` : '—'}</p>
+                <p className="text-sm"><span className="font-medium">SOP Reference:</span> {formSopReference || '—'}</p>
+              </div>
+
+              {/* Step 2 Summary — Manufacturing Dates */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 2 — Manufacturing Dates</p>
+                <p className="text-sm"><span className="font-medium">Manufacturing Date:</span> {formMfgDate || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Expiry Date:</span> {formExpiryDate || '—'}</p>
+                {formMfgDate && formExpiryDate && (
+                  <p className="text-sm"><span className="font-medium">Shelf Life:</span> {Math.round((new Date(formExpiryDate).getTime() - new Date(formMfgDate).getTime()) / (1000 * 60 * 60 * 24))} days</p>
+                )}
+                <p className="text-sm"><span className="font-medium">Special Instructions:</span> {formSpecialInstructions || '—'}</p>
+              </div>
+
+              {/* Step 3 Summary — Raw Materials */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 3 — Raw Materials &amp; Components</p>
+                <p className="text-sm"><span className="font-medium">Total Materials:</span> {formRawMaterials.length}</p>
+                {formRawMaterials.length > 0 ? (
+                  <div className="mt-1 space-y-1">
+                    {formRawMaterials.map((rm, idx) => (
+                      <div key={rm.id} className="text-xs text-muted-foreground flex items-center gap-2">
+                        <span className="font-mono">{idx + 1}.</span>
+                        <span>{rm.material || 'Unnamed'}</span>
+                        {rm.lotNumber && <span className="font-mono">({rm.lotNumber})</span>}
+                        <Badge className={cn('text-[10px] px-1 py-0', rawMaterialStatusColors[rm.status])} variant="secondary">{rm.status}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No raw materials added</p>
+                )}
+              </div>
+
+              {/* Step 4 Summary — Step Templates */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 4 — Batch Step Templates</p>
+                <p className="text-sm"><span className="font-medium">Total Steps:</span> {formStepTemplates.length}</p>
+                {formStepTemplates.length > 0 ? (
+                  <div className="mt-1 space-y-1">
+                    {formStepTemplates.map((st, idx) => (
+                      <div key={st.id} className="text-xs text-muted-foreground flex items-center gap-2">
+                        <span className="font-mono">{idx + 1}.</span>
+                        <span>{st.stepName || 'Unnamed'}</span>
+                        <Badge variant="outline" className="text-[10px] px-1 py-0">{stepTypeIcons[st.stepType]} {st.stepType}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No step templates added</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
       {/* Header */}
@@ -582,245 +972,62 @@ export function BatchRecordView() {
         </CardContent>
       </Card>
 
-      {/* Create Batch Record Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="sm:max-w-[720px] max-h-[90vh] overflow-y-auto">
+      {/* Create Batch Record Dialog — Wizard */}
+      <Dialog open={showCreateDialog} onOpenChange={(open) => { if (!open) resetForm(); setShowCreateDialog(open); }}>
+        <DialogContent className="sm:max-w-[780px] max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Create New Batch Record</DialogTitle></DialogHeader>
-          <div className="grid gap-5 py-2">
-            {/* Basic Information */}
-            <div className="space-y-3">
-              <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Basic Information</h4>
-              <div className="flex items-center gap-2">
-                <Label htmlFor="autoLot" className="text-sm">Auto-generate lot number</Label>
-                <input
-                  id="autoLot"
-                  type="checkbox"
-                  checked={formAutoLot}
-                  onChange={(e) => setFormAutoLot(e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-              </div>
-              {!formAutoLot && (
-                <div className="grid gap-2">
-                  <Label>Lot Number *</Label>
-                  <Input value={formLotNumber} onChange={(e) => setFormLotNumber(e.target.value)} placeholder="BN-2024-XXX" />
+
+          {/* Step Indicator */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              {WIZARD_STEPS.map((step, idx) => (
+                <div key={step.id} className="flex items-center flex-1 last:flex-initial">
+                  <button
+                    type="button"
+                    onClick={() => idx < wizardStep && goToStep(idx)}
+                    disabled={idx > wizardStep}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                      idx < wizardStep && 'text-green-700 dark:text-green-400 cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/20',
+                      idx === wizardStep && 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20',
+                      idx > wizardStep && 'text-gray-400 dark:text-gray-600 cursor-not-allowed',
+                    )}
+                  >
+                    {idx < wizardStep ? <CheckCircle2 className="h-4 w-4" /> : (
+                      <span className={cn('flex items-center justify-center h-5 w-5 rounded-full text-xs border',
+                        idx === wizardStep ? 'border-blue-500 text-blue-600' : 'border-gray-300 text-gray-400')}>{idx + 1}</span>
+                    )}
+                    <span className="hidden sm:inline">{step.label}</span>
+                  </button>
+                  {idx < WIZARD_STEPS.length - 1 && (
+                    <div className={cn('flex-1 h-0.5 mx-2', idx < wizardStep ? 'bg-green-300' : 'bg-gray-200')} />
+                  )}
                 </div>
-              )}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Product Name *</Label>
-                  <Input value={formProductName} onChange={(e) => setFormProductName(e.target.value)} placeholder="Product name" />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Product Code</Label>
-                  <Input value={formProductCode} onChange={(e) => setFormProductCode(e.target.value)} placeholder="PROD-XXX" />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="grid gap-2">
-                  <Label>Batch Size</Label>
-                  <Input type="number" value={formBatchSize} onChange={(e) => setFormBatchSize(e.target.value)} placeholder="0" />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Unit</Label>
-                  <Select value={formBatchSizeUnit} onValueChange={setFormBatchSizeUnit}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {batchSizeUnits.map(u => <SelectItem key={u} value={u}>{u.charAt(0).toUpperCase() + u.slice(1)}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>SOP Reference</Label>
-                  <Input value={formSopReference} onChange={(e) => setFormSopReference(e.target.value)} placeholder="SOP-XXX" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Manufacturing Date *</Label>
-                  <Input type="date" value={formMfgDate} onChange={(e) => setFormMfgDate(e.target.value)} />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Expiry Date</Label>
-                  <Input type="date" value={formExpiryDate} onChange={(e) => setFormExpiryDate(e.target.value)} />
-                </div>
-              </div>
+              ))}
             </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+              <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${((wizardStep + 1) / WIZARD_STEPS.length) * 100}%` }} />
+            </div>
+          </div>
 
-            <Separator />
+          {/* Step Content */}
+          <div className="py-2">
+            {renderStepContent()}
+          </div>
 
-            {/* Raw Materials & Components Sub-table */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                  <Beaker className="h-4 w-4 text-teal-500" />
-                  Raw Materials &amp; Components
-                </h4>
-                <Button variant="outline" size="sm" onClick={addFormRawMaterial}>
-                  <Plus className="h-3 w-3 mr-1" />Add Material
-                </Button>
-              </div>
-              {formRawMaterials.length > 0 ? (
-                <div className="border rounded-md overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[180px]">Material</TableHead>
-                        <TableHead className="w-[140px]">Lot Number</TableHead>
-                        <TableHead className="w-[160px]">Supplier</TableHead>
-                        <TableHead className="w-[120px]">Status</TableHead>
-                        <TableHead className="w-[50px]"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {formRawMaterials.map(rm => (
-                        <TableRow key={rm.id}>
-                          <TableCell>
-                            <Input
-                              className="h-8 text-xs"
-                              placeholder="Material name"
-                              value={rm.material}
-                              onChange={(e) => updateFormRawMaterial(rm.id, 'material', e.target.value)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              className="h-8 text-xs"
-                              placeholder="Lot #"
-                              value={rm.lotNumber}
-                              onChange={(e) => updateFormRawMaterial(rm.id, 'lotNumber', e.target.value)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              className="h-8 text-xs"
-                              placeholder="Supplier"
-                              value={rm.supplier}
-                              onChange={(e) => updateFormRawMaterial(rm.id, 'supplier', e.target.value)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Select value={rm.status} onValueChange={(val) => updateFormRawMaterial(rm.id, 'status', val)}>
-                              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                {rawMaterialStatusOptions.map(s => (
-                                  <SelectItem key={s} value={s}>{s}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
-                              onClick={() => removeFormRawMaterial(rm.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+          {/* Navigation Buttons */}
+          <div className="flex items-center justify-between pt-4 border-t">
+            <Button variant="outline" onClick={() => { resetForm(); setShowCreateDialog(false); }}>Cancel</Button>
+            <div className="flex gap-2">
+              {wizardStep > 0 && (
+                <Button variant="outline" onClick={goPrev}><ChevronLeft className="h-4 w-4 mr-1" />Previous</Button>
+              )}
+              {wizardStep < WIZARD_STEPS.length - 1 ? (
+                <Button onClick={goNext} disabled={!isStepValid(wizardStep)} className="bg-blue-600 hover:bg-blue-700 text-white">Next<ChevronRight className="h-4 w-4 ml-1" /></Button>
               ) : (
-                <div className="border rounded-md p-4 text-center text-muted-foreground text-xs bg-muted/20">
-                  No raw materials added. Click &quot;Add Material&quot; to define materials and components.
-                </div>
+                <Button onClick={handleCreate} disabled={!isStepValid(wizardStep)} className="bg-green-600 hover:bg-green-700 text-white">Create Batch Record</Button>
               )}
             </div>
-
-            <Separator />
-
-            {/* Batch Step Templates */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                  <ClipboardList className="h-4 w-4 text-indigo-500" />
-                  Batch Step Templates
-                </h4>
-                <Button variant="outline" size="sm" onClick={addFormStepTemplate}>
-                  <Plus className="h-3 w-3 mr-1" />Add Step
-                </Button>
-              </div>
-              {formStepTemplates.length > 0 ? (
-                <div className="space-y-3">
-                  {formStepTemplates.map((st, idx) => (
-                    <div key={st.id} className="border rounded-md p-3 space-y-2 bg-muted/10 relative">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-muted-foreground">Step {idx + 1}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                          onClick={() => removeFormStepTemplate(st.id)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="grid gap-1">
-                          <Label className="text-xs">Step Name *</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="e.g. Material Weighing"
-                            value={st.stepName}
-                            onChange={(e) => updateFormStepTemplate(st.id, 'stepName', e.target.value)}
-                          />
-                        </div>
-                        <div className="grid gap-1">
-                          <Label className="text-xs">Step Type</Label>
-                          <Select value={st.stepType} onValueChange={(val) => updateFormStepTemplate(st.id, 'stepType', val)}>
-                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {stepTypeOptions.map(t => (
-                                <SelectItem key={t} value={t}>
-                                  {stepTypeIcons[t]} {t}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      <div className="grid gap-1">
-                        <Label className="text-xs">Instructions</Label>
-                        <Textarea
-                          className="text-xs min-h-[48px]"
-                          placeholder="Step instructions..."
-                          value={st.instructions}
-                          onChange={(e) => updateFormStepTemplate(st.id, 'instructions', e.target.value)}
-                          rows={2}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label className="text-xs">Expected Value</Label>
-                        <Input
-                          className="h-8 text-xs"
-                          placeholder="e.g. 250.0 ± 2.5 kg"
-                          value={st.expectedValue}
-                          onChange={(e) => updateFormStepTemplate(st.id, 'expectedValue', e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="border rounded-md p-4 text-center text-muted-foreground text-xs bg-muted/20">
-                  No step templates added. Click &quot;Add Step&quot; to define batch processing steps.
-                </div>
-              )}
-            </div>
-
-            <Separator />
-
-            <Button
-              className="w-full"
-              onClick={handleCreate}
-              disabled={!formProductName || (!formAutoLot && !formLotNumber)}
-            >
-              Create Batch Record
-            </Button>
           </div>
         </DialogContent>
       </Dialog>

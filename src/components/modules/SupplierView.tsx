@@ -9,7 +9,7 @@ import {
   Truck, Plus, Search, ArrowRight, CheckCircle2, XCircle, AlertTriangle,
   Award, FileText, Edit3, Save, Star, CalendarClock, TrendingUp,
   Globe, User, Mail, Phone, MapPin, Shield, ClipboardCheck,
-  Building2, Siren,
+  Building2, Siren, ChevronLeft, ChevronRight, ListChecks,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -52,6 +52,14 @@ const qualificationMethodIcons: Record<QualificationMethod, React.ReactNode> = {
   'Third-Party Assessment': <Building2 className="h-3 w-3" />,
   'Historical Performance': <TrendingUp className="h-3 w-3" />,
 };
+
+const WIZARD_STEPS = [
+  { id: 0, label: 'Supplier Identification', icon: Truck },
+  { id: 1, label: 'Primary Contact', icon: User },
+  { id: 2, label: 'Address', icon: MapPin },
+  { id: 3, label: 'Qualification & Certification', icon: Shield },
+  { id: 4, label: 'Summary & Submit', icon: ListChecks },
+];
 
 const qualificationMethodBadgeColors: Record<QualificationMethod, string> = {
   'On-Site Audit': 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
@@ -147,6 +155,9 @@ export function SupplierView() {
   const [formQualificationMethod, setFormQualificationMethod] = useState<QualificationMethod>('On-Site Audit');
   const [formQualificationDocRef, setFormQualificationDocRef] = useState('');
 
+  // Wizard state
+  const [wizardStep, setWizardStep] = useState(0);
+
   // Inline performance score editing
   const [editingScore, setEditingScore] = useState(false);
   const [editScoreValue, setEditScoreValue] = useState('');
@@ -186,6 +197,7 @@ export function SupplierView() {
   };
 
   const resetForm = () => {
+    setWizardStep(0);
     setFormAutoCode(true);
     setFormCode('');
     setFormName('');
@@ -283,6 +295,323 @@ export function SupplierView() {
     setEditingScore(false);
     setEditScoreValue('');
     setShowDetailDialog(true);
+  };
+
+  // ── Wizard step validation ──
+  const isStepValid = (step: number): boolean => {
+    switch (step) {
+      case 0:
+        return formName.trim() !== '' && (formAutoCode || formCode.trim() !== '');
+      case 1:
+        return true;
+      case 2:
+        return true;
+      case 3:
+        return !!formQualificationMethod;
+      case 4:
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  // ── Wizard navigation ──
+  const goToStep = (step: number) => {
+    if (step >= 0 && step < WIZARD_STEPS.length) {
+      setWizardStep(step);
+    }
+  };
+
+  const goNext = () => {
+    if (wizardStep < WIZARD_STEPS.length - 1 && isStepValid(wizardStep)) {
+      setWizardStep(wizardStep + 1);
+    }
+  };
+
+  const goPrev = () => {
+    if (wizardStep > 0) {
+      setWizardStep(wizardStep - 1);
+    }
+  };
+
+  // ── Render: Wizard Step Content ──
+  const renderStepContent = () => {
+    switch (wizardStep) {
+      // ── Step 1: Supplier Identification ──
+      case 0:
+        return (
+          <div className="grid gap-4">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="autoCode" className="text-sm">Auto-generate supplier code</Label>
+              <input
+                id="autoCode"
+                type="checkbox"
+                checked={formAutoCode}
+                onChange={(e) => setFormAutoCode(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+            </div>
+            {!formAutoCode && (
+              <div className="grid gap-2">
+                <Label>Supplier Code *</Label>
+                <Input value={formCode} onChange={(e) => setFormCode(e.target.value)} placeholder="SUP-XXX" />
+              </div>
+            )}
+            <div className="grid gap-2">
+              <Label>Name *</Label>
+              <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Supplier name" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Category</Label>
+                <Select value={formCategory} onValueChange={(v) => setFormCategory(v as SupplierCategory)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {supplierCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Website</Label>
+                <div className="relative">
+                  <Globe className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={formWebsite}
+                    onChange={(e) => setFormWebsite(e.target.value)}
+                    placeholder="https://example.com"
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      // ── Step 2: Primary Contact ──
+      case 1:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label>Contact Name</Label>
+              <div className="relative">
+                <User className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={formPrimaryContactName}
+                  onChange={(e) => setFormPrimaryContactName(e.target.value)}
+                  placeholder="Full name"
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Email</Label>
+                <div className="relative">
+                  <Mail className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={formPrimaryContactEmail}
+                    onChange={(e) => setFormPrimaryContactEmail(e.target.value)}
+                    placeholder="email@example.com"
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Phone</Label>
+                <div className="relative">
+                  <Phone className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={formPrimaryContactPhone}
+                    onChange={(e) => setFormPrimaryContactPhone(e.target.value)}
+                    placeholder="+1 555 1234567"
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      // ── Step 3: Address ──
+      case 2:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label>Street</Label>
+              <Input
+                value={formStreet}
+                onChange={(e) => setFormStreet(e.target.value)}
+                placeholder="Street address"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>City</Label>
+                <Input
+                  value={formCity}
+                  onChange={(e) => setFormCity(e.target.value)}
+                  placeholder="City"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>State / Province</Label>
+                <Input
+                  value={formStateProvince}
+                  onChange={(e) => setFormStateProvince(e.target.value)}
+                  placeholder="State or province"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Postal Code</Label>
+                <Input
+                  value={formPostalCode}
+                  onChange={(e) => setFormPostalCode(e.target.value)}
+                  placeholder="Postal / ZIP code"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Country</Label>
+                <Input
+                  value={formCountry}
+                  onChange={(e) => setFormCountry(e.target.value)}
+                  placeholder="Country"
+                />
+              </div>
+            </div>
+          </div>
+        );
+
+      // ── Step 4: Qualification & Certification ──
+      case 3:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label>Qualification Method *</Label>
+              <Select value={formQualificationMethod} onValueChange={(v) => setFormQualificationMethod(v as QualificationMethod)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {qualificationMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Qualification Date</Label>
+                <Input type="date" value={formQualDate} onChange={(e) => setFormQualDate(e.target.value)} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Next Review Date</Label>
+                <Input type="date" value={formNextReviewDate} onChange={(e) => setFormNextReviewDate(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Certifications (comma separated)</Label>
+              <Input value={formCertifications} onChange={(e) => setFormCertifications(e.target.value)} placeholder="ISO 9001, ISO 13485, ..." />
+            </div>
+            <div className="grid gap-2">
+              <Label>Qualification Documents Reference</Label>
+              <div className="relative">
+                <FileText className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={formQualificationDocRef}
+                  onChange={(e) => setFormQualificationDocRef(e.target.value)}
+                  placeholder="QA-AUD-2024-XXX"
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            <Separator />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Emergency Contact Name</Label>
+                <Input
+                  value={formEmergencyContactName}
+                  onChange={(e) => setFormEmergencyContactName(e.target.value)}
+                  placeholder="Emergency contact name"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Emergency Contact Phone</Label>
+                <Input
+                  value={formEmergencyContactPhone}
+                  onChange={(e) => setFormEmergencyContactPhone(e.target.value)}
+                  placeholder="+1 555 9999999"
+                />
+              </div>
+            </div>
+          </div>
+        );
+
+      // ── Step 5: Summary & Submit ──
+      case 4:
+        return (
+          <div className="grid gap-4">
+            <div className="bg-muted/30 rounded-lg p-4 space-y-3 max-h-[440px] overflow-y-auto">
+              <h4 className="font-semibold text-sm flex items-center gap-2">
+                <ListChecks className="h-4 w-4 text-primary" />
+                Review Summary
+              </h4>
+
+              {/* Step 1 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 1 — Supplier Identification</p>
+                <p className="text-sm"><span className="font-medium">Code:</span> {formAutoCode ? generateSupplierCode() : formCode || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Name:</span> {formName || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Category:</span> {formCategory}</p>
+                {formWebsite && <p className="text-sm"><span className="font-medium">Website:</span> {formWebsite}</p>}
+              </div>
+
+              {/* Step 2 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 2 — Primary Contact</p>
+                <p className="text-sm"><span className="font-medium">Contact Name:</span> {formPrimaryContactName || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Email:</span> {formPrimaryContactEmail || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Phone:</span> {formPrimaryContactPhone || '—'}</p>
+              </div>
+
+              {/* Step 3 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 3 — Address</p>
+                {formStreet && <p className="text-sm"><span className="font-medium">Street:</span> {formStreet}</p>}
+                <p className="text-sm">
+                  <span className="font-medium">City:</span> {formCity || '—'}
+                  {formStateProvince && <span className="ml-2"><span className="font-medium">State/Province:</span> {formStateProvince}</span>}
+                </p>
+                <p className="text-sm">
+                  {formPostalCode && <span><span className="font-medium">Postal Code:</span> {formPostalCode}</span>}
+                  {formCountry && <span className="ml-2"><span className="font-medium">Country:</span> {formCountry}</span>}
+                </p>
+                {!formStreet && !formCity && !formStateProvince && !formPostalCode && !formCountry && (
+                  <p className="text-sm text-muted-foreground">No address provided</p>
+                )}
+              </div>
+
+              {/* Step 4 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 4 — Qualification & Certification</p>
+                <p className="text-sm"><span className="font-medium">Qualification Method:</span> {formQualificationMethod}</p>
+                {formQualDate && <p className="text-sm"><span className="font-medium">Qualification Date:</span> {formQualDate}</p>}
+                {formNextReviewDate && <p className="text-sm"><span className="font-medium">Next Review Date:</span> {formNextReviewDate}</p>}
+                {formCertifications && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-sm font-medium">Certifications:</span>
+                    {formCertifications.split(',').map(c => c.trim()).filter(Boolean).map((cert, i) => (
+                      <Badge key={i} variant="outline" className="text-xs"><Award className="h-3 w-3 mr-1" />{cert}</Badge>
+                    ))}
+                  </div>
+                )}
+                {formQualificationDocRef && <p className="text-sm"><span className="font-medium">Doc Reference:</span> {formQualificationDocRef}</p>}
+                {formEmergencyContactName && <p className="text-sm"><span className="font-medium">Emergency Contact:</span> {formEmergencyContactName}{formEmergencyContactPhone ? ` (${formEmergencyContactPhone})` : ''}</p>}
+              </div>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
   };
 
   return (
@@ -476,247 +805,62 @@ export function SupplierView() {
         </CardContent>
       </Card>
 
-      {/* ====================== Create Supplier Dialog ====================== */}
+      {/* ====================== Create Supplier Dialog (Wizard) ====================== */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[720px] max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Create New Supplier</DialogTitle></DialogHeader>
-          <div className="grid gap-5 py-2">
-            {/* Basic Information */}
-            <div>
-              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
-                <Truck className="h-4 w-4" /> Basic Information
-              </h4>
-              <div className="grid gap-3">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="autoCode" className="text-sm">Auto-generate supplier code</Label>
-                  <input
-                    id="autoCode"
-                    type="checkbox"
-                    checked={formAutoCode}
-                    onChange={(e) => setFormAutoCode(e.target.checked)}
-                    className="rounded border-gray-300"
-                  />
+
+          {/* Step Indicator */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              {WIZARD_STEPS.map((step, idx) => (
+                <div key={step.id} className="flex items-center flex-1 last:flex-initial">
+                  <button
+                    type="button"
+                    onClick={() => idx < wizardStep && goToStep(idx)}
+                    disabled={idx > wizardStep}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                      idx < wizardStep && 'text-green-700 dark:text-green-400 cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/20',
+                      idx === wizardStep && 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20',
+                      idx > wizardStep && 'text-gray-400 dark:text-gray-600 cursor-not-allowed',
+                    )}
+                  >
+                    {idx < wizardStep ? <CheckCircle2 className="h-4 w-4" /> : (
+                      <span className={cn('flex items-center justify-center h-5 w-5 rounded-full text-xs border',
+                        idx === wizardStep ? 'border-blue-500 text-blue-600' : 'border-gray-300 text-gray-400')}>{idx + 1}</span>
+                    )}
+                    <span className="hidden sm:inline">{step.label}</span>
+                  </button>
+                  {idx < WIZARD_STEPS.length - 1 && (
+                    <div className={cn('flex-1 h-0.5 mx-2', idx < wizardStep ? 'bg-green-300' : 'bg-gray-200')} />
+                  )}
                 </div>
-                {!formAutoCode && (
-                  <div className="grid gap-2">
-                    <Label>Supplier Code *</Label>
-                    <Input value={formCode} onChange={(e) => setFormCode(e.target.value)} placeholder="SUP-XXX" />
-                  </div>
-                )}
-                <div className="grid gap-2">
-                  <Label>Name *</Label>
-                  <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Supplier name" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Category</Label>
-                    <Select value={formCategory} onValueChange={(v) => setFormCategory(v as SupplierCategory)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {supplierCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Website</Label>
-                    <div className="relative">
-                      <Globe className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        value={formWebsite}
-                        onChange={(e) => setFormWebsite(e.target.value)}
-                        placeholder="https://example.com"
-                        className="pl-9"
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Qualification Date</Label>
-                    <Input type="date" value={formQualDate} onChange={(e) => setFormQualDate(e.target.value)} />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Next Review Date</Label>
-                    <Input type="date" value={formNextReviewDate} onChange={(e) => setFormNextReviewDate(e.target.value)} />
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Certifications (comma separated)</Label>
-                  <Input value={formCertifications} onChange={(e) => setFormCertifications(e.target.value)} placeholder="ISO 9001, ISO 13485, ..." />
-                </div>
-              </div>
+              ))}
             </div>
-
-            <Separator />
-
-            {/* Primary Contact */}
-            <div>
-              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
-                <User className="h-4 w-4" /> Primary Contact
-              </h4>
-              <div className="grid gap-3">
-                <div className="grid gap-2">
-                  <Label>Contact Name</Label>
-                  <div className="relative">
-                    <User className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      value={formPrimaryContactName}
-                      onChange={(e) => setFormPrimaryContactName(e.target.value)}
-                      placeholder="Full name"
-                      className="pl-9"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Email</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        value={formPrimaryContactEmail}
-                        onChange={(e) => setFormPrimaryContactEmail(e.target.value)}
-                        placeholder="email@example.com"
-                        className="pl-9"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Phone</Label>
-                    <div className="relative">
-                      <Phone className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        value={formPrimaryContactPhone}
-                        onChange={(e) => setFormPrimaryContactPhone(e.target.value)}
-                        placeholder="+1 555 1234567"
-                        className="pl-9"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+              <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${((wizardStep + 1) / WIZARD_STEPS.length) * 100}%` }} />
             </div>
+          </div>
 
-            <Separator />
+          {/* Step Content */}
+          <div className="py-2">
+            {renderStepContent()}
+          </div>
 
-            {/* Address */}
-            <div>
-              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
-                <MapPin className="h-4 w-4" /> Address
-              </h4>
-              <div className="grid gap-3">
-                <div className="grid gap-2">
-                  <Label>Street</Label>
-                  <Input
-                    value={formStreet}
-                    onChange={(e) => setFormStreet(e.target.value)}
-                    placeholder="Street address"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>City</Label>
-                    <Input
-                      value={formCity}
-                      onChange={(e) => setFormCity(e.target.value)}
-                      placeholder="City"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>State / Province</Label>
-                    <Input
-                      value={formStateProvince}
-                      onChange={(e) => setFormStateProvince(e.target.value)}
-                      placeholder="State or province"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Postal Code</Label>
-                    <Input
-                      value={formPostalCode}
-                      onChange={(e) => setFormPostalCode(e.target.value)}
-                      placeholder="Postal / ZIP code"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Country</Label>
-                    <Input
-                      value={formCountry}
-                      onChange={(e) => setFormCountry(e.target.value)}
-                      placeholder="Country"
-                    />
-                  </div>
-                </div>
-              </div>
+          {/* Navigation Buttons */}
+          <div className="flex items-center justify-between pt-4 border-t">
+            <Button variant="outline" onClick={() => { resetForm(); setShowCreateDialog(false); }}>Cancel</Button>
+            <div className="flex gap-2">
+              {wizardStep > 0 && (
+                <Button variant="outline" onClick={goPrev}><ChevronLeft className="h-4 w-4 mr-1" />Previous</Button>
+              )}
+              {wizardStep < WIZARD_STEPS.length - 1 ? (
+                <Button onClick={goNext} disabled={!isStepValid(wizardStep)} className="bg-blue-600 hover:bg-blue-700 text-white">Next<ChevronRight className="h-4 w-4 ml-1" /></Button>
+              ) : (
+                <Button onClick={handleCreate} disabled={!isStepValid(wizardStep)} className="bg-green-600 hover:bg-green-700 text-white">Create Supplier</Button>
+              )}
             </div>
-
-            <Separator />
-
-            {/* Emergency Contact */}
-            <div>
-              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
-                <Siren className="h-4 w-4" /> Emergency Contact
-              </h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Contact Name</Label>
-                  <Input
-                    value={formEmergencyContactName}
-                    onChange={(e) => setFormEmergencyContactName(e.target.value)}
-                    placeholder="Emergency contact name"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Phone</Label>
-                  <Input
-                    value={formEmergencyContactPhone}
-                    onChange={(e) => setFormEmergencyContactPhone(e.target.value)}
-                    placeholder="+1 555 9999999"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Qualification */}
-            <div>
-              <h4 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
-                <Shield className="h-4 w-4" /> Qualification
-              </h4>
-              <div className="grid gap-3">
-                <div className="grid gap-2">
-                  <Label>Qualification Method *</Label>
-                  <Select value={formQualificationMethod} onValueChange={(v) => setFormQualificationMethod(v as QualificationMethod)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {qualificationMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Qualification Documents Reference</Label>
-                  <div className="relative">
-                    <FileText className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      value={formQualificationDocRef}
-                      onChange={(e) => setFormQualificationDocRef(e.target.value)}
-                      placeholder="QA-AUD-2024-XXX"
-                      className="pl-9"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <Button
-              className="w-full"
-              onClick={handleCreate}
-              disabled={!formName || (!formAutoCode && !formCode)}
-            >
-              Create Supplier
-            </Button>
           </div>
         </DialogContent>
       </Dialog>

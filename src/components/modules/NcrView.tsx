@@ -9,6 +9,8 @@ import type { NonConformance, NcrStatus, NcrType, NcrSeverity, NcrDisposition, S
 import {
   AlertTriangle, Plus, Search, ArrowRight, AlertCircle,
   CheckCircle2, Clock, ShieldCheck, Link2, Beaker,
+  ChevronLeft, ChevronRight, FileText, ClipboardList, FlaskConical,
+  Scale, ListChecks,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,6 +28,8 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const statusColors: Record<NcrStatus, string> = {
   'Open': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
@@ -53,12 +57,22 @@ const ncrStatusFlow: NcrStatus[] = ['Open', 'Under Investigation', 'Pending Disp
 
 const ncrTypes: NcrType[] = ['Product', 'Process', 'System', 'Supplier', 'OOS', 'OOT'];
 const ncrSeverities: NcrSeverity[] = ['Critical', 'Major', 'Minor'];
-const ncrDispositions: NcrDisposition[] = ['Use As Is', 'Rework', 'Scrap', 'Return to Supplier', 'Concession'];
+const ncrDispositions: NcrDisposition[] = ['Use As Is', 'Rework', 'Scrap', 'Return to Supplier', 'Concession', 'Pending'];
+
+const WIZARD_STEPS = [
+  { id: 0, label: 'NCR Identification', icon: FileText },
+  { id: 1, label: 'Description & Details', icon: ClipboardList },
+  { id: 2, label: 'OOS/OOT Investigation', icon: FlaskConical },
+  { id: 3, label: 'Disposition & Impact', icon: Scale },
+  { id: 4, label: 'Summary & Submit', icon: ListChecks },
+];
 
 function getNextNcrStatus(current: NcrStatus): NcrStatus | null {
   const idx = ncrStatusFlow.indexOf(current);
   return idx < ncrStatusFlow.length - 1 ? ncrStatusFlow[idx + 1] : null;
 }
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function NcrView() {
   const { currentUser, hasPermission } = useAuth();
@@ -82,22 +96,35 @@ export function NcrView() {
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [pendingCloseNcr, setPendingCloseNcr] = useState<NonConformance | null>(null);
 
-  // Create form state
+  // Wizard state
+  const [wizardStep, setWizardStep] = useState(0);
+
+  // Create form state — Step 1: NCR Identification
   const [formTitle, setFormTitle] = useState('');
   const [formType, setFormType] = useState<NcrType>('Process');
   const [formSeverity, setFormSeverity] = useState<NcrSeverity>('Major');
   const [formSource, setFormSource] = useState('');
+
+  // Step 2: Description & Details
   const [formDescription, setFormDescription] = useState('');
   const [formLotNumber, setFormLotNumber] = useState('');
   const [formQtyAffected, setFormQtyAffected] = useState('');
   const [formAssignedTo, setFormAssignedTo] = useState('');
   const [formDueDate, setFormDueDate] = useState('');
-  // OOS/OOT fields
+
+  // Step 3: OOS/OOT Investigation
   const [formAnalyticalMethod, setFormAnalyticalMethod] = useState('');
   const [formMeasuredValue, setFormMeasuredValue] = useState('');
   const [formMeasuredUnit, setFormMeasuredUnit] = useState('');
   const [formSpecLimit, setFormSpecLimit] = useState('');
   const [formIsOosOot, setFormIsOosOot] = useState(false);
+  const [formPhase1Conclusion, setFormPhase1Conclusion] = useState<'Pending' | 'No Error Found' | 'Error Found'>('Pending');
+
+  // Step 4: Disposition & Impact
+  const [formPreliminaryDisposition, setFormPreliminaryDisposition] = useState<NcrDisposition>('Pending');
+  const [formImpactAssessment, setFormImpactAssessment] = useState('');
+  const [formContainmentActions, setFormContainmentActions] = useState('');
+  const [formAffectedProduct, setFormAffectedProduct] = useState('');
 
   // Detail dialog disposition edit
   const [detailDisposition, setDetailDisposition] = useState<string>('');
@@ -131,12 +158,54 @@ export function NcrView() {
     return capas.find(c => c.id === capaId) || null;
   };
 
+  // ── Step validation ──
+  const isStepValid = (step: number): boolean => {
+    switch (step) {
+      case 0:
+        return formTitle.trim() !== '' && formSeverity.trim() !== '';
+      case 1:
+        return formDescription.trim() !== '';
+      case 2:
+        // If OOS/OOT, analytical method is required; otherwise always valid (skip step)
+        return formIsOosOot ? formAnalyticalMethod.trim() !== '' : true;
+      case 3:
+        return formImpactAssessment.trim() !== '';
+      case 4:
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  // ── Navigation ──
+  const goToStep = (step: number) => {
+    if (step >= 0 && step < WIZARD_STEPS.length) {
+      setWizardStep(step);
+    }
+  };
+
+  const goNext = () => {
+    if (wizardStep < WIZARD_STEPS.length - 1 && isStepValid(wizardStep)) {
+      setWizardStep(wizardStep + 1);
+    }
+  };
+
+  const goPrev = () => {
+    if (wizardStep > 0) {
+      setWizardStep(wizardStep - 1);
+    }
+  };
+
   const resetForm = () => {
+    setWizardStep(0);
     setFormTitle(''); setFormType('Process'); setFormSeverity('Major');
     setFormSource(''); setFormDescription(''); setFormLotNumber('');
     setFormQtyAffected(''); setFormAssignedTo(''); setFormDueDate('');
     setFormAnalyticalMethod(''); setFormMeasuredValue('');
     setFormMeasuredUnit(''); setFormSpecLimit(''); setFormIsOosOot(false);
+    setFormPhase1Conclusion('Pending');
+    setFormPreliminaryDisposition('Pending');
+    setFormImpactAssessment(''); setFormContainmentActions(''); setFormAffectedProduct('');
   };
 
   const handleCreate = () => {
@@ -152,15 +221,19 @@ export function NcrView() {
       lotNumber: formLotNumber || undefined,
       quantityAffected: formQtyAffected ? parseInt(formQtyAffected) : undefined,
       assignedTo: formAssignedTo || undefined,
-      disposition: 'Pending',
+      dueDate: formDueDate ? new Date(formDueDate).toISOString() : undefined,
+      disposition: formPreliminaryDisposition,
       isOosOot: formIsOosOot,
       analyticalMethod: formIsOosOot ? formAnalyticalMethod || undefined : undefined,
       measuredValue: formIsOosOot && formMeasuredValue ? parseFloat(formMeasuredValue) : undefined,
       measuredUnit: formIsOosOot ? formMeasuredUnit || undefined : undefined,
       specLimit: formIsOosOot ? formSpecLimit || undefined : undefined,
+      phase1Conclusion: formIsOosOot ? formPhase1Conclusion : undefined,
       phase2Required: formIsOosOot,
       rejectLot: false,
-      dueDate: formDueDate ? new Date(formDueDate).toISOString() : undefined,
+      impactAssessment: formImpactAssessment || undefined,
+      containmentActions: formContainmentActions || undefined,
+      affectedProduct: formAffectedProduct || undefined,
       createdDate: new Date().toISOString(),
       createdById: currentUser?.id,
       organizationId: 'org-001',
@@ -220,6 +293,228 @@ export function NcrView() {
     if (!selectedNcr || !detailDisposition) return;
     store.updateNCR(selectedNcr.id, { disposition: detailDisposition as NcrDisposition });
     setSelectedNcr({ ...selectedNcr, disposition: detailDisposition as NcrDisposition });
+  };
+
+  // ── Render: Wizard Step Content ──
+  const renderStepContent = () => {
+    switch (wizardStep) {
+      // ── Step 1: NCR Identification ──
+      case 0:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="ncr-title">Title *</Label>
+              <Input id="ncr-title" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="Enter NCR title" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Type *</Label>
+                <Select value={formType} onValueChange={(v) => {
+                  setFormType(v as NcrType);
+                  setFormIsOosOot(v === 'OOS' || v === 'OOT');
+                }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ncrTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Severity *</Label>
+                <Select value={formSeverity} onValueChange={(v) => setFormSeverity(v as NcrSeverity)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ncrSeverities.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="ncr-source">Source</Label>
+              <Input id="ncr-source" value={formSource} onChange={(e) => setFormSource(e.target.value)} placeholder="e.g., Customer Complaint, Internal Audit..." />
+            </div>
+            {formIsOosOot && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 flex items-start gap-2">
+                <Beaker className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-red-700 dark:text-red-400">
+                  OOS/OOT type selected — investigation fields will be required in Step 3.
+                </p>
+              </div>
+            )}
+          </div>
+        );
+
+      // ── Step 2: Description & Details ──
+      case 1:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="ncr-description">Description *</Label>
+              <Textarea id="ncr-description" value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Describe the non-conformance..." rows={4} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="ncr-lot">Lot Number</Label>
+                <Input id="ncr-lot" value={formLotNumber} onChange={(e) => setFormLotNumber(e.target.value)} placeholder="BN-2024-XXX" />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="ncr-qty">Quantity Affected</Label>
+                <Input id="ncr-qty" type="number" value={formQtyAffected} onChange={(e) => setFormQtyAffected(e.target.value)} placeholder="0" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Assigned To</Label>
+                <Select value={formAssignedTo} onValueChange={setFormAssignedTo}>
+                  <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
+                  <SelectContent>
+                    {profiles.map(p => <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="ncr-due">Due Date</Label>
+                <Input id="ncr-due" type="date" value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} />
+              </div>
+            </div>
+          </div>
+        );
+
+      // ── Step 3: OOS/OOT Investigation ──
+      case 2:
+        return formIsOosOot ? (
+          <div className="grid gap-4">
+            <div className="border border-red-200 dark:border-red-800 rounded-md p-4 space-y-3 bg-red-50/50 dark:bg-red-900/10">
+              <h4 className="font-medium text-sm flex items-center gap-2">
+                <Beaker className="h-4 w-4 text-red-500" /> OOS/OOT Investigation Fields
+              </h4>
+              <div className="grid gap-2">
+                <Label htmlFor="ncr-method">Analytical Method *</Label>
+                <Input id="ncr-method" value={formAnalyticalMethod} onChange={(e) => setFormAnalyticalMethod(e.target.value)} placeholder="HPLC Method QC-M-XXX" />
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="ncr-value">Measured Value</Label>
+                  <Input id="ncr-value" type="number" value={formMeasuredValue} onChange={(e) => setFormMeasuredValue(e.target.value)} placeholder="0.0" />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="ncr-unit">Unit</Label>
+                  <Input id="ncr-unit" value={formMeasuredUnit} onChange={(e) => setFormMeasuredUnit(e.target.value)} placeholder="%" />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="ncr-spec">Spec Limit</Label>
+                  <Input id="ncr-spec" value={formSpecLimit} onChange={(e) => setFormSpecLimit(e.target.value)} placeholder="95.0-105.0%" />
+                </div>
+              </div>
+              <Separator className="bg-red-200 dark:bg-red-800" />
+              <div className="grid gap-2">
+                <Label>Phase 1 Conclusion</Label>
+                <Select value={formPhase1Conclusion} onValueChange={(v) => setFormPhase1Conclusion(v as 'Pending' | 'No Error Found' | 'Error Found')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Pending">Pending</SelectItem>
+                    <SelectItem value="No Error Found">No Error Found</SelectItem>
+                    <SelectItem value="Error Found">Error Found</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <div className="rounded-full bg-muted p-4 mb-4">
+              <FlaskConical className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="font-medium text-lg mb-1">No Investigation Fields Required</h3>
+            <p className="text-sm text-muted-foreground max-w-sm">
+              OOS/OOT investigation fields are only applicable when the NCR type is OOS or OOT. Since this NCR is of type <span className="font-medium">{formType}</span>, this step will be skipped.
+            </p>
+          </div>
+        );
+
+      // ── Step 4: Disposition & Impact ──
+      case 3:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label>Preliminary Disposition</Label>
+              <Select value={formPreliminaryDisposition} onValueChange={(v) => setFormPreliminaryDisposition(v as NcrDisposition)}>
+                <SelectTrigger><SelectValue placeholder="Select disposition" /></SelectTrigger>
+                <SelectContent>
+                  {ncrDispositions.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="ncr-impact">Impact Assessment *</Label>
+              <Textarea id="ncr-impact" value={formImpactAssessment} onChange={(e) => setFormImpactAssessment(e.target.value)} placeholder="Assess the impact of this non-conformance on product quality, patient safety, and regulatory compliance..." rows={3} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="ncr-containment">Immediate Containment Actions</Label>
+              <Textarea id="ncr-containment" value={formContainmentActions} onChange={(e) => setFormContainmentActions(e.target.value)} placeholder="Describe any immediate containment actions taken..." rows={3} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="ncr-affected">Affected Product / Process</Label>
+              <Input id="ncr-affected" value={formAffectedProduct} onChange={(e) => setFormAffectedProduct(e.target.value)} placeholder="e.g., Product XYZ, Manufacturing Line A" />
+            </div>
+          </div>
+        );
+
+      // ── Step 5: Summary & Submit ──
+      case 4:
+        return (
+          <div className="grid gap-4">
+            <div className="bg-muted/30 rounded-lg p-4 space-y-3 max-h-[400px] overflow-y-auto">
+              <h4 className="font-semibold text-sm flex items-center gap-2">
+                <ListChecks className="h-4 w-4 text-primary" />
+                Review Summary
+              </h4>
+
+              {/* Step 1 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 1 — NCR Identification</p>
+                <p className="text-sm"><span className="font-medium">Title:</span> {formTitle || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Type:</span> {formType}</p>
+                <p className="text-sm"><span className="font-medium">Severity:</span> {formSeverity}</p>
+                <p className="text-sm"><span className="font-medium">Source:</span> {formSource || '—'}</p>
+              </div>
+
+              {/* Step 2 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 2 — Description & Details</p>
+                <p className="text-sm"><span className="font-medium">Description:</span> {formDescription || '—'}</p>
+                {formLotNumber && <p className="text-sm"><span className="font-medium">Lot Number:</span> {formLotNumber}</p>}
+                {formQtyAffected && <p className="text-sm"><span className="font-medium">Qty Affected:</span> {formQtyAffected}</p>}
+                <p className="text-sm"><span className="font-medium">Assigned To:</span> {formAssignedTo ? getUserName(formAssignedTo) : '—'}</p>
+                <p className="text-sm"><span className="font-medium">Due Date:</span> {formDueDate || '—'}</p>
+              </div>
+
+              {/* Step 3 Summary */}
+              {formIsOosOot && (
+                <div className="border rounded-md p-3 space-y-1 border-red-200 dark:border-red-800 bg-red-50/30 dark:bg-red-900/5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 3 — OOS/OOT Investigation</p>
+                  <p className="text-sm"><span className="font-medium">Analytical Method:</span> {formAnalyticalMethod || '—'}</p>
+                  {formMeasuredValue && <p className="text-sm"><span className="font-medium">Measured Value:</span> {formMeasuredValue} {formMeasuredUnit}</p>}
+                  {formSpecLimit && <p className="text-sm"><span className="font-medium">Spec Limit:</span> {formSpecLimit}</p>}
+                  <p className="text-sm"><span className="font-medium">Phase 1 Conclusion:</span> {formPhase1Conclusion}</p>
+                </div>
+              )}
+
+              {/* Step 4 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 4 — Disposition & Impact</p>
+                <p className="text-sm"><span className="font-medium">Preliminary Disposition:</span> {formPreliminaryDisposition}</p>
+                <p className="text-sm"><span className="font-medium">Impact Assessment:</span> {formImpactAssessment || '—'}</p>
+                {formContainmentActions && <p className="text-sm"><span className="font-medium">Containment Actions:</span> {formContainmentActions}</p>}
+                {formAffectedProduct && <p className="text-sm"><span className="font-medium">Affected Product/Process:</span> {formAffectedProduct}</p>}
+              </div>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
   };
 
   return (
@@ -373,104 +668,67 @@ export function NcrView() {
         </CardContent>
       </Card>
 
-      {/* Create NCR Dialog */}
+      {/* Create NCR Dialog — Wizard */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[720px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create New NCR</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-primary" />
+              Create New NCR
+            </DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label>Title *</Label>
-              <Input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="NCR title" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Type *</Label>
-                <Select value={formType} onValueChange={(v) => {
-                  setFormType(v as NcrType);
-                  setFormIsOosOot(v === 'OOS' || v === 'OOT');
-                }}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {ncrTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Severity *</Label>
-                <Select value={formSeverity} onValueChange={(v) => setFormSeverity(v as NcrSeverity)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {ncrSeverities.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Source</Label>
-              <Input value={formSource} onChange={(e) => setFormSource(e.target.value)} placeholder="e.g., Customer Complaint, Internal Audit..." />
-            </div>
-            <div className="grid gap-2">
-              <Label>Description *</Label>
-              <Textarea value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Describe the non-conformance..." rows={3} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Lot Number</Label>
-                <Input value={formLotNumber} onChange={(e) => setFormLotNumber(e.target.value)} placeholder="BN-2024-XXX" />
-              </div>
-              <div className="grid gap-2">
-                <Label>Quantity Affected</Label>
-                <Input type="number" value={formQtyAffected} onChange={(e) => setFormQtyAffected(e.target.value)} placeholder="0" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Assigned To</Label>
-                <Select value={formAssignedTo} onValueChange={setFormAssignedTo}>
-                  <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
-                  <SelectContent>
-                    {profiles.map(p => <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Due Date</Label>
-                <Input type="date" value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} />
-              </div>
-            </div>
 
-            {/* OOS/OOT Fields */}
-            {formIsOosOot && (
-              <div className="border border-red-200 dark:border-red-800 rounded-md p-4 space-y-3 bg-red-50/50 dark:bg-red-900/10">
-                <h4 className="font-medium text-sm flex items-center gap-2">
-                  <Beaker className="h-4 w-4 text-red-500" /> OOS/OOT Investigation Fields
-                </h4>
-                <div className="grid gap-2">
-                  <Label>Analytical Method</Label>
-                  <Input value={formAnalyticalMethod} onChange={(e) => setFormAnalyticalMethod(e.target.value)} placeholder="HPLC Method QC-M-XXX" />
+          {/* Step Indicator */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              {WIZARD_STEPS.map((step, idx) => (
+                <div key={step.id} className="flex items-center flex-1 last:flex-initial">
+                  <button
+                    type="button"
+                    onClick={() => idx < wizardStep && goToStep(idx)}
+                    disabled={idx > wizardStep}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                      idx < wizardStep && 'text-green-700 dark:text-green-400 cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/20',
+                      idx === wizardStep && 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20',
+                      idx > wizardStep && 'text-gray-400 dark:text-gray-600 cursor-not-allowed',
+                    )}
+                  >
+                    {idx < wizardStep ? <CheckCircle2 className="h-4 w-4" /> : (
+                      <span className={cn('flex items-center justify-center h-5 w-5 rounded-full text-xs border',
+                        idx === wizardStep ? 'border-blue-500 text-blue-600' : 'border-gray-300 text-gray-400')}>{idx + 1}</span>
+                    )}
+                    <span className="hidden sm:inline">{step.label}</span>
+                  </button>
+                  {idx < WIZARD_STEPS.length - 1 && (
+                    <div className={cn('flex-1 h-0.5 mx-2', idx < wizardStep ? 'bg-green-300' : 'bg-gray-200')} />
+                  )}
                 </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Measured Value</Label>
-                    <Input type="number" value={formMeasuredValue} onChange={(e) => setFormMeasuredValue(e.target.value)} placeholder="0.0" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Unit</Label>
-                    <Input value={formMeasuredUnit} onChange={(e) => setFormMeasuredUnit(e.target.value)} placeholder="%" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Spec Limit</Label>
-                    <Input value={formSpecLimit} onChange={(e) => setFormSpecLimit(e.target.value)} placeholder="95.0-105.0%" />
-                  </div>
-                </div>
-              </div>
-            )}
+              ))}
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+              <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${((wizardStep + 1) / WIZARD_STEPS.length) * 100}%` }} />
+            </div>
+          </div>
 
-            <Button className="w-full" onClick={handleCreate} disabled={!formTitle || !formDescription}>
-              Create NCR
-            </Button>
+          {/* Step Content */}
+          <div className="py-2">
+            {renderStepContent()}
+          </div>
+
+          {/* Navigation Buttons */}
+          <div className="flex items-center justify-between pt-4 border-t">
+            <Button variant="outline" onClick={() => { resetForm(); setShowCreateDialog(false); }}>Cancel</Button>
+            <div className="flex gap-2">
+              {wizardStep > 0 && (
+                <Button variant="outline" onClick={goPrev}><ChevronLeft className="h-4 w-4 mr-1" />Previous</Button>
+              )}
+              {wizardStep < WIZARD_STEPS.length - 1 ? (
+                <Button onClick={goNext} disabled={!isStepValid(wizardStep)} className="bg-blue-600 hover:bg-blue-700 text-white">Next<ChevronRight className="h-4 w-4 ml-1" /></Button>
+              ) : (
+                <Button onClick={handleCreate} disabled={!isStepValid(wizardStep)} className="bg-green-600 hover:bg-green-700 text-white">Create NCR</Button>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -660,6 +918,36 @@ export function NcrView() {
                   </div>
                 )}
 
+                {/* Impact & Containment (from new fields) */}
+                {(selectedNcr.impactAssessment || selectedNcr.containmentActions || selectedNcr.affectedProduct) && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                      <Scale className="h-4 w-4" />
+                      Impact & Containment
+                    </h4>
+                    <div className="bg-muted/30 p-3 rounded-md space-y-2 text-sm">
+                      {selectedNcr.impactAssessment && (
+                        <div>
+                          <span className="text-muted-foreground font-medium">Impact Assessment:</span>{' '}
+                          <span>{selectedNcr.impactAssessment}</span>
+                        </div>
+                      )}
+                      {selectedNcr.containmentActions && (
+                        <div>
+                          <span className="text-muted-foreground font-medium">Containment Actions:</span>{' '}
+                          <span>{selectedNcr.containmentActions}</span>
+                        </div>
+                      )}
+                      {selectedNcr.affectedProduct && (
+                        <div>
+                          <span className="text-muted-foreground font-medium">Affected Product/Process:</span>{' '}
+                          <span>{selectedNcr.affectedProduct}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Disposition - visible when Pending Disposition or Closed */}
                 {(selectedNcr.status === 'Pending Disposition' || selectedNcr.status === 'Closed') && (
                   <div>
@@ -671,7 +959,7 @@ export function NcrView() {
                             <SelectValue placeholder="Select disposition" />
                           </SelectTrigger>
                           <SelectContent>
-                            {ncrDispositions.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                            {ncrDispositions.filter(d => d !== 'Pending').map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
                           </SelectContent>
                         </Select>
                         <Button

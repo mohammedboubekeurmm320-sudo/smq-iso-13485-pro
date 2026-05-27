@@ -346,7 +346,11 @@ export interface NonConformance {
   phase2Required: boolean;
   phase2Conclusion?: 'Confirmed OOS' | 'Invalidated' | 'Pending';
   rejectLot: boolean;
+  impactAssessment?: string;
+  containmentActions?: string;
+  affectedProduct?: string;
   assignedTo?: string;
+  dueDate?: string;
   createdDate: string;
   createdById?: string;
   organizationId?: string;
