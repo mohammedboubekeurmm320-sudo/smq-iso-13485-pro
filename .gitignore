@@ -52,3 +52,26 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Non-project files
+/github-compare/
+/download/
+/mini-services/
+/e2e/
+/playwright-report/
+/examples/
+/db/
+/upload/
+/agent-ctx/
+/prisma/
+/supabase/
+generate_validation_pdf.py
+serve.js
+start-server.sh
+Caddyfile
+vercel.json
+playwright.config.ts
+vitest.config.ts
+keep-alive.sh
+bun.lock
+worklog.md

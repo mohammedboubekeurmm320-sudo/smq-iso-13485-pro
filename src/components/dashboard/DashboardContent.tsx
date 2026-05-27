@@ -3,8 +3,7 @@
 import React from 'react';
 import type { ActiveSection } from '@/types/qms';
 import { DashboardView } from './DashboardView';
-import { DocumentControlView } from './DocumentControlView';
-import { PlaceholderView } from './PlaceholderView';
+import { DocumentControlView } from '@/components/modules/DocumentControlView';
 import { CapaView } from '@/components/modules/CapaView';
 import { ChangeControlView } from '@/components/modules/ChangeControlView';
 import { DeviationView } from '@/components/modules/DeviationView';

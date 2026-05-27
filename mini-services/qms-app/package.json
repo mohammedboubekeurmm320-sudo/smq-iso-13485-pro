@@ -1,7 +1,0 @@
-{
-  "name": "qms-app",
-  "version": "1.0.0",
-  "scripts": {
-    "dev": "cd ../.. && npx next dev -p 3000 -H 0.0.0.0"
-  }
-}
