@@ -253,3 +253,29 @@ Stage Summary:
 - Permission key bugs fixed in ChangeControl and Deviation modules
 - Build passes with 0 errors
 - Dev server running on port 3000 (HTTP 200)
+
+---
+Task ID: Hydration-Fix-Session
+Agent: Main Agent
+Task: Fix hydration mismatch errors (date formatting) and verify module templates
+
+Work Log:
+- Fixed DashboardView.tsx: Replaced toLocaleDateString(localeFromT(), ...) with formatDateTime() from utils.ts
+- Removed localeFromT() helper function that returned different values on server ('fr-FR') vs client (navigator.language)
+- Added formatDateTime() function to utils.ts - UTC-based, locale-independent date+time formatting
+- Fixed CapaView.tsx: Replaced 4 instances of toLocaleDateString with formatDate() from utils.ts
+- Added formatDate import to CapaView.tsx (was only importing cn)
+- Verified no other toLocaleDateString/toLocaleString calls in .tsx files that could cause hydration mismatches
+- Verified all 4 module templates (Documents, NCR, Batch Records, Suppliers) are already enhanced:
+  - DocumentControlView: 850+ lines with summary cards, filters, full table, hierarchy, e-signatures
+  - NcrView: 735+ lines with OOS/OOT fields, disposition, linked CAPA, e-signature
+  - BatchRecordView: 1000+ lines with raw materials sub-table, step templates, QA release
+  - SupplierView: 860+ lines with contact info, address, qualification method, performance score
+- Build verified: npx next build compiles with 0 errors
+
+Stage Summary:
+- Hydration mismatch fixed in DashboardView.tsx and CapaView.tsx
+- formatDateTime() added to utils.ts for SSR-safe date+time display
+- All 4 "basic" modules are actually already enhanced - NOT basic
+- The modules use dialog-based forms (not wizard-based like CAPA/Audits) but are feature-rich
+- Build compiles cleanly with 0 errors

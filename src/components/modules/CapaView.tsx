@@ -30,7 +30,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
+import { cn, formatDate } from '@/lib/utils';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -871,7 +871,7 @@ export function CapaView() {
                     </TableCell>
                     <TableCell className="text-sm">{getUserName(capa.assignedTo)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {new Date(capa.dueDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })}
+                      {formatDate(capa.dueDate, true)}
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openDetail(capa); }}>
@@ -1030,9 +1030,9 @@ export function CapaView() {
                 {/* Details Grid */}
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><span className="text-muted-foreground">Assigned To:</span> <span className="font-medium ml-1">{getUserName(selectedCapa.assignedTo)}</span></div>
-                  <div><span className="text-muted-foreground">Due Date:</span> <span className="font-medium ml-1">{new Date(selectedCapa.dueDate).toLocaleDateString()}</span></div>
-                  <div><span className="text-muted-foreground">Created:</span> <span className="font-medium ml-1">{new Date(selectedCapa.createdDate).toLocaleDateString()}</span></div>
-                  {selectedCapa.closedDate && <div><span className="text-muted-foreground">Closed:</span> <span className="font-medium ml-1">{new Date(selectedCapa.closedDate).toLocaleDateString()}</span></div>}
+                  <div><span className="text-muted-foreground">Due Date:</span> <span className="font-medium ml-1">{formatDate(selectedCapa.dueDate)}</span></div>
+                  <div><span className="text-muted-foreground">Created:</span> <span className="font-medium ml-1">{formatDate(selectedCapa.createdDate)}</span></div>
+                  {selectedCapa.closedDate && <div><span className="text-muted-foreground">Closed:</span> <span className="font-medium ml-1">{formatDate(selectedCapa.closedDate)}</span></div>}
                 </div>
 
                 {/* ── Sections ── */}

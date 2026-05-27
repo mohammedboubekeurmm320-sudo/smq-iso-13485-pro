@@ -27,6 +27,7 @@ import {
   Calendar,
   Target,
 } from 'lucide-react';
+import { formatDateTime } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -588,7 +589,7 @@ export function DashboardView() {
                       )}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {activity.userEmail} • {new Date(activity.createdAt).toLocaleDateString(localeFromT(), { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {activity.userEmail} • {formatDateTime(activity.createdAt)}
                     </p>
                   </div>
                 </div>
@@ -599,16 +600,6 @@ export function DashboardView() {
       </Card>
     </div>
   );
-}
-
-// Helper to get locale string for date formatting
-function localeFromT(): string {
-  // We can't use useI18n here since it's not a hook context
-  // Default to browser locale
-  if (typeof navigator !== 'undefined') {
-    return navigator.language;
-  }
-  return 'fr-FR';
 }
 
 function cn(...classes: (string | boolean | undefined)[]) {
