@@ -211,7 +211,7 @@ export interface OrgSettings {
 // Document Types
 // ============================================================================
 
-export type DocumentType = 'SOP' | 'WI' | 'Form' | 'Policy' | 'Specification' | 'Technical' | 'Risk Analysis' | 'Validation Protocol' | 'Record';
+export type DocumentType = 'SOP' | 'WI' | 'Form' | 'Policy' | 'Specification' | 'Technical' | 'Risk Analysis' | 'Validation Protocol' | 'Record' | 'Manual' | 'Instruction' | 'Register' | 'Master Batch' | 'Procedure' | 'Process Map' | 'Organigram';
 export type DocumentStatus = 'Draft' | 'In Review' | 'Approved' | 'Obsolete';
 export type DocumentClassification = 'Internal' | 'External' | 'Regulatory' | 'Confidential';
 export type DocumentLevel = 1 | 2 | 3 | 4;

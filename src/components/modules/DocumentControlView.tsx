@@ -115,7 +115,7 @@ function getNextStatus(current: DocumentStatus): DocumentStatus | null {
   return idx < statusFlow.length - 1 ? statusFlow[idx + 1] : null;
 }
 
-const documentTypes: DocumentType[] = ['SOP', 'WI', 'Form', 'Policy', 'Specification', 'Technical', 'Risk Analysis', 'Validation Protocol', 'Record'];
+const documentTypes: DocumentType[] = ['SOP', 'WI', 'Form', 'Policy', 'Specification', 'Technical', 'Risk Analysis', 'Validation Protocol', 'Record', 'Manual', 'Instruction', 'Register', 'Master Batch', 'Procedure', 'Process Map', 'Organigram'];
 const documentStatuses: DocumentStatus[] = ['Draft', 'In Review', 'Approved', 'Obsolete'];
 const documentClassifications: DocumentClassification[] = ['Internal', 'External', 'Regulatory', 'Confidential'];
 const documentLevels: DocumentLevel[] = [1, 2, 3, 4];
