@@ -526,7 +526,7 @@ export function NcrView() {
             <AlertTriangle className="h-6 w-6 text-primary" />
             Non-Conformances
           </h1>
-          <p className="text-muted-foreground mt-1">Manage non-conformance reports and investigations (ISO 13485 §8.3)</p>
+          <p className="text-muted-foreground mt-1">Manage non-conformance reports and investigations <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §8.3</Badge></p>
         </div>
         {hasPermission('ncr.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>

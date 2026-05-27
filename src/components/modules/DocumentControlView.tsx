@@ -664,7 +664,7 @@ export function DocumentControlView() {
             <FileText className="h-6 w-6 text-primary" />
             Document Control
           </h1>
-          <p className="text-muted-foreground mt-1">Gestion des documents qualité / Quality Document Management</p>
+          <p className="text-muted-foreground mt-1">Gestion des documents qualité / Quality Document Management <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2</Badge></p>
         </div>
         {hasPermission('documents.create') && (
           <Button onClick={() => { resetForm(); setShowNewDocDialog(true); }}>

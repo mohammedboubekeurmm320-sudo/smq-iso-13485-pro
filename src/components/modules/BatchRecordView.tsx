@@ -815,7 +815,7 @@ export function BatchRecordView() {
             <Package className="h-6 w-6 text-primary" />
             Batch Records
           </h1>
-          <p className="text-muted-foreground mt-1">Batch record management and QA release</p>
+          <p className="text-muted-foreground mt-1">Batch record management and QA release <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §8.2.4</Badge></p>
         </div>
         {hasPermission('batch.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
