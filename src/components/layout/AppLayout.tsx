@@ -17,6 +17,7 @@ import {
   Menu,
   Globe,
 } from 'lucide-react';
+import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -149,6 +150,9 @@ function AppLayoutInner({ children }: AppLayoutProps) {
             <div className="hidden sm:block">
               <GlobalSearch onNavigate={(section) => { setActiveSection(section); setMobileSidebarOpen(false); }} />
             </div>
+
+            {/* Theme Toggle */}
+            <ThemeToggle />
 
             {/* Notifications */}
             <Button variant="ghost" size="icon" className="relative h-9 w-9">
