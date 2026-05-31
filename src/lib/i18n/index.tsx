@@ -55,6 +55,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const detected = detectClientLocale();
     if (detected !== SSR_DEFAULT_LOCALE) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLocaleState(detected);
     }
     setMounted(true);

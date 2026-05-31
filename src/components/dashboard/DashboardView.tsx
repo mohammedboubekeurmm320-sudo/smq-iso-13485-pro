@@ -51,20 +51,21 @@ import {
 const COLORS = ['hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)', 'hsl(0, 84%, 60%)', 'hsl(217, 91%, 60%)', 'hsl(280, 67%, 58%)'];
 
 // Circular compliance gauge
-function ComplianceGauge({ score, size = 140, label }: { score: number; size?: number; label: string }) {
+function ComplianceGauge({ score, size, label }: { score: number; size?: number; label: string }) {
+  const gaugeSize = size ?? 140;
   const strokeWidth = 10;
-  const radius = (size - strokeWidth) / 2;
+  const radius = (gaugeSize - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const offset = circumference - (score / 100) * circumference;
-  const center = size / 2;
+  const center = gaugeSize / 2;
 
   let color = 'hsl(142, 76%, 36%)'; // green
   if (score < 60) color = 'hsl(0, 84%, 60%)'; // red
   else if (score < 80) color = 'hsl(38, 92%, 50%)'; // amber
 
   return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
+    <div className="relative" style={{ width: gaugeSize, height: gaugeSize }}>
+      <svg width={gaugeSize} height={gaugeSize} className="-rotate-90">
         <circle
           cx={center}
           cy={center}
@@ -203,12 +204,12 @@ export function DashboardView() {
   ].filter(action => !action.module || activeModules.includes(action.module));
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6 max-w-[1600px] mx-auto">
       {/* Welcome header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{t.dashboard.welcome}, {firstName}</h1>
-          <p className="text-muted-foreground mt-1">
+        <div className="min-w-0">
+          <h1 className="text-lg md:text-2xl font-bold text-foreground truncate">{t.dashboard.welcome}, {firstName}</h1>
+          <p className="text-xs md:text-sm text-muted-foreground mt-0.5 truncate">
             {currentOrg?.name} — {t.dashboard.qualityDashboard}
           </p>
         </div>
@@ -323,11 +324,11 @@ export function DashboardView() {
             <CardTitle className="text-base">{t.dashboard.quickActions}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div className="flex md:grid md:grid-cols-5 gap-3 overflow-x-auto pb-2 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0 snap-x snap-mandatory">
               {quickActions.map((action) => (
                 <button
                   key={action.label}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-transparent hover:border-primary/20 hover:bg-primary/5 transition-all group"
+                  className="flex flex-col items-center gap-2 p-3 md:p-4 rounded-xl border-2 border-transparent hover:border-primary/20 hover:bg-primary/5 transition-all group min-w-[90px] md:min-w-0 snap-start"
                 >
                   <div className={`p-3 rounded-xl ${action.color} group-hover:scale-110 transition-transform`}>
                     {action.icon}
@@ -454,7 +455,7 @@ export function DashboardView() {
             <CardTitle className="text-base">{t.dashboard.qualityMetricsTrend}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-72">
+            <div className="h-56 md:h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={monthlyTrend}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -477,15 +478,15 @@ export function DashboardView() {
             <CardTitle className="text-base">{t.dashboard.capaStatus}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-72">
+            <div className="h-56 md:h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={capaStatusData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={60}
-                    outerRadius={90}
+                    innerRadius={45}
+                    outerRadius={70}
                     paddingAngle={4}
                     dataKey="value"
                   >
@@ -510,7 +511,7 @@ export function DashboardView() {
             <CardTitle className="text-base">{t.modules.ncr.title}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-64">
+            <div className="h-48 md:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={ncrTypeData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -530,15 +531,15 @@ export function DashboardView() {
             <CardTitle className="text-base">{t.dashboard.riskProfile}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-64">
+            <div className="h-48 md:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={riskLevelData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
+                    innerRadius={40}
+                    outerRadius={65}
                     paddingAngle={4}
                     dataKey="value"
                   >

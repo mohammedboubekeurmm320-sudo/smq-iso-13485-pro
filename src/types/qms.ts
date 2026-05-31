@@ -211,10 +211,28 @@ export interface OrgSettings {
 // Document Types
 // ============================================================================
 
-export type DocumentType = 'SOP' | 'WI' | 'Form' | 'Policy' | 'Specification' | 'Technical' | 'Risk Analysis' | 'Validation Protocol' | 'Record' | 'Manual' | 'Instruction' | 'Register' | 'Master Batch' | 'Procedure' | 'Process Map' | 'Organigram';
-export type DocumentStatus = 'Draft' | 'In Review' | 'Approved' | 'Obsolete';
+export type DocumentType =
+  // Qwen-aligned types (French taxonomy)
+  | 'MANUEL' | 'POLITIQUE' | 'INDICATEUR' | 'PROCESS_MAP' | 'ORGANIGRAMME'
+  | 'REGLEMENTAIRE' | 'MAPPING'
+  | 'PROCEDURE' | 'INSTRUCTION' | 'FORMULAIRE' | 'REGISTRE' | 'ENREGISTREMENT' | 'MASTER_BATCH'
+  // Legacy English types (kept for backward compatibility)
+  | 'SOP' | 'WI' | 'Form' | 'Policy' | 'Specification' | 'Technical'
+  | 'Risk Analysis' | 'Validation Protocol' | 'Record' | 'Manual' | 'Instruction'
+  | 'Register' | 'Master Batch' | 'Procedure' | 'Process Map' | 'Organigram';
+export type DocumentStatus =
+  | 'Draft' | 'Under Review' | 'Approved' | 'Effective' | 'Obsolete' | 'Withdrawn';
 export type DocumentClassification = 'Internal' | 'External' | 'Regulatory' | 'Confidential';
 export type DocumentLevel = 1 | 2 | 3 | 4;
+
+/** Qwen niveau labels for each document level */
+export const DOCUMENT_LEVEL_LABELS: Record<DocumentLevel, { fr: string; en: string }> = {
+  1: { fr: 'Stratégique', en: 'Strategic' },
+  2: { fr: 'Transversal', en: 'Cross-Functional' },
+  3: { fr: 'Métier / Technique', en: 'Operational / Technical' },
+  4: { fr: 'Enregistrement / Formulaire', en: 'Record / Form' },
+};
+
 export type ValidationPhase = 'IQ' | 'OQ' | 'PQ' | 'Full';
 
 export interface Document {
@@ -249,6 +267,21 @@ export interface Document {
   childDocuments?: Document[];
   author?: Profile;
   createdBy?: Profile;
+  // --- P0: Qwen-aligned fields ---
+  /** Structured document code (e.g. MQ-001, PR-4.2.4, FORM-DOC-001, WI-LAB-PCQ-001) */
+  code?: string;
+  /** ISO 13485 clause reference for traceability */
+  isoClause?: string;
+  /** Document triggers (declencheurs) — codes of documents that trigger or are triggered by this document */
+  triggers?: string[];
+  /** Child document codes (from Qwen enfants field) */
+  childCodes?: string[];
+  /** Whether this document is a prerequisite for other documents */
+  isPrerequisite?: boolean;
+  /** Review cycle in months */
+  reviewCycleMonths?: number;
+  /** Custom field values */
+  customFields?: CustomFieldValue[];
 }
 
 // ============================================================================
@@ -787,6 +820,33 @@ export interface Deviation {
 }
 
 // ============================================================================
+// Scheduled Report
+// ============================================================================
+
+export type ReportFrequency = 'daily' | 'weekly' | 'monthly' | 'quarterly';
+export type ReportType = 'management-review' | 'capa-summary' | 'audit-summary' | 'compliance-overview' | 'training-status' | 'risk-profile';
+export type ReportFormat = 'csv' | 'html' | 'pdf';
+export type ScheduledReportStatus = 'active' | 'paused' | 'completed' | 'error';
+
+export interface ScheduledReport {
+  id: string;
+  name: string;
+  reportType: ReportType;
+  format: ReportFormat;
+  frequency: ReportFrequency;
+  status: ScheduledReportStatus;
+  recipients: string[]; // email addresses
+  filters?: Record<string, string>; // e.g., { department: 'Quality', priority: 'Critical' }
+  lastRunAt?: string;
+  nextRunAt: string;
+  lastResult?: { success: boolean; recordCount: number; error?: string };
+  organizationId?: string;
+  createdById?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================================
 // Navigation
 // ============================================================================
 
@@ -794,5 +854,32 @@ export type ActiveSection =
   | 'dashboard'
   | 'documents' | 'document-hierarchy'
   | 'ncr' | 'capa' | 'audits' | 'risks' | 'training' | 'change-control' | 'deviations' | 'batch-records' | 'suppliers' | 'oos-oot' | 'forms'
-  | 'reports' | 'compliance'
+  | 'reports' | 'compliance' | 'scheduled-reports'
   | 'user-management';
+
+// ============================================================================
+// Custom Fields
+// ============================================================================
+
+export type CustomFieldType = 'text' | 'number' | 'date' | 'select' | 'checkbox' | 'textarea' | 'url';
+
+export interface CustomFieldDefinition {
+  id: string;
+  name: string;
+  label: string;
+  type: CustomFieldType;
+  required: boolean;
+  options?: string[]; // for select type
+  placeholder?: string;
+  defaultValue?: string;
+  applicableTo: string[]; // document types this field applies to, or ['*'] for all
+  organizationId: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomFieldValue {
+  definitionId: string;
+  value: string;
+}

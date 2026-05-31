@@ -7,6 +7,7 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import type { UserRole, Profile, Permission } from '@/types/qms';
 import { rolePermissions } from '@/types/qms';
 import { cn, formatDate } from '@/lib/utils';
+import { CustomFieldsManager } from '@/components/shared/CustomFieldsManager';
 import {
   Users, Plus, Search, Edit, Shield, Mail, UserCheck, UserX,
   Eye, CheckCircle2, XCircle, Phone, Building2, Briefcase, Info,
@@ -301,6 +302,8 @@ export function UserManagementView() {
     setShowDetailDialog(true);
   };
 
+  const [activeTab, setActiveTab] = useState<string>('users');
+
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
       {/* Header */}
@@ -311,12 +314,44 @@ export function UserManagementView() {
           </h1>
           <p className="text-muted-foreground mt-1">Manage users, roles and permissions</p>
         </div>
-        {hasPermission('admin.users') && (
-          <Button onClick={() => { resetAddForm(); setShowAddDialog(true); }}>
-            <Plus className="h-4 w-4 mr-2" />Add User
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {hasPermission('admin.users') && (
+            <Button onClick={() => { resetAddForm(); setShowAddDialog(true); }}>
+              <Plus className="h-4 w-4 mr-2" />Add User
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b">
+        <button
+          onClick={() => setActiveTab('users')}
+          className={cn(
+            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            activeTab === 'users'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          Users & Roles
+        </button>
+        <button
+          onClick={() => setActiveTab('custom-fields')}
+          className={cn(
+            'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+            activeTab === 'custom-fields'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
+        >
+          Custom Fields
+        </button>
+      </div>
+
+      {activeTab === 'custom-fields' && <CustomFieldsManager />}
+
+      {activeTab === 'users' && (<>
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -465,6 +500,8 @@ export function UserManagementView() {
           </div>
         </CardContent>
       </Card>
+
+      </>)}
 
       {/* Add User Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>

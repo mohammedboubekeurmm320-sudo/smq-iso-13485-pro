@@ -5,7 +5,7 @@ import type {
   Profile, Organization, Document, Capa, NonConformance,
   BatchRecord, Supplier, FormTemplate, FormInstance,
   AuditTrail, Audit, Training, Risk, DocumentPrerequisite,
-  OrganizationMember, ChangeControl, Deviation,
+  OrganizationMember, ChangeControl, Deviation, CustomFieldDefinition, ScheduledReport,
 } from '@/types/qms';
 import {
   mockProfiles, mockOrganizations, mockOrgMembers, mockDocuments,
@@ -37,6 +37,8 @@ class DemoStore {
   prerequisites: DocumentPrerequisite[] = [];
   changeControls: ChangeControl[] = [];
   deviations: Deviation[] = [];
+  customFieldDefinitions: CustomFieldDefinition[] = [];
+  scheduledReports: ScheduledReport[] = [];
 
   private static instance: DemoStore | null = null;
 

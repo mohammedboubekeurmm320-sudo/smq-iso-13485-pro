@@ -33,6 +33,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Minus,
+  Upload,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -76,6 +77,7 @@ import {
   Area,
   Legend,
 } from 'recharts';
+import { DataImportDialog } from '@/components/shared/DataImportDialog';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -273,6 +275,7 @@ export function ReportsView() {
 
   const [previewReport, setPreviewReport] = useState<string | null>(null);
   const [periodFilter, setPeriodFilter] = useState<string>('12m');
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   // Period-filtered data
   const documents = useMemo(() => filterByPeriod(allDocuments, periodFilter), [allDocuments, periodFilter]);
@@ -849,6 +852,9 @@ export function ReportsView() {
               <FileSpreadsheet className="h-3 w-3 mr-1" />Export All
             </Button>
           )}
+          <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => setImportDialogOpen(true)}>
+            <Upload className="h-3 w-3 mr-1" />Import
+          </Button>
         </div>
       </div>
 
@@ -2140,6 +2146,9 @@ export function ReportsView() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Data Import Dialog */}
+      <DataImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
     </div>
   );
 }

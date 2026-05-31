@@ -29,6 +29,7 @@ import {
   ChevronDown,
   ChevronRight,
   X,
+  CalendarClock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -94,6 +95,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'reports' as ActiveSection, labelKey: 'nav.reports', icon: PieChart, module: 'reports' },
       { id: 'compliance' as ActiveSection, labelKey: 'nav.compliance', icon: CheckCircle2, module: 'compliance' },
+      { id: 'scheduled-reports' as ActiveSection, labelKey: 'nav.scheduledReports', icon: CalendarClock, module: 'reports' },
     ],
   },
 ];

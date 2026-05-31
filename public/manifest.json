@@ -1,0 +1,20 @@
+{
+  "name": "QMS SaaS Pro — ISO 13485",
+  "short_name": "QMS Pro",
+  "description": "Comprehensive Quality Management System conforming to ISO 13485:2016 for pharmaceutical and medical device industries.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["business", "medical", "productivity"],
+  "lang": "en"
+}

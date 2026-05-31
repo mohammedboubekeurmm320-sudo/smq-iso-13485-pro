@@ -18,6 +18,7 @@ import {
   Globe,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
+import { MobileBottomNav } from '@/components/shared/MobileBottomNav';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -140,8 +141,8 @@ function AppLayoutInner({ children }: AppLayoutProps) {
             >
               <Menu className="h-5 w-5" />
             </Button>
-            <h2 className="text-base md:text-lg font-semibold text-foreground capitalize truncate">
-              {activeSection.replace(/-/g, ' ')}
+            <h2 className="text-base md:text-lg font-semibold text-foreground truncate">
+              {t.sections[activeSection as keyof typeof t.sections] || activeSection.replace(/-/g, ' ')}
             </h2>
           </div>
 
@@ -221,11 +222,14 @@ function AppLayoutInner({ children }: AppLayoutProps) {
           </div>
         </header>
 
-        {/* Content area — scrollable */}
-        <main className="flex-1 overflow-y-auto overscroll-contain">
+        {/* Content area — scrollable; extra padding on mobile for bottom nav */}
+        <main className="flex-1 overflow-y-auto overscroll-contain pb-14 lg:pb-0">
           {children(activeSection)}
         </main>
       </div>
+
+      {/* Mobile bottom navigation */}
+      <MobileBottomNav activeSection={activeSection} onSectionChange={setActiveSection} />
     </div>
   );
 }

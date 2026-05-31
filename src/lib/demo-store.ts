@@ -1,6 +1,6 @@
 // Demo Store - Zustand store for managing QMS data in memory (demo mode)
 import { create } from 'zustand';
-import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation } from '@/types/qms';
+import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation, CustomFieldDefinition, ScheduledReport } from '@/types/qms';
 import { mockProfiles, mockOrganizations, mockOrgMembers, mockDocuments, mockCapas, mockNCRs, mockBatchRecords, mockSuppliers, mockFormTemplates, mockFormInstances, mockAudits, mockTraining, mockRisks, mockAuditTrails, mockPrerequisites, mockChangeControls, mockDeviations } from './mock-data';
 
 interface QMSStore {
@@ -22,6 +22,8 @@ interface QMSStore {
   prerequisites: DocumentPrerequisite[];
   changeControls: ChangeControl[];
   deviations: Deviation[];
+  customFieldDefinitions: CustomFieldDefinition[];
+  scheduledReports: ScheduledReport[];
 
   // Computed helpers
   getProfile: (id: string) => Profile | undefined;
@@ -52,6 +54,16 @@ interface QMSStore {
   updateChangeControl: (id: string, updates: Partial<ChangeControl>) => void;
   addDeviation: (dev: Deviation) => void;
   updateDeviation: (id: string, updates: Partial<Deviation>) => void;
+
+  // Custom field definitions
+  addCustomFieldDefinition: (def: CustomFieldDefinition) => void;
+  updateCustomFieldDefinition: (id: string, updates: Partial<CustomFieldDefinition>) => void;
+  deleteCustomFieldDefinition: (id: string) => void;
+
+  // Scheduled reports
+  addScheduledReport: (report: ScheduledReport) => void;
+  updateScheduledReport: (id: string, updates: Partial<ScheduledReport>) => void;
+  deleteScheduledReport: (id: string) => void;
 
   // Profile management
   addProfile: (profile: Profile) => void;
@@ -87,6 +99,8 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
   prerequisites: mockPrerequisites,
   changeControls: mockChangeControls,
   deviations: mockDeviations,
+  customFieldDefinitions: [],
+  scheduledReports: [],
 
   // Computed helpers
   getProfile: (id: string) => get().profiles.find(p => p.id === id),
@@ -244,6 +258,42 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
     const old = state.deviations.find(d => d.id === id);
     state.logAudit('UPDATE', 'Deviation', id, old ? { status: old.status } : undefined, updates);
     return { deviations: state.deviations.map(d => d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d) };
+  }),
+
+  // Custom field definitions
+  addCustomFieldDefinition: (def) => set(state => {
+    state.logAudit('CREATE', 'CustomFieldDefinition', def.id, undefined, { name: def.name, label: def.label, type: def.type });
+    return { customFieldDefinitions: [...state.customFieldDefinitions, def] };
+  }),
+
+  updateCustomFieldDefinition: (id, updates) => set(state => {
+    const old = state.customFieldDefinitions.find(d => d.id === id);
+    state.logAudit('UPDATE', 'CustomFieldDefinition', id, old ? { name: old.name, label: old.label } : undefined, updates);
+    return { customFieldDefinitions: state.customFieldDefinitions.map(d => d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d) };
+  }),
+
+  deleteCustomFieldDefinition: (id) => set(state => {
+    const old = state.customFieldDefinitions.find(d => d.id === id);
+    state.logAudit('DELETE', 'CustomFieldDefinition', id, old ? { name: old.name } : undefined);
+    return { customFieldDefinitions: state.customFieldDefinitions.filter(d => d.id !== id) };
+  }),
+
+  // Scheduled reports
+  addScheduledReport: (report) => set(state => {
+    state.logAudit('CREATE', 'ScheduledReport', report.id, undefined, { name: report.name, reportType: report.reportType, frequency: report.frequency });
+    return { scheduledReports: [...state.scheduledReports, report] };
+  }),
+
+  updateScheduledReport: (id, updates) => set(state => {
+    const old = state.scheduledReports.find(r => r.id === id);
+    state.logAudit('UPDATE', 'ScheduledReport', id, old ? { status: old.status } : undefined, updates);
+    return { scheduledReports: state.scheduledReports.map(r => r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r) };
+  }),
+
+  deleteScheduledReport: (id) => set(state => {
+    const old = state.scheduledReports.find(r => r.id === id);
+    state.logAudit('DELETE', 'ScheduledReport', id, old ? { name: old.name } : undefined);
+    return { scheduledReports: state.scheduledReports.filter(r => r.id !== id) };
   }),
 
   // Profile management
