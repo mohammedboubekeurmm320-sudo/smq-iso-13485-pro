@@ -9,7 +9,7 @@ import {
   Truck, Plus, Search, ArrowRight, CheckCircle2, XCircle, AlertTriangle,
   Award, FileText, Edit3, Save, Star, CalendarClock, TrendingUp,
   Globe, User, Mail, Phone, MapPin, Shield, ClipboardCheck,
-  Building2, Siren, ChevronLeft, ChevronRight, ListChecks,
+  Building2, Siren, ChevronLeft, ChevronRight, ListChecks, FileSpreadsheet,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -154,6 +154,7 @@ export function SupplierView() {
   const [formEmergencyContactPhone, setFormEmergencyContactPhone] = useState('');
   const [formQualificationMethod, setFormQualificationMethod] = useState<QualificationMethod>('On-Site Audit');
   const [formQualificationDocRef, setFormQualificationDocRef] = useState('');
+  const [formTemplateId, setFormTemplateId] = useState('');
 
   // Wizard state
   const [wizardStep, setWizardStep] = useState(0);
@@ -218,6 +219,7 @@ export function SupplierView() {
     setFormEmergencyContactPhone('');
     setFormQualificationMethod('On-Site Audit');
     setFormQualificationDocRef('');
+    setFormTemplateId('');
   };
 
   const handleCreate = () => {
@@ -245,6 +247,7 @@ export function SupplierView() {
       emergencyContactPhone: formEmergencyContactPhone || undefined,
       qualificationMethod: formQualificationMethod,
       qualificationDocRef: formQualificationDocRef || undefined,
+      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       organizationId: 'org-001',
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
@@ -605,6 +608,21 @@ export function SupplierView() {
                 {formQualificationDocRef && <p className="text-sm"><span className="font-medium">Doc Reference:</span> {formQualificationDocRef}</p>}
                 {formEmergencyContactName && <p className="text-sm"><span className="font-medium">Emergency Contact:</span> {formEmergencyContactName}{formEmergencyContactPhone ? ` (${formEmergencyContactPhone})` : ''}</p>}
               </div>
+              <div className="grid gap-2">
+                <Label>Template associé (§4.2.4)</Label>
+                <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+                  <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Aucun</SelectItem>
+                    {store.formTemplates
+                      .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'SUPPLIER' || !t.associatedModule || t.associatedModule === 'GENERAL'))
+                      .map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                      ))
+                    }
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         );
@@ -623,7 +641,7 @@ export function SupplierView() {
             <Truck className="h-6 w-6 text-primary" />
             Suppliers
           </h1>
-          <p className="text-muted-foreground mt-1">Supplier qualification and management <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §7.4</Badge></p>
+          <p className="text-muted-foreground mt-1">Supplier qualification and management <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §7.4</Badge> <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
         </div>
         {hasPermission('supplier.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -1308,6 +1326,28 @@ export function SupplierView() {
                     </div>
                   </div>
                 )}
+
+                {/* Hybrid Supervision: Template associé (§4.2.4) */}
+                {selectedSupplier.templateId && (() => {
+                  const tmpl = store.formTemplates.find(t => t.id === selectedSupplier.templateId);
+                  return tmpl ? (
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4 text-primary" />
+                        Template associé (§4.2.4)
+                      </h4>
+                      <div className="border rounded-md p-2 text-sm flex items-center justify-between">
+                        <div>
+                          <span className="font-medium">{tmpl.title}</span>
+                          <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
+                        </div>
+                        <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
+                          {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
+                        </Badge>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* Status Advancement Actions */}
                 {hasPermission('supplier.update') && (

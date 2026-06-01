@@ -10,7 +10,7 @@ import {
   AlertTriangle, Plus, Search, ArrowRight, AlertCircle,
   CheckCircle2, Clock, ShieldCheck, Link2, Beaker,
   ChevronLeft, ChevronRight, FileText, ClipboardList, FlaskConical,
-  Scale, ListChecks,
+  Scale, ListChecks, FileSpreadsheet,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -125,6 +125,7 @@ export function NcrView() {
   const [formImpactAssessment, setFormImpactAssessment] = useState('');
   const [formContainmentActions, setFormContainmentActions] = useState('');
   const [formAffectedProduct, setFormAffectedProduct] = useState('');
+  const [formTemplateId, setFormTemplateId] = useState('');
 
   // Detail dialog disposition edit
   const [detailDisposition, setDetailDisposition] = useState<string>('');
@@ -206,6 +207,7 @@ export function NcrView() {
     setFormPhase1Conclusion('Pending');
     setFormPreliminaryDisposition('Pending');
     setFormImpactAssessment(''); setFormContainmentActions(''); setFormAffectedProduct('');
+    setFormTemplateId('');
   };
 
   const handleCreate = () => {
@@ -234,6 +236,7 @@ export function NcrView() {
       impactAssessment: formImpactAssessment || undefined,
       containmentActions: formContainmentActions || undefined,
       affectedProduct: formAffectedProduct || undefined,
+      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       createdDate: new Date().toISOString(),
       createdById: currentUser?.id,
       organizationId: 'org-001',
@@ -508,6 +511,21 @@ export function NcrView() {
                 {formContainmentActions && <p className="text-sm"><span className="font-medium">Containment Actions:</span> {formContainmentActions}</p>}
                 {formAffectedProduct && <p className="text-sm"><span className="font-medium">Affected Product/Process:</span> {formAffectedProduct}</p>}
               </div>
+              <div className="grid gap-2">
+                <Label>Template associé (§4.2.4)</Label>
+                <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+                  <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Aucun</SelectItem>
+                    {store.formTemplates
+                      .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'NCR' || !t.associatedModule || t.associatedModule === 'GENERAL'))
+                      .map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                      ))
+                    }
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         );
@@ -526,7 +544,7 @@ export function NcrView() {
             <AlertTriangle className="h-6 w-6 text-primary" />
             Non-Conformances
           </h1>
-          <p className="text-muted-foreground mt-1">Manage non-conformance reports and investigations <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §8.3</Badge></p>
+          <p className="text-muted-foreground mt-1">Manage non-conformance reports and investigations <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §8.3</Badge> <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
         </div>
         {hasPermission('ncr.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -981,6 +999,28 @@ export function NcrView() {
                     )}
                   </div>
                 )}
+
+                {/* Hybrid Supervision: Template associé (§4.2.4) */}
+                {selectedNcr.templateId && (() => {
+                  const tmpl = store.formTemplates.find(t => t.id === selectedNcr.templateId);
+                  return tmpl ? (
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4 text-primary" />
+                        Template associé (§4.2.4)
+                      </h4>
+                      <div className="border rounded-md p-2 text-sm flex items-center justify-between">
+                        <div>
+                          <span className="font-medium">{tmpl.title}</span>
+                          <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
+                        </div>
+                        <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
+                          {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
+                        </Badge>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* Advance Status Button */}
                 {hasPermission('ncr.update') && selectedNcr.status !== 'Closed' && (() => {

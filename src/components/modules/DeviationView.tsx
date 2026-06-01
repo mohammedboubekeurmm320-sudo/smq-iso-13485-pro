@@ -15,7 +15,7 @@ import {
   Clock, XCircle, ShieldCheck, FileText, Link2,
   ClipboardList, BarChart3, Wrench, Shield, UserCheck,
   ChevronLeft, ChevronRight, FlaskConical, PackageCheck,
-  AlertOctagon, Scale, Beaker,
+  AlertOctagon, Scale, Beaker, FileSpreadsheet,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -169,6 +169,7 @@ export function DeviationView() {
   // Wizard state
   const [wizardStep, setWizardStep] = useState(0);
   const [form, setForm] = useState<DeviationFormState>({ ...emptyForm });
+  const [formTemplateId, setFormTemplateId] = useState('');
 
   const updateForm = <K extends keyof DeviationFormState>(key: K, value: DeviationFormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -213,6 +214,7 @@ export function DeviationView() {
   const resetForm = () => {
     setForm({ ...emptyForm });
     setWizardStep(0);
+    setFormTemplateId('');
   };
 
   const handleCreate = () => {
@@ -245,6 +247,7 @@ export function DeviationView() {
       quantityAffected: form.quantityAffected ? parseInt(form.quantityAffected) : undefined,
       linkedCapaId: form.linkedCapaId && form.linkedCapaId !== 'none' ? form.linkedCapaId : undefined,
       linkedDocumentId: form.linkedDocumentId && form.linkedDocumentId !== 'none' ? form.linkedDocumentId : undefined,
+      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       assignedTo: form.assignedTo,
       dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : new Date().toISOString(),
       createdById: currentUser?.id,
@@ -881,6 +884,23 @@ export function DeviationView() {
       </div>
 
       {/* Regulatory Compliance Note */}
+      <div className="grid gap-2">
+        <Label>Template associé (§4.2.4)</Label>
+        <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+          <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Aucun</SelectItem>
+            {store.formTemplates
+              .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'DEVIATION' || !t.associatedModule || t.associatedModule === 'GENERAL'))
+              .map(t => (
+                <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+              ))
+            }
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Regulatory Compliance Note */}
       <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
         <div className="flex items-start gap-2">
           <Scale className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
@@ -1304,6 +1324,28 @@ export function DeviationView() {
                 </div>
               )}
 
+              {/* Hybrid Supervision: Template associé (§4.2.4) */}
+              {selectedDev.templateId && (() => {
+                const tmpl = store.formTemplates.find(t => t.id === selectedDev.templateId);
+                return tmpl ? (
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-semibold flex items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4 text-primary" />
+                      Template associé (§4.2.4)
+                    </h4>
+                    <div className="border rounded-md p-2 text-sm flex items-center justify-between">
+                      <div>
+                        <span className="font-medium">{tmpl.title}</span>
+                        <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
+                      </div>
+                      <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
+                        {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
+                      </Badge>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
               {/* Action Buttons — BUG FIX: deviation.update instead of ncr.update */}
               {hasPermission('deviation.update') && selectedDev.status !== 'Closed' && (
                 <Button className="w-full" onClick={() => handleAdvanceStatus(selectedDev)}>
@@ -1340,7 +1382,7 @@ export function DeviationView() {
             <AlertTriangle className="h-6 w-6 text-primary" />
             Deviations
           </h1>
-          <p className="text-muted-foreground mt-1">Deviation recording, investigation, and management (ISO 13485 §8.3)</p>
+          <p className="text-muted-foreground mt-1">Deviation recording, investigation, and management (ISO 13485 §8.3) <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
         </div>
         {hasPermission('deviation.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>

@@ -14,7 +14,7 @@ import {
   AlertTriangle, Clock, XCircle, ShieldCheck, FileText, Link2,
   ClipboardList, AlertOctagon, BarChart3, Wrench, User,
   ChevronLeft, ChevronRight, Zap, ShieldAlert, DollarSign,
-  MapPin, MonitorCheck, BookOpen, Flag,
+  MapPin, MonitorCheck, BookOpen, Flag, FileSpreadsheet,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -152,6 +152,7 @@ export function ChangeControlView() {
   const [formLinkedDocId, setFormLinkedDocId] = useState('');
   const [formLinkedCapaId, setFormLinkedCapaId] = useState('');
   const [formAdditionalReferences, setFormAdditionalReferences] = useState('');
+  const [formTemplateId, setFormTemplateId] = useState('');
 
   // ---------------------------------------------------------------------------
   // Derived data
@@ -224,6 +225,7 @@ export function ChangeControlView() {
     setFormLinkedDocId('');
     setFormLinkedCapaId('');
     setFormAdditionalReferences('');
+    setFormTemplateId('');
     setPrereqError(null);
   };
 
@@ -284,6 +286,7 @@ export function ChangeControlView() {
       linkedDocumentId: formLinkedDocId && formLinkedDocId !== 'none' ? formLinkedDocId : undefined,
       linkedCapaId: formLinkedCapaId && formLinkedCapaId !== 'none' ? formLinkedCapaId : undefined,
       additionalReferences: formAdditionalReferences || undefined,
+      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       assignedTo: formAssignedTo,
       requestedBy: currentUser?.id || '',
       approver: formApprover || undefined,
@@ -640,6 +643,21 @@ export function ChangeControlView() {
               </div>
             </div>
             <div className="grid gap-2">
+              <Label>Template associé (§4.2.4)</Label>
+              <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+                <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Aucun</SelectItem>
+                  {store.formTemplates
+                    .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'CHANGE_CONTROL' || !t.associatedModule || t.associatedModule === 'GENERAL'))
+                    .map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                    ))
+                  }
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
               <Label htmlFor="cc-addl-refs">Additional References</Label>
               <Textarea id="cc-addl-refs" value={formAdditionalReferences} onChange={(e) => setFormAdditionalReferences(e.target.value)} placeholder="Any additional references, document numbers, or URLs..." rows={2} />
             </div>
@@ -994,6 +1012,28 @@ export function ChangeControlView() {
           </div>
         )}
 
+        {/* Hybrid Supervision: Template associé (§4.2.4) */}
+        {selectedCC.templateId && (() => {
+          const tmpl = store.formTemplates.find(t => t.id === selectedCC.templateId);
+          return tmpl ? (
+            <div className="space-y-1">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4 text-primary" />
+                Template associé (§4.2.4)
+              </h4>
+              <div className="border rounded-md p-2 text-sm flex items-center justify-between">
+                <div>
+                  <span className="font-medium">{tmpl.title}</span>
+                  <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
+                </div>
+                <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
+                  {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
+                </Badge>
+              </div>
+            </div>
+          ) : null;
+        })()}
+
         {/* Action Buttons */}
         {hasPermission('changecontrol.update') && selectedCC.status !== 'Completed' && selectedCC.status !== 'Rejected' && (
           <div className="flex gap-3">
@@ -1037,7 +1077,7 @@ export function ChangeControlView() {
             <ArrowLeftRight className="h-6 w-6 text-primary" />
             Change Control
           </h1>
-          <p className="text-muted-foreground mt-1">Change management and approval workflow (ISO 13485 §7.1)</p>
+          <p className="text-muted-foreground mt-1">Change management and approval workflow (ISO 13485 §7.1) <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
         </div>
         {hasPermission('changecontrol.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>

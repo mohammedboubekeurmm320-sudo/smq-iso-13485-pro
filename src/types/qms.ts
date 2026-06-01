@@ -346,6 +346,8 @@ export interface Capa {
   closedDate?: string;
   createdById?: string;
   organizationId?: string;
+  /** Linked form template ID (§4.2.4) */
+  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -391,6 +393,8 @@ export interface NonConformance {
   createdDate: string;
   createdById?: string;
   organizationId?: string;
+  /** Linked form template ID (§4.2.4) */
+  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -448,6 +452,8 @@ export interface BatchRecord {
   createdAt: string;
   steps?: BatchStep[];
   rawMaterials?: RawMaterial[];
+  /** Linked form template ID (§4.2.4) */
+  templateId?: string;
 }
 
 // ============================================================================
@@ -484,6 +490,8 @@ export interface Supplier {
   qualificationDocRef?: string;
   organizationId?: string;
   createdById?: string;
+  /** Linked form template ID (§4.2.4) */
+  templateId?: string;
   createdAt: string;
 }
 
@@ -520,6 +528,8 @@ export interface FormTemplateCompliance {
   cfrPart11Compliance: boolean;
 }
 
+export type FormTemplateModule = 'CAPA' | 'NCR' | 'DEVIATION' | 'CHANGE_CONTROL' | 'AUDIT' | 'RISK' | 'TRAINING' | 'SUPPLIER' | 'BATCH_RECORD' | 'OOS_OOT' | 'GENERAL';
+
 export interface FormTemplate {
   id: string;
   documentId: string;
@@ -528,6 +538,8 @@ export interface FormTemplate {
   description?: string;
   fields: FormFieldDefinition[];
   isActive: boolean;
+  templateStatus?: 'Draft' | 'Approved' | 'Obsolete';
+  associatedModule?: FormTemplateModule;
   workflow?: FormTemplateWorkflow;
   compliance?: FormTemplateCompliance;
   organizationId?: string;
@@ -688,6 +700,8 @@ export interface Audit {
   auditees?: string[];
   findings?: AuditFinding[];
   organizationId?: string;
+  /** Linked form template ID (§4.2.4) */
+  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -710,6 +724,8 @@ export interface Training {
   completedDate?: string;
   documentId?: string;
   organizationId?: string;
+  /** Linked form template ID (§4.2.4) */
+  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -736,6 +752,8 @@ export interface Risk {
   residualRisk?: string;
   status: RiskStatus;
   organizationId?: string;
+  /** Linked form template ID (§4.2.4) */
+  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -795,6 +813,8 @@ export interface ChangeControl {
   dueDate: string;
   createdById?: string;
   organizationId?: string;
+  /** Linked form template ID (§4.2.4) */
+  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -844,6 +864,8 @@ export interface Deviation {
   closedDate?: string;
   createdById?: string;
   organizationId?: string;
+  /** Linked form template ID (§4.2.4) */
+  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }

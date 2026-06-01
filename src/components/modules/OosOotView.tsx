@@ -11,7 +11,7 @@ import {
   AlertTriangle, XCircle, AlertCircle, ChevronRight, Plus,
   ShieldCheck, ClipboardCheck, Beaker, Ban, Gavel,
   ChevronLeft, FileText, Activity, Wrench, Scale,
-  BookOpen, ListChecks, Trash2, Info,
+  BookOpen, ListChecks, Trash2, Info, FileSpreadsheet,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -198,6 +198,7 @@ export function OosOotView() {
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1);
   const [wizardData, setWizardData] = useState<WizardFormData>({ ...initialWizardData });
+  const [formTemplateId, setFormTemplateId] = useState('');
 
   // Phase advancement state for detail dialog
   const [phase1Conclusion, setPhase1Conclusion] = useState<string>('');
@@ -339,6 +340,7 @@ export function OosOotView() {
   const resetCreateForm = () => {
     setWizardStep(1);
     setWizardData({ ...initialWizardData });
+    setFormTemplateId('');
   };
 
   const openCreateDialog = () => {
@@ -374,6 +376,7 @@ export function OosOotView() {
       createdDate: new Date().toISOString(),
       createdById: currentUser?.id,
       organizationId: 'org-001',
+      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1017,6 +1020,23 @@ export function OosOotView() {
             )}
 
             {/* Regulatory Compliance Note */}
+            <div className="grid gap-2">
+              <Label>Template associé (§4.2.4)</Label>
+              <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+                <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Aucun</SelectItem>
+                  {store.formTemplates
+                    .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'OOS_OOT' || !t.associatedModule || t.associatedModule === 'GENERAL'))
+                    .map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                    ))
+                  }
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Regulatory Compliance Note */}
             <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-start gap-3">
               <BookOpen className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
               <div className="text-sm text-blue-700 dark:text-blue-400">
@@ -1410,6 +1430,28 @@ export function OosOotView() {
           </div>
         </div>
 
+        {/* Hybrid Supervision: Template associé (§4.2.4) */}
+        {selectedNcr.templateId && (() => {
+          const tmpl = store.formTemplates.find(t => t.id === selectedNcr.templateId);
+          return tmpl ? (
+            <div className="space-y-1">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4 text-primary" />
+                Template associé (§4.2.4)
+              </h4>
+              <div className="border rounded-md p-2 text-sm flex items-center justify-between">
+                <div>
+                  <span className="font-medium">{tmpl.title}</span>
+                  <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
+                </div>
+                <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
+                  {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
+                </Badge>
+              </div>
+            </div>
+          ) : null;
+        })()}
+
         {/* Linked CAPA */}
         {selectedNcr.linkedCapaId && (
           <div className="border rounded-lg p-4">
@@ -1443,7 +1485,7 @@ export function OosOotView() {
             <FlaskConical className="h-6 w-6 text-primary" />
             OOS / OOT Investigations
           </h1>
-          <p className="text-muted-foreground mt-1">Out of Specification / Out of Trend — FDA &amp; ICH Q2(R1) Guidance</p>
+          <p className="text-muted-foreground mt-1">Out of Specification / Out of Trend — FDA &amp; ICH Q2(R1) Guidance <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
         </div>
         {hasPermission('ncr.create') && (
           <Button onClick={openCreateDialog}>

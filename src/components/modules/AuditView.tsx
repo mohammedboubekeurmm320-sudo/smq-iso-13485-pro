@@ -10,7 +10,7 @@ import {
   ClipboardCheck, Plus, Search, ArrowRight, AlertCircle,
   CheckCircle2, ShieldCheck, Link2, PlusCircle, Flag,
   ChevronLeft, ChevronRight, Calendar, Users, FileText,
-  ListChecks, ClipboardList, BookOpen, Trash2, Info,
+  ListChecks, ClipboardList, BookOpen, Trash2, Info, FileSpreadsheet,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -242,6 +242,7 @@ export function AuditView() {
   const [formRiskAssessment, setFormRiskAssessment] = useState('');
   const [formManagementReviewRequired, setFormManagementReviewRequired] = useState(false);
   const [formNextAuditDate, setFormNextAuditDate] = useState('');
+  const [formTemplateId, setFormTemplateId] = useState('');
 
   // Add finding (in detail dialog)
   const [showAddFinding, setShowAddFinding] = useState(false);
@@ -303,6 +304,7 @@ export function AuditView() {
     setFormExecutiveSummary(''); setFormComplianceRating('');
     setFormRiskAssessment(''); setFormManagementReviewRequired(false);
     setFormNextAuditDate('');
+    setFormTemplateId('');
   };
 
   const resetFindingForm = () => {
@@ -436,6 +438,7 @@ export function AuditView() {
         capaId: f.capaReference.trim() || undefined,
       })),
       organizationId: 'org-001',
+      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1168,6 +1171,22 @@ export function AuditView() {
         />
         <span>Management Review Required</span>
       </label>
+
+      <div className="grid gap-2">
+        <Label>Template associé (§4.2.4)</Label>
+        <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+          <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Aucun</SelectItem>
+            {store.formTemplates
+              .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'AUDIT' || !t.associatedModule || t.associatedModule === 'GENERAL'))
+              .map(t => (
+                <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+              ))
+            }
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 
@@ -1195,7 +1214,7 @@ export function AuditView() {
             <ClipboardCheck className="h-6 w-6 text-primary" />
             Audits
           </h1>
-          <p className="text-muted-foreground mt-1">Plan, conduct and track quality audits (ISO 13485 §8.2.4)</p>
+          <p className="text-muted-foreground mt-1">Plan, conduct and track quality audits (ISO 13485 §8.2.4) <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
         </div>
         {hasPermission('audit.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -1646,6 +1665,28 @@ export function AuditView() {
                     </div>
                   </div>
                 )}
+
+                {/* Hybrid Supervision: Template associé (§4.2.4) */}
+                {selectedAudit.templateId && (() => {
+                  const tmpl = store.formTemplates.find(t => t.id === selectedAudit.templateId);
+                  return tmpl ? (
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4 text-primary" />
+                        Template associé (§4.2.4)
+                      </h4>
+                      <div className="border rounded-md p-2 text-sm flex items-center justify-between">
+                        <div>
+                          <span className="font-medium">{tmpl.title}</span>
+                          <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
+                        </div>
+                        <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
+                          {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
+                        </Badge>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* Advance Status Button */}
                 {hasPermission('audit.update') && selectedAudit.status !== 'Completed' && (() => {
