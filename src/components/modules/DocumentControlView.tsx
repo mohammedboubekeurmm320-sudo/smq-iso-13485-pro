@@ -76,11 +76,14 @@ import { useToast } from '@/hooks/use-toast';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const statusColors: Record<DocumentStatus, string> = {
+const statusColors: Record<string, string> = {
   'Draft': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  'Under Review': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
   'In Review': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   'Approved': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  'Effective': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
   'Obsolete': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  'Withdrawn': 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400',
 };
 
 const levelLabels: Record<DocumentLevel, string> = {
@@ -104,7 +107,7 @@ const classificationKeys: Record<DocumentClassification, 'classificationInternal
   'Confidential': 'classificationConfidential',
 };
 
-const statusFlow: DocumentStatus[] = ['Draft', 'In Review', 'Approved', 'Obsolete'];
+const statusFlow: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'];
 
 const WIZARD_STEPS = [
   { id: 0, labelKey: 'stepIdentification' as const, icon: FileText },
@@ -120,7 +123,7 @@ function getNextStatus(current: DocumentStatus): DocumentStatus | null {
 }
 
 const documentTypes: DocumentType[] = ['SOP', 'WI', 'Form', 'Policy', 'Specification', 'Technical', 'Risk Analysis', 'Validation Protocol', 'Record', 'Manual', 'Instruction', 'Register', 'Master Batch', 'Procedure', 'Process Map', 'Organigram'];
-const documentStatuses: DocumentStatus[] = ['Draft', 'In Review', 'Approved', 'Obsolete'];
+const documentStatuses: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'];
 const documentClassifications: DocumentClassification[] = ['Internal', 'External', 'Regulatory', 'Confidential'];
 const documentLevels: DocumentLevel[] = [1, 2, 3, 4];
 
@@ -308,16 +311,21 @@ export function DocumentControlView() {
     // For other status transitions, just update directly
     store.updateDocument(doc.id, {
       status: next,
-      effectiveDate: (next as DocumentStatus) === 'Approved' ? new Date().toISOString() : undefined,
-      lastReviewed: (next as DocumentStatus) === 'In Review' ? new Date().toISOString() : undefined,
+      effectiveDate: (next as DocumentStatus) === 'Approved' || (next as DocumentStatus) === 'Effective' ? new Date().toISOString() : undefined,
+      lastReviewed: (next as DocumentStatus) === 'Under Review' ? new Date().toISOString() : undefined,
     });
+
+    // Hybrid Supervision: Cascade obsolescence to linked templates (§4.2.3)
+    if (next === 'Obsolete' || next === 'Withdrawn') {
+      store.deactivateTemplatesByDocument(doc.id, `Document ${doc.documentNumber} became ${next}`);
+    }
 
     if (selectedDoc?.id === doc.id) {
       setSelectedDoc({
         ...doc,
         status: next,
-        effectiveDate: (next as DocumentStatus) === 'Approved' ? new Date().toISOString() : doc.effectiveDate,
-        lastReviewed: (next as DocumentStatus) === 'In Review' ? new Date().toISOString() : doc.lastReviewed,
+        effectiveDate: (next as DocumentStatus) === 'Approved' || (next as DocumentStatus) === 'Effective' ? new Date().toISOString() : doc.effectiveDate,
+        lastReviewed: (next as DocumentStatus) === 'Under Review' ? new Date().toISOString() : doc.lastReviewed,
       });
     }
   };
@@ -344,6 +352,17 @@ export function DocumentControlView() {
       status: 'Approved',
       effectiveDate: new Date().toISOString(),
       signatures: [...existingSignatures, newSignature],
+    });
+
+    // Hybrid Supervision: Activate pending templates when document is approved
+    const linkedTemplates = store.formTemplates.filter(t => t.documentId === doc.id && t.templateStatus === 'Pending Approval');
+    linkedTemplates.forEach(t => {
+      store.updateFormTemplate(t.id, {
+        templateStatus: 'Approved',
+        isActive: true,
+        approvedAt: new Date().toISOString(),
+        approvedById: currentUser?.id,
+      });
     });
 
     if (selectedDoc?.id === doc.id) {
@@ -709,10 +728,10 @@ export function DocumentControlView() {
   // Summary counts
   const summaryCounts = {
     total: documents.length,
-    approved: documents.filter(d => d.status === 'Approved').length,
-    inReview: documents.filter(d => d.status === 'In Review').length,
+    approved: documents.filter(d => d.status === 'Approved' || d.status === 'Effective').length,
+    inReview: documents.filter(d => d.status === 'Under Review').length,
     draft: documents.filter(d => d.status === 'Draft').length,
-    obsolete: documents.filter(d => d.status === 'Obsolete').length,
+    obsolete: documents.filter(d => d.status === 'Obsolete' || d.status === 'Withdrawn').length,
   };
 
   return (
@@ -891,6 +910,12 @@ export function DocumentControlView() {
                                 </span>
                               )}
                             </div>
+                          )}
+                          {/* Hybrid Supervision indicator */}
+                          {store.formTemplates.some(t => t.documentId === doc.id) && (
+                            <Badge variant="outline" className="text-[10px] border-purple-300 text-purple-700 dark:border-purple-700 dark:text-purple-400 ml-1">
+                              §4.2.3
+                            </Badge>
                           )}
                         </div>
                       </TableCell>
@@ -1248,6 +1273,40 @@ export function DocumentControlView() {
                           <div className="flex items-center gap-3">
                             <span className="text-xs text-muted-foreground font-mono">{sig.signatureHash.substring(0, 20)}...</span>
                             <span className="text-xs text-muted-foreground">{formatDate(sig.createdAt)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Hybrid Supervision: Linked Templates (§4.2.3) */}
+                {store.formTemplates.filter(t => t.documentId === selectedDoc.id).length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold flex items-center gap-2">
+                      <Layers className="h-4 w-4 text-primary" />
+                      Templates supervisés (§4.2.3)
+                      <Badge variant="outline" className="text-[10px]">Supervision</Badge>
+                    </h4>
+                    <div className="space-y-1">
+                      {store.formTemplates.filter(t => t.documentId === selectedDoc.id).map(template => (
+                        <div key={template.id} className="flex items-center justify-between border rounded-md p-2 text-sm">
+                          <div>
+                            <span className="font-medium">{template.title}</span>
+                            <span className="text-muted-foreground ml-2">v{template.version}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge className={cn('text-xs',
+                              template.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                              template.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                              template.templateStatus === 'Pending Approval' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                              'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                            )} variant="secondary">
+                              {template.templateStatus || (template.isActive ? 'Approved' : 'Draft')}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {template.instances?.length || store.formInstances.filter(i => i.templateId === template.id).length} instances
+                            </Badge>
                           </div>
                         </div>
                       ))}

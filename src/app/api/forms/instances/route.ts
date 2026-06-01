@@ -31,8 +31,30 @@ export async function POST(request: NextRequest) {
     const parsed = formInstanceSchema.safeParse(body);
     if (!parsed.success) return apiError('Validation failed', 400, parsed.error.flatten());
 
+    // Hybrid Supervision: Validate template status (§4.2.4)
+    const template = store.formTemplates.find(t => t.id === body.templateId);
+    if (template) {
+      const templateStatus: string | undefined = template.templateStatus || (template.isActive ? 'Approved' : 'Draft');
+      if (templateStatus === 'Obsolete') {
+        return apiError('Cannot create instance from obsolete template', 400);
+      }
+
+      // Check linked document status
+      if (template.documentId) {
+        const linkedDoc = store.documents.find(d => d.id === template.documentId);
+        if (linkedDoc && (linkedDoc.status === 'Obsolete' || linkedDoc.status === 'Withdrawn')) {
+          return apiError('Cannot create instance: linked document is obsolete/withdrawn', 400);
+        }
+      }
+    }
+
     const now = new Date().toISOString();
-    const item = { ...parsed.data, id: `fi-${Date.now()}`, createdAt: now } as import('@/types/qms').FormInstance;
+    const item = {
+      ...parsed.data,
+      id: `fi-${Date.now()}`,
+      createdAt: now,
+      parentDocumentId: template?.documentId || undefined,
+    } as import('@/types/qms').FormInstance;
     store.formInstances.push(item);
     store.logAudit('CREATE', 'FormInstance', item.id, undefined, { referenceNumber: item.referenceNumber, status: item.status });
     return apiSuccess(item, 201);

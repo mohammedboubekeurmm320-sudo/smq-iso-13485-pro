@@ -31,10 +31,26 @@ export async function POST(request: NextRequest) {
     const parsed = formTemplateSchema.safeParse(body);
     if (!parsed.success) return apiError('Validation failed', 400, parsed.error.flatten());
 
+    // Hybrid Supervision: Check linked document status
+    let templateStatus: import('@/types/qms').FormTemplateStatus = 'Draft';
+    if (body.documentId) {
+      const linkedDoc = store.documents.find(d => d.id === body.documentId);
+      if (linkedDoc && (linkedDoc.status === 'Approved' || linkedDoc.status === 'Effective')) {
+        templateStatus = 'Approved';
+      }
+    }
+
     const now = new Date().toISOString();
-    const item = { ...parsed.data, id: `ft-${Date.now()}`, createdAt: now } as import('@/types/qms').FormTemplate;
+    const item = {
+      ...parsed.data,
+      id: `ft-${Date.now()}`,
+      createdAt: now,
+      templateStatus,
+      isActive: templateStatus === 'Approved',
+      approvedAt: templateStatus === 'Approved' ? now : undefined,
+    } as import('@/types/qms').FormTemplate;
     store.formTemplates.push(item);
-    store.logAudit('CREATE', 'FormTemplate', item.id, undefined, { title: item.title, version: item.version, isActive: item.isActive });
+    store.logAudit('CREATE', 'FormTemplate', item.id, undefined, { title: item.title, version: item.version, templateStatus });
     return apiSuccess(item, 201);
   } catch (error) {
     return apiError('Failed to create form template', 500, error instanceof Error ? error.message : undefined);

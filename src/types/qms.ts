@@ -282,6 +282,10 @@ export interface Document {
   reviewCycleMonths?: number;
   /** Custom field values */
   customFields?: CustomFieldValue[];
+
+  // --- Hybrid supervision: linked form templates (§4.2.3) ---
+  /** Form templates that reference this document */
+  linkedTemplates?: FormTemplate[];
 }
 
 // ============================================================================
@@ -530,6 +534,18 @@ export interface FormTemplate {
   createdById?: string;
   createdAt: string;
   instances?: FormInstance[];
+
+  // --- Hybrid supervision fields (§4.2.3 + §4.2.4) ---
+  /** Template lifecycle status — governed by Documents module (§4.2.3) */
+  templateStatus: FormTemplateStatus;
+  /** Which record module this template serves */
+  associatedModule?: FormTemplateModule;
+  /** When the template was approved (set when document status = Approved/Effective) */
+  approvedAt?: string;
+  /** Who approved the template */
+  approvedById?: string;
+  /** Reason for obsolescence (if templateStatus = Obsolete) */
+  obsolescenceReason?: string;
 }
 
 export type FormInstanceStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected';
@@ -550,6 +566,19 @@ export interface FormInstance {
   createdById?: string;
   createdAt: string;
 }
+
+// ============================================================================
+// Hybrid 2-Layer Supervision — Form Template Lifecycle (§4.2.3 + §4.2.4)
+// ============================================================================
+
+/** Template lifecycle status — controlled by Documents module (§4.2.3) */
+export type FormTemplateStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'Obsolete';
+
+/** Record module that a form template can be associated with */
+export type FormTemplateModule =
+  | 'CAPA' | 'NCR' | 'DEVIATION' | 'CHANGE_CONTROL'
+  | 'AUDIT' | 'RISK' | 'TRAINING' | 'SUPPLIER'
+  | 'BATCH_RECORD' | 'OOS_OOT' | 'GENERAL';
 
 // ============================================================================
 // Audit Trail
@@ -576,7 +605,7 @@ export interface AuditTrail {
 // Document Prerequisite
 // ============================================================================
 
-export type PrerequisiteRecordType = 'CAPA' | 'NCR' | 'TRAINING' | 'RISK' | 'AUDIT' | 'CHANGE_CONTROL' | 'DEVIATION';
+export type PrerequisiteRecordType = 'CAPA' | 'NCR' | 'TRAINING' | 'RISK' | 'AUDIT' | 'CHANGE_CONTROL' | 'DEVIATION' | 'FORM';
 
 export interface DocumentPrerequisite {
   id: string;

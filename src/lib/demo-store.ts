@@ -48,6 +48,8 @@ interface QMSStore {
   addRisk: (risk: Risk) => void;
   updateRisk: (id: string, updates: Partial<Risk>) => void;
   addFormTemplate: (template: FormTemplate) => void;
+  updateFormTemplate: (id: string, updates: Partial<FormTemplate>) => void;
+  deactivateTemplatesByDocument: (documentId: string, reason?: string) => void;
   addFormInstance: (instance: FormInstance) => void;
   updateFormInstance: (id: string, updates: Partial<FormInstance>) => void;
   addChangeControl: (cc: ChangeControl) => void;
@@ -223,8 +225,28 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
   }),
 
   addFormTemplate: (template) => set(state => {
-    state.logAudit('CREATE', 'FormTemplate', template.id, undefined, { title: template.title, version: template.version, isActive: template.isActive });
+    state.logAudit('CREATE', 'FormTemplate', template.id, undefined, { title: template.title, version: template.version, isActive: template.isActive, templateStatus: template.templateStatus });
     return { formTemplates: [...state.formTemplates, template] };
+  }),
+
+  updateFormTemplate: (id, updates) => set(state => {
+    const old = state.formTemplates.find(t => t.id === id);
+    state.logAudit('UPDATE', 'FormTemplate', id, old ? { templateStatus: old.templateStatus, isActive: old.isActive } : undefined, updates);
+    return { formTemplates: state.formTemplates.map(t => t.id === id ? { ...t, ...updates } : t) };
+  }),
+
+  deactivateTemplatesByDocument: (documentId, reason) => set(state => {
+    const affected = state.formTemplates.filter(t => t.documentId === documentId);
+    if (affected.length > 0) {
+      state.logAudit('UPDATE', 'FormTemplate', undefined, undefined, { action: 'cascade_obsolete', documentId, reason: reason || 'Parent document became obsolete', affectedTemplates: affected.map(t => t.id) });
+    }
+    return {
+      formTemplates: state.formTemplates.map(t =>
+        t.documentId === documentId
+          ? { ...t, isActive: false, templateStatus: 'Obsolete' as const, obsolescenceReason: reason || 'Parent document became obsolete' }
+          : t
+      )
+    };
   }),
 
   addFormInstance: (instance) => set(state => {

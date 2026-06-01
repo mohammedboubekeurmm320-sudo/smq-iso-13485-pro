@@ -106,7 +106,7 @@
     "msw": "^2.14.2",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.5",
-    "typescript": "^5",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.5"
   }
 }

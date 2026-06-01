@@ -311,7 +311,7 @@ describe('updateDocument()', () => {
 
   it('logs an audit trail entry', () => {
     const trailBefore = useQMSStore.getState().auditTrails.length;
-    useQMSStore.getState().updateDocument('doc-001', { status: 'In Review' });
+    useQMSStore.getState().updateDocument('doc-001', { status: 'Under Review' });
     const trails = useQMSStore.getState().auditTrails;
     expect(trails.length).toBeGreaterThan(trailBefore);
     const lastTrail = trails[0];
@@ -736,6 +736,7 @@ describe('addFormTemplate()', () => {
       version: '1.0',
       fields: [],
       isActive: true,
+      templateStatus: 'Approved',
       createdAt: new Date().toISOString(),
     };
     useQMSStore.getState().addFormTemplate(newTemplate);
@@ -751,6 +752,7 @@ describe('addFormTemplate()', () => {
       version: '1.0',
       fields: [],
       isActive: true,
+      templateStatus: 'Approved',
       createdAt: new Date().toISOString(),
     };
     const trailBefore = useQMSStore.getState().auditTrails.length;

@@ -5,7 +5,7 @@ import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
-import type { FormTemplate, FormInstance, FormFieldDefinition, FormInstanceStatus, SignatureType, FormTemplateWorkflow, FormTemplateCompliance } from '@/types/qms';
+import type { FormTemplate, FormInstance, FormFieldDefinition, FormInstanceStatus, SignatureType, FormTemplateWorkflow, FormTemplateCompliance, FormTemplateStatus } from '@/types/qms';
 import {
   FileSpreadsheet, Plus, Search, Eye, Lock, ChevronUp, ChevronDown,
   Trash2, GripVertical, ShieldCheck, CheckCircle2, XCircle,
@@ -137,7 +137,7 @@ export function FormView() {
   const [pendingInstanceAction, setPendingInstanceAction] = useState<{ instanceId: string; action: 'approve' | 'reject' } | null>(null);
 
   // ===== COMPUTED =====
-  const approvedDocuments = useMemo(() => documents.filter(d => d.status === 'Approved'), [documents]);
+  const approvedDocuments = useMemo(() => documents.filter(d => d.status === 'Approved' || d.status === 'Effective'), [documents]);
 
   const filteredTemplates = useMemo(() =>
     templates.filter(t => templateSearch === '' || t.title.toLowerCase().includes(templateSearch.toLowerCase())),
@@ -278,6 +278,13 @@ export function FormView() {
       printFriendlyLayout: compliancePrintFriendly,
       cfrPart11Compliance: complianceCfrPart11,
     };
+    // Hybrid Supervision: Determine initial template status based on linked document
+    const linkedDoc = builderLinkedDoc && builderLinkedDoc !== 'none'
+      ? documents.find(d => d.id === builderLinkedDoc)
+      : null;
+    const initialStatus: FormTemplateStatus = (linkedDoc && (linkedDoc.status === 'Approved' || linkedDoc.status === 'Effective'))
+      ? 'Approved'
+      : 'Draft';
     const newTemplate: FormTemplate = {
       id: `ft-${Date.now()}`,
       documentId: builderLinkedDoc || '',
@@ -285,7 +292,10 @@ export function FormView() {
       version: builderVersion,
       description: builderDescription || undefined,
       fields: builderFields,
-      isActive: true,
+      isActive: initialStatus === 'Approved',
+      templateStatus: initialStatus,
+      approvedAt: initialStatus === 'Approved' ? new Date().toISOString() : undefined,
+      approvedById: initialStatus === 'Approved' ? currentUser?.id : undefined,
       workflow,
       compliance,
       organizationId: 'org-001',
@@ -304,6 +314,18 @@ export function FormView() {
 
   // ===== FILLER HELPERS =====
   const openFiller = (template: FormTemplate) => {
+    // Hybrid Supervision: Check if template is approved and linked document is also approved
+    const templateStatus = template.templateStatus || (template.isActive ? 'Approved' : 'Draft');
+    if (templateStatus !== 'Approved') {
+      // Show warning but still allow viewing
+      console.warn('Template not approved');
+    }
+
+    const linkedDoc = template.documentId ? documents.find(d => d.id === template.documentId) : null;
+    if (linkedDoc && linkedDoc.status !== 'Approved' && linkedDoc.status !== 'Effective') {
+      console.warn('Linked document not approved');
+    }
+
     setFillingTemplate(template);
     const initialValues: Record<string, unknown> = {};
     template.fields.forEach(f => {
@@ -325,6 +347,7 @@ export function FormView() {
       isLocked: false,
       submittedById: currentUser?.id,
       submittedAt: new Date().toISOString(),
+      parentDocumentId: fillingTemplate.documentId || undefined,
       organizationId: 'org-001',
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
@@ -445,7 +468,9 @@ export function FormView() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <FileSpreadsheet className="h-6 w-6 text-primary" />Dynamic Forms
           </h1>
-          <p className="text-muted-foreground mt-1">Form templates and electronic records management</p>
+          <p className="text-muted-foreground mt-1">Form templates and electronic records management
+            <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge>
+          </p>
         </div>
         {hasPermission('documents.create') && (
           <Button onClick={() => { resetBuilder(); setShowBuilderDialog(true); }}>
@@ -469,7 +494,7 @@ export function FormView() {
         {/* ============================================================ */}
         <TabsContent value="templates" className="space-y-4">
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4">
             <Card>
               <CardContent className="pt-4 pb-4">
                 <div className="flex items-center gap-2">
@@ -477,6 +502,17 @@ export function FormView() {
                   <span className="text-sm text-muted-foreground">Active Templates</span>
                 </div>
                 <span className="text-2xl font-bold">{templateSummary.activeTemplates}</span>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-amber-500" />
+                  <span className="text-sm text-muted-foreground">Pending Approval</span>
+                </div>
+                <span className="text-2xl font-bold text-amber-600">
+                  {templates.filter(t => (t.templateStatus || (t.isActive ? 'Approved' : 'Draft')) === 'Pending Approval').length}
+                </span>
               </CardContent>
             </Card>
             <Card>
@@ -559,8 +595,16 @@ export function FormView() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <Badge className={template.isActive ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
-                              {template.isActive ? 'Active' : 'Inactive'}
+                            <Badge className={cn('text-xs',
+                              (template.templateStatus === 'Approved' || (template.isActive && !template.templateStatus))
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                : template.templateStatus === 'Pending Approval'
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                  : template.templateStatus === 'Obsolete'
+                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                    : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                            )} variant="secondary">
+                              {template.templateStatus || (template.isActive ? 'Approved' : 'Draft')}
                             </Badge>
                           </TableCell>
                           <TableCell>
@@ -1328,6 +1372,26 @@ export function FormView() {
                 {selectedTemplate.description && (
                   <p className="text-sm text-muted-foreground bg-muted/30 rounded-md p-3">{selectedTemplate.description}</p>
                 )}
+
+                {/* Hybrid Supervision: Document status alert */}
+                {(() => {
+                  const linkedDoc = selectedTemplate.documentId ? documents.find(d => d.id === selectedTemplate.documentId) : null;
+                  if (linkedDoc && linkedDoc.status !== 'Approved' && linkedDoc.status !== 'Effective') {
+                    return (
+                      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm">
+                          <p className="text-amber-700 dark:text-amber-400 font-medium">Document non approuvé (§4.2.3)</p>
+                          <p className="text-amber-600 dark:text-amber-400/80 text-xs mt-0.5">
+                            Le document lié "{linkedDoc.documentNumber}" a le statut "{linkedDoc.status}". 
+                            Les instances créées depuis ce template nécessiteront une validation supplémentaire.
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 <Separator />
 
