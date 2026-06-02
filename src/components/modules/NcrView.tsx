@@ -5,10 +5,11 @@ import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
-import type { NonConformance, NcrStatus, NcrType, NcrSeverity, NcrDisposition, SignatureType } from '@/types/qms';
+import type { NonConformance, NcrStatus, NcrType, NcrSeverity, NcrDisposition, SignatureType, Capa } from '@/types/qms';
+import { DynamicFormFields, extractFormInstanceValues } from '@/components/shared/DynamicFormFields';
 import {
   AlertTriangle, Plus, Search, ArrowRight, AlertCircle,
-  CheckCircle2, Clock, ShieldCheck, Link2, Beaker,
+  CheckCircle2, Clock, ShieldCheck, Link2, Beaker, Shield,
   ChevronLeft, ChevronRight, FileText, ClipboardList, FlaskConical,
   Scale, ListChecks, FileSpreadsheet,
 } from 'lucide-react';
@@ -127,6 +128,12 @@ export function NcrView() {
   const [formAffectedProduct, setFormAffectedProduct] = useState('');
   const [formTemplateId, setFormTemplateId] = useState('');
 
+  // ── P1-2: Dynamic template fields ──
+  const [templateFieldValues, setTemplateFieldValues] = useState<Record<string, unknown>>({});
+
+  // ── P1-5: Create CAPA from NCR ──
+  const [showCreateCapaFromNcr, setShowCreateCapaFromNcr] = useState(false);
+
   // Detail dialog disposition edit
   const [detailDisposition, setDetailDisposition] = useState<string>('');
 
@@ -208,11 +215,15 @@ export function NcrView() {
     setFormPreliminaryDisposition('Pending');
     setFormImpactAssessment(''); setFormContainmentActions(''); setFormAffectedProduct('');
     setFormTemplateId('');
+    setTemplateFieldValues({});
   };
 
   const handleCreate = () => {
+    const resolvedTemplateId = formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined;
+    const newNcrId = `ncr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
     const newNcr: NonConformance = {
-      id: `ncr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id: newNcrId,
       ncrNumber: `NCR-2024-${String(ncrs.length + 1).padStart(3, '0')}`,
       title: formTitle,
       type: formType,
@@ -236,7 +247,7 @@ export function NcrView() {
       impactAssessment: formImpactAssessment || undefined,
       containmentActions: formContainmentActions || undefined,
       affectedProduct: formAffectedProduct || undefined,
-      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
+      templateId: resolvedTemplateId,
       createdDate: new Date().toISOString(),
       createdById: currentUser?.id,
       organizationId: 'org-001',
@@ -244,6 +255,19 @@ export function NcrView() {
       updatedAt: new Date().toISOString(),
     };
     store.addNCR(newNcr);
+
+    // P1-1: Create FormInstance when templateId is set
+    if (resolvedTemplateId) {
+      const template = store.formTemplates.find(t => t.id === resolvedTemplateId);
+      if (template) {
+        const fieldValues = extractFormInstanceValues(template.fields, templateFieldValues);
+        const instance = store.createFormInstanceForRecord(resolvedTemplateId, newNcrId, 'NCR', fieldValues);
+        if (instance) {
+          store.updateNCR(newNcrId, { formInstanceId: instance.id });
+        }
+      }
+    }
+
     resetForm();
     setShowCreateDialog(false);
   };
@@ -513,7 +537,7 @@ export function NcrView() {
               </div>
               <div className="grid gap-2">
                 <Label>Template associé (§4.2.4)</Label>
-                <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+                <Select value={formTemplateId} onValueChange={(v) => { setFormTemplateId(v); setTemplateFieldValues({}); }}>
                   <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Aucun</SelectItem>
@@ -526,6 +550,19 @@ export function NcrView() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* P1-2: Dynamic template fields */}
+              {formTemplateId && formTemplateId !== 'none' && (() => {
+                const tmpl = store.formTemplates.find(t => t.id === formTemplateId);
+                if (!tmpl || tmpl.fields.length === 0) return null;
+                return (
+                  <DynamicFormFields
+                    fields={tmpl.fields}
+                    values={templateFieldValues}
+                    onChange={(fieldId, value) => setTemplateFieldValues(prev => ({ ...prev, [fieldId]: value }))}
+                  />
+                );
+              })()}
             </div>
           </div>
         );
@@ -846,31 +883,51 @@ export function NcrView() {
                   <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedNcr.description}</p>
                 </div>
 
-                {/* Linked CAPA */}
-                {selectedNcr.linkedCapaId && (() => {
-                  const linkedCapa = getLinkedCapa(selectedNcr.linkedCapaId);
-                  return (
-                    <div>
-                      <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
-                        <Link2 className="h-4 w-4" />
-                        Linked CAPA
-                      </h4>
-                      <div className="bg-muted/30 p-3 rounded-md flex items-center gap-3">
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {linkedCapa?.capaNumber || selectedNcr.linkedCapaId}
-                        </Badge>
-                        {linkedCapa && (
-                          <>
-                            <span className="text-sm">{linkedCapa.title}</span>
-                            <Badge className={cn('text-xs', linkedCapa.status === 'Closed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700')} variant="secondary">
-                              {linkedCapa.status}
+                {/* Linked CAPAs */}
+                {((selectedNcr.linkedCapaIds && selectedNcr.linkedCapaIds.length > 0) || selectedNcr.linkedCapaId) && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                      <Link2 className="h-4 w-4" />
+                      CAPAs liées
+                    </h4>
+                    <div className="space-y-1">
+                      {(selectedNcr.linkedCapaIds || (selectedNcr.linkedCapaId ? [selectedNcr.linkedCapaId] : [])).map(capaId => {
+                        const linkedCapa = capas.find(c => c.id === capaId);
+                        return (
+                          <div key={capaId} className="bg-muted/30 p-2 rounded-md flex items-center gap-3">
+                            <Badge variant="outline" className="font-mono text-xs">
+                              {linkedCapa?.capaNumber || capaId}
                             </Badge>
-                          </>
-                        )}
-                      </div>
+                            {linkedCapa && (
+                              <>
+                                <span className="text-sm">{linkedCapa.title}</span>
+                                <Badge className={cn('text-xs ml-auto',
+                                  linkedCapa.status === 'Closed' ? 'bg-green-100 text-green-700' :
+                                  linkedCapa.status === 'Investigation' ? 'bg-amber-100 text-amber-700' :
+                                  'bg-blue-100 text-blue-700'
+                                )} variant="secondary">{linkedCapa.status}</Badge>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })()}
+                  </div>
+                )}
+
+                {/* P1-5: Create CAPA from NCR button */}
+                {hasPermission('capa.create') && selectedNcr.status !== 'Closed' && (
+                  <div>
+                    <Button
+                      className="w-full"
+                      variant="outline"
+                      onClick={() => setShowCreateCapaFromNcr(true)}
+                    >
+                      <Shield className="h-4 w-4 mr-2" />
+                      Créer une CAPA depuis cette NCR
+                    </Button>
+                  </div>
+                )}
 
                 {/* OOS/OOT Section */}
                 {selectedNcr.isOosOot && (
@@ -1004,7 +1061,7 @@ export function NcrView() {
                 {selectedNcr.templateId && (() => {
                   const tmpl = store.formTemplates.find(t => t.id === selectedNcr.templateId);
                   return tmpl ? (
-                    <div className="space-y-1">
+                    <div className="space-y-2">
                       <h4 className="text-sm font-semibold flex items-center gap-2">
                         <FileSpreadsheet className="h-4 w-4 text-primary" />
                         Template associé (§4.2.4)
@@ -1018,6 +1075,21 @@ export function NcrView() {
                           {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
                         </Badge>
                       </div>
+
+                      {/* P1-2: Show template field values from FormInstance */}
+                      {selectedNcr.formInstanceId && (() => {
+                        const instance = store.formInstances.find(fi => fi.id === selectedNcr.formInstanceId);
+                        if (!instance || !tmpl.fields || tmpl.fields.length === 0) return null;
+                        return (
+                          <DynamicFormFields
+                            fields={tmpl.fields}
+                            values={instance.values}
+                            onChange={() => {}}
+                            readonly
+                            compact
+                          />
+                        );
+                      })()}
                     </div>
                   ) : null;
                 })()}
@@ -1058,6 +1130,82 @@ export function NcrView() {
         recordId={pendingCloseNcr?.id || ''}
         signatureType="approval"
       />
+
+      {/* P1-5: Create CAPA from NCR Confirmation Dialog */}
+      <Dialog open={showCreateCapaFromNcr} onOpenChange={setShowCreateCapaFromNcr}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-primary" />
+              Créer une CAPA depuis la NCR
+            </DialogTitle>
+          </DialogHeader>
+          {selectedNcr && (
+            <div className="space-y-4">
+              <div className="bg-muted/30 p-3 rounded-md space-y-2 text-sm">
+                <p><span className="font-medium">NCR:</span> <span className="font-mono">{selectedNcr.ncrNumber}</span></p>
+                <p><span className="font-medium">Titre:</span> {selectedNcr.title}</p>
+                <p><span className="font-medium">Sévérité:</span> {selectedNcr.severity}</p>
+                <p><span className="font-medium">Description:</span> {selectedNcr.description}</p>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Une nouvelle CAPA sera créée automatiquement avec les données de cette NCR et liée bidirectionnellement.
+              </p>
+              <div className="flex items-center justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowCreateCapaFromNcr(false)}>
+                  Annuler
+                </Button>
+                <Button
+                  onClick={() => {
+                    // P1-5: Create CAPA pre-filled from NCR data
+                    const newCapaId = `capa-${Date.now()}`;
+                    const newCapa: Capa = {
+                      id: newCapaId,
+                      capaNumber: `CAPA-2024-${String(store.capas.length + 1).padStart(3, '0')}`,
+                      title: `[NCR ${selectedNcr.ncrNumber}] ${selectedNcr.title}`,
+                      type: 'Corrective',
+                      status: 'Open',
+                      priority: selectedNcr.severity === 'Critical' ? 'Critical' : selectedNcr.severity === 'Major' ? 'High' : 'Medium',
+                      source: 'Non-Conformance',
+                      sourceReferenceId: selectedNcr.id,
+                      description: selectedNcr.description,
+                      problemStatement: selectedNcr.description,
+                      investigationDetails: selectedNcr.impactAssessment,
+                      containmentActions: selectedNcr.containmentActions,
+                      linkedNcrIds: [selectedNcr.id],
+                      linkedNcrId: selectedNcr.id,
+                      assignedTo: selectedNcr.assignedTo || currentUser?.id || 'user-001',
+                      dueDate: selectedNcr.dueDate || new Date(Date.now() + 30 * 86400000).toISOString(),
+                      createdDate: new Date().toISOString(),
+                      createdById: currentUser?.id,
+                      organizationId: 'org-001',
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                    };
+                    store.addCapa(newCapa);
+
+                    // Bidirectional link: NCR ↔ CAPA
+                    store.linkNcrToCapas(selectedNcr.id, [newCapaId]);
+
+                    // Update selectedNcr to reflect the new link
+                    setSelectedNcr({
+                      ...selectedNcr,
+                      linkedCapaIds: [...(selectedNcr.linkedCapaIds || []), newCapaId],
+                      linkedCapaId: newCapaId,
+                    });
+
+                    setShowCreateCapaFromNcr(false);
+                  }}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <Shield className="h-4 w-4 mr-2" />
+                  Créer la CAPA
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

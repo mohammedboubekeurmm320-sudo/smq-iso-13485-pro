@@ -68,6 +68,16 @@ interface QMSStore {
 
   // Signature generation
   generateSignatureHash: (signerId: string, documentId: string, type: string) => string;
+
+  // P1: Template-Record integration helpers
+  /** Create a FormInstance linked to a template when a record is created with templateId */
+  createFormInstanceForRecord: (templateId: string, recordId: string, moduleName: string, fieldValues?: Record<string, unknown>) => FormInstance | null;
+  /** Sync template version when parent document version changes */
+  syncTemplateVersionsByDocument: (documentId: string, newVersion: string) => void;
+  /** Link a CAPA to NCR(s) and Audit(s) bidirectionally */
+  linkCapaToRecords: (capaId: string, ncrIds: string[], auditIds: string[]) => void;
+  /** Link NCR to CAPA(s) bidirectionally */
+  linkNcrToCapas: (ncrId: string, capaIds: string[]) => void;
 }
 
 export const useQMSStore = create<QMSStore>((set, get) => ({
@@ -327,5 +337,156 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
       hash |= 0;
     }
     return `SIG-${Math.abs(hash).toString(16).toUpperCase()}-${timestamp.toString(36).toUpperCase()}`;
+  },
+
+  // ─── P1: Template-Record Integration Helpers ──────────────────────────────────
+
+  /** Create a FormInstance when a record is created with a templateId.
+   *  Returns the created FormInstance or null if template not found. */
+  createFormInstanceForRecord: (templateId, recordId, moduleName, fieldValues) => {
+    const state = get();
+    const template = state.formTemplates.find(t => t.id === templateId);
+    if (!template) return null;
+
+    // Build default values from template fields
+    const defaultValues: Record<string, unknown> = {};
+    for (const field of template.fields) {
+      defaultValues[field.id] = fieldValues?.[field.id] ?? field.defaultValue ?? '';
+    }
+
+    const instance: FormInstance = {
+      id: `fi-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      templateId,
+      templateVersion: template.version,
+      referenceNumber: `FI-${moduleName}-${Date.now().toString(36).toUpperCase()}`,
+      values: { ...defaultValues, ...fieldValues },
+      status: 'Draft',
+      isLocked: false,
+      parentDocumentId: template.documentId,
+      organizationId: 'org-001',
+      createdById: 'user-001',
+      createdAt: new Date().toISOString(),
+    };
+
+    set({ formInstances: [...state.formInstances, instance] });
+    state.logAudit('CREATE', 'FormInstance', instance.id, undefined, {
+      referenceNumber: instance.referenceNumber,
+      templateId,
+      recordId,
+      moduleName,
+    });
+    return instance;
+  },
+
+  /** Sync template versions when the parent document version changes (P1-3).
+   *  When a document is revised, linked templates should reflect the new version. */
+  syncTemplateVersionsByDocument: (documentId, newVersion) => {
+    const state = get();
+    const linkedTemplates = state.formTemplates.filter(t => t.documentId === documentId);
+    if (linkedTemplates.length === 0) return;
+
+    // Increment template version to align with document
+    const templateVersionSuffix = `.${newVersion}`;
+    linkedTemplates.forEach(t => {
+      state.logAudit('UPDATE', 'FormTemplate', t.id,
+        { version: t.version },
+        { version: t.version + templateVersionSuffix, syncReason: 'Document version updated' }
+      );
+    });
+
+    set({
+      formTemplates: state.formTemplates.map(t =>
+        t.documentId === documentId
+          ? { ...t, version: t.version + templateVersionSuffix }
+          : t
+      ),
+    });
+  },
+
+  /** Link a CAPA to NCR(s) and Audit(s) bidirectionally (P1-4).
+   *  Updates both the CAPA record and the referenced NCRs/Audits. */
+  linkCapaToRecords: (capaId, ncrIds, auditIds) => {
+    const state = get();
+
+    // Update CAPA with linked NCR/Audit IDs
+    const capa = state.capas.find(c => c.id === capaId);
+    if (capa) {
+      const existingNcrIds = capa.linkedNcrIds || [];
+      const existingAuditIds = capa.linkedAuditIds || [];
+      const mergedNcrIds = [...new Set([...existingNcrIds, ...ncrIds])];
+      const mergedAuditIds = [...new Set([...existingAuditIds, ...auditIds])];
+
+      // Also update deprecated singular fields for backward compat
+      set({
+        capas: state.capas.map(c =>
+          c.id === capaId
+            ? { ...c, linkedNcrIds: mergedNcrIds, linkedAuditIds: mergedAuditIds, linkedNcrId: mergedNcrIds[0], linkedAuditId: mergedAuditIds[0] }
+            : c
+        ),
+      });
+    }
+
+    // Update each NCR with the linked CAPA ID
+    if (ncrIds.length > 0) {
+      set({
+        ncrs: state.ncrs.map(n => {
+          if (!ncrIds.includes(n.id)) return n;
+          const existingCapaIds = n.linkedCapaIds || [];
+          const mergedCapaIds = [...new Set([...existingCapaIds, capaId])];
+          return { ...n, linkedCapaIds: mergedCapaIds, linkedCapaId: mergedCapaIds[0] };
+        }),
+      });
+    }
+
+    // Update each Audit with the linked CAPA ID
+    if (auditIds.length > 0) {
+      const updatedState = get();
+      set({
+        audits: updatedState.audits.map(a => {
+          if (!auditIds.includes(a.id)) return a;
+          const existingCapaIds = a.linkedCapaIds || [];
+          const mergedCapaIds = [...new Set([...existingCapaIds, capaId])];
+          return { ...a, linkedCapaIds: mergedCapaIds };
+        }),
+      });
+    }
+
+    state.logAudit('UPDATE', 'Capa', capaId, { linkedNcrIds: capa?.linkedNcrIds, linkedAuditIds: capa?.linkedAuditIds }, { linkedNcrIds: ncrIds, linkedAuditIds: auditIds });
+  },
+
+  /** Link NCR to CAPA(s) bidirectionally (P1-5).
+   *  Used when creating a CAPA from an NCR detail view. */
+  linkNcrToCapas: (ncrId, capaIds) => {
+    const state = get();
+
+    // Update NCR with linked CAPA IDs
+    const ncr = state.ncrs.find(n => n.id === ncrId);
+    if (ncr) {
+      const existingCapaIds = ncr.linkedCapaIds || [];
+      const mergedCapaIds = [...new Set([...existingCapaIds, ...capaIds])];
+
+      set({
+        ncrs: state.ncrs.map(n =>
+          n.id === ncrId
+            ? { ...n, linkedCapaIds: mergedCapaIds, linkedCapaId: mergedCapaIds[0] }
+            : n
+        ),
+      });
+    }
+
+    // Update each CAPA with the linked NCR ID
+    if (capaIds.length > 0) {
+      const updatedState = get();
+      set({
+        capas: updatedState.capas.map(c => {
+          if (!capaIds.includes(c.id)) return c;
+          const existingNcrIds = c.linkedNcrIds || [];
+          const mergedNcrIds = [...new Set([...existingNcrIds, ncrId])];
+          return { ...c, linkedNcrIds: mergedNcrIds, linkedNcrId: mergedNcrIds[0] };
+        }),
+      });
+    }
+
+    state.logAudit('UPDATE', 'NonConformance', ncrId, { linkedCapaIds: ncr?.linkedCapaIds }, { linkedCapaIds: capaIds });
   },
 }));

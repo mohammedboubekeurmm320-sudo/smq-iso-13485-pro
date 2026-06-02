@@ -332,8 +332,18 @@ export interface Capa {
   effectivenessCriteria?: string;
   effectivenessResult?: 'Effective' | 'Not Effective' | 'Pending Review';
   linkedDocumentId?: string;
+  /** @deprecated Use linkedNcrIds instead */
   linkedNcrId?: string;
+  /** @deprecated Use linkedAuditIds instead */
   linkedAuditId?: string;
+  /** Linked NCR IDs (P1: bidirectional cross-reference) */
+  linkedNcrIds?: string[];
+  /** Linked Audit IDs (P1: bidirectional cross-reference) */
+  linkedAuditIds?: string[];
+  /** Associated form template ID (§4.2.4) */
+  templateId?: string;
+  /** Associated form instance ID (§4.2.4 execution) */
+  formInstanceId?: string;
   assignedTo: string;
   dueDate: string;
   createdDate: string;
@@ -365,9 +375,16 @@ export interface NonConformance {
   lotNumber?: string;
   quantityAffected?: number;
   disposition?: NcrDisposition;
+  /** @deprecated Use linkedCapaIds instead */
   linkedCapaId?: string;
+  /** Linked CAPA IDs (P1: bidirectional cross-reference) */
+  linkedCapaIds?: string[];
   linkedProcedureRef?: string;
   supplierId?: string;
+  /** Associated form template ID (§4.2.4) */
+  templateId?: string;
+  /** Associated form instance ID (§4.2.4 execution) */
+  formInstanceId?: string;
   isOosOot: boolean;
   analyticalMethod?: string;
   measuredValue?: number;
@@ -437,6 +454,10 @@ export interface BatchRecord {
   isLocked: boolean;
   qaReleaseDate?: string;
   qaReleasedById?: string;
+  /** Associated form template ID (§4.2.4) */
+  templateId?: string;
+  /** Associated form instance ID (§4.2.4 execution) */
+  formInstanceId?: string;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
@@ -476,6 +497,10 @@ export interface Supplier {
   emergencyContactPhone?: string;
   qualificationMethod?: QualificationMethod;
   qualificationDocRef?: string;
+  /** Associated form template ID (§4.2.4) */
+  templateId?: string;
+  /** Associated form instance ID (§4.2.4 execution) */
+  formInstanceId?: string;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
@@ -530,6 +555,8 @@ export interface FormTemplate {
   approvedAt?: string;
   /** Who approved the template */
   approvedById?: string;
+  /** Associated module for template filtering (e.g. 'CAPA', 'NCR', 'AUDIT', 'GENERAL') */
+  associatedModule?: string;
   workflow?: FormTemplateWorkflow;
   compliance?: FormTemplateCompliance;
   organizationId?: string;
@@ -664,6 +691,12 @@ export interface Audit {
   leadAuditor: string;
   auditees?: string[];
   findings?: AuditFinding[];
+  /** Linked CAPA IDs from audit findings (P1: bidirectional cross-reference) */
+  linkedCapaIds?: string[];
+  /** Associated form template ID (§4.2.4) */
+  templateId?: string;
+  /** Associated form instance ID (§4.2.4 execution) */
+  formInstanceId?: string;
   // --- Extended audit data (previously lost in wizard) ---
   /** Audit team members */
   teamMembers?: { member: string; role: string; assignedScope: string }[];
@@ -758,6 +791,10 @@ export interface Training {
   applicableStandards?: string;
   /** Training category */
   trainingCategory?: 'GMP' | 'GLP' | 'GCP' | 'Safety' | 'Quality' | 'Other';
+  /** Associated form template ID (§4.2.4) */
+  templateId?: string;
+  /** Associated form instance ID (§4.2.4 execution) */
+  formInstanceId?: string;
   organizationId?: string;
   createdAt: string;
   updatedAt: string;
@@ -807,8 +844,14 @@ export interface Risk {
   priorityNotes?: string;
   /** Linked document ID */
   linkedDocumentId?: string;
-  /** Linked CAPA ID */
+  /** @deprecated Use linkedCapaIds instead */
   linkedCapaId?: string;
+  /** Linked CAPA IDs (P1: bidirectional cross-reference) */
+  linkedCapaIds?: string[];
+  /** Associated form template ID (§4.2.4) */
+  templateId?: string;
+  /** Associated form instance ID (§4.2.4 execution) */
+  formInstanceId?: string;
   organizationId?: string;
   createdAt: string;
   updatedAt: string;
@@ -862,6 +905,10 @@ export interface ChangeControl {
   linkedDocumentId?: string;
   linkedCapaId?: string;
   additionalReferences?: string;
+  /** Associated form template ID (§4.2.4) */
+  templateId?: string;
+  /** Associated form instance ID (§4.2.4 execution) */
+  formInstanceId?: string;
   assignedTo: string;
   requestedBy: string;
   approvedBy?: string;
@@ -913,6 +960,10 @@ export interface Deviation {
   quantityAffected?: number;
   linkedCapaId?: string;
   linkedDocumentId?: string;
+  /** Associated form template ID (§4.2.4) */
+  templateId?: string;
+  /** Associated form instance ID (§4.2.4 execution) */
+  formInstanceId?: string;
   assignedTo: string;
   dueDate: string;
   closedDate?: string;

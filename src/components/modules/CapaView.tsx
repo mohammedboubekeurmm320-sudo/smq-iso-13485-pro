@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Capa, CapaStatus, CapaType, CapaPriority, CapaSource, RootCauseCategory, SignatureType } from '@/types/qms';
+import { DynamicFormFields, extractFormInstanceValues } from '@/components/shared/DynamicFormFields';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import {
   Shield, Plus, Search, Eye, ArrowRight, CheckCircle2, AlertTriangle,
@@ -144,6 +145,13 @@ export function CapaView() {
   const [formAdditionalReferences, setFormAdditionalReferences] = useState('');
   const [formTemplateId, setFormTemplateId] = useState('');
 
+  // ── P1: Linked NCR/Audit arrays ──
+  const [formLinkedNcrIds, setFormLinkedNcrIds] = useState<string[]>([]);
+  const [formLinkedAuditIds, setFormLinkedAuditIds] = useState<string[]>([]);
+
+  // ── P1-2: Dynamic template fields ──
+  const [templateFieldValues, setTemplateFieldValues] = useState<Record<string, unknown>>({});
+
   // ── Electronic Signature ──
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{ capa: Capa; nextStatus: CapaStatus } | null>(null);
@@ -224,8 +232,11 @@ export function CapaView() {
     }
     setPrereqError(null);
 
+    const resolvedTemplateId = formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined;
+    const newCapaId = `capa-${Date.now()}`;
+
     const newCapa: Capa = {
-      id: `capa-${Date.now()}`,
+      id: newCapaId,
       capaNumber: `CAPA-2024-${String(capas.length + 1).padStart(3, '0')}`,
       title: formTitle,
       type: formType,
@@ -240,13 +251,33 @@ export function CapaView() {
       createdDate: new Date().toISOString(),
       linkedDocumentId: formLinkedDocId && formLinkedDocId !== 'none' ? formLinkedDocId : undefined,
       linkedCapaId: formLinkedCapaId && formLinkedCapaId !== 'none' ? formLinkedCapaId : undefined,
-      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
+      linkedNcrIds: formLinkedNcrIds.length > 0 ? formLinkedNcrIds : undefined,
+      linkedAuditIds: formLinkedAuditIds.length > 0 ? formLinkedAuditIds : undefined,
+      templateId: resolvedTemplateId,
       createdById: currentUser?.id,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     store.addCapa(newCapa);
+
+    // P1-1: Create FormInstance when templateId is set
+    if (resolvedTemplateId) {
+      const template = store.formTemplates.find(t => t.id === resolvedTemplateId);
+      if (template) {
+        const fieldValues = extractFormInstanceValues(template.fields, templateFieldValues);
+        const instance = store.createFormInstanceForRecord(resolvedTemplateId, newCapaId, 'CAPA', fieldValues);
+        if (instance) {
+          store.updateCapa(newCapaId, { formInstanceId: instance.id });
+        }
+      }
+    }
+
+    // P1-4: Link CAPA to NCR(s) and Audit(s) bidirectionally
+    if (formLinkedNcrIds.length > 0 || formLinkedAuditIds.length > 0) {
+      store.linkCapaToRecords(newCapaId, formLinkedNcrIds, formLinkedAuditIds);
+    }
+
     resetForm();
     setShowCreateDialog(false);
   };
@@ -281,6 +312,9 @@ export function CapaView() {
     setFormLinkedCapaId('');
     setFormAdditionalReferences('');
     setFormTemplateId('');
+    setFormLinkedNcrIds([]);
+    setFormLinkedAuditIds([]);
+    setTemplateFieldValues({});
     setPrereqError(null);
   };
 
@@ -645,9 +679,65 @@ export function CapaView() {
               <Label htmlFor="additional-references">Additional References</Label>
               <Textarea id="additional-references" value={formAdditionalReferences} onChange={(e) => setFormAdditionalReferences(e.target.value)} placeholder="Any additional references, documents, or links..." rows={2} />
             </div>
+            {/* P1-4: Linked NCRs */}
+            <div className="grid gap-2">
+              <Label>Non-Conformances liées</Label>
+              <div className="space-y-1 max-h-32 overflow-y-auto border rounded-md p-2">
+                {store.ncrs.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Aucune NCR disponible</p>
+                ) : store.ncrs.map(ncr => (
+                  <label key={ncr.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={formLinkedNcrIds.includes(ncr.id)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setFormLinkedNcrIds([...formLinkedNcrIds, ncr.id]);
+                        } else {
+                          setFormLinkedNcrIds(formLinkedNcrIds.filter(id => id !== ncr.id));
+                        }
+                      }}
+                    />
+                    <span className="font-mono text-xs">{ncr.ncrNumber}</span>
+                    <span className="text-muted-foreground">{ncr.title}</span>
+                  </label>
+                ))}
+              </div>
+              {formLinkedNcrIds.length > 0 && (
+                <p className="text-xs text-primary">{formLinkedNcrIds.length} NCR(s) sélectionnée(s)</p>
+              )}
+            </div>
+
+            {/* P1-4: Linked Audits */}
+            <div className="grid gap-2">
+              <Label>Audits liés</Label>
+              <div className="space-y-1 max-h-32 overflow-y-auto border rounded-md p-2">
+                {store.audits.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Aucun audit disponible</p>
+                ) : store.audits.map(audit => (
+                  <label key={audit.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={formLinkedAuditIds.includes(audit.id)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setFormLinkedAuditIds([...formLinkedAuditIds, audit.id]);
+                        } else {
+                          setFormLinkedAuditIds(formLinkedAuditIds.filter(id => id !== audit.id));
+                        }
+                      }}
+                    />
+                    <span className="font-mono text-xs">{audit.auditNumber}</span>
+                    <span className="text-muted-foreground">{audit.title}</span>
+                  </label>
+                ))}
+              </div>
+              {formLinkedAuditIds.length > 0 && (
+                <p className="text-xs text-primary">{formLinkedAuditIds.length} audit(s) sélectionné(s)</p>
+              )}
+            </div>
+
             <div className="grid gap-2">
               <Label>Template associé (§4.2.4)</Label>
-              <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+              <Select value={formTemplateId} onValueChange={(v) => { setFormTemplateId(v); setTemplateFieldValues({}); }}>
                 <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Aucun</SelectItem>
@@ -660,6 +750,19 @@ export function CapaView() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* P1-2: Dynamic template fields */}
+            {formTemplateId && formTemplateId !== 'none' && (() => {
+              const tmpl = store.formTemplates.find(t => t.id === formTemplateId);
+              if (!tmpl || tmpl.fields.length === 0) return null;
+              return (
+                <DynamicFormFields
+                  fields={tmpl.fields}
+                  values={templateFieldValues}
+                  onChange={(fieldId, value) => setTemplateFieldValues(prev => ({ ...prev, [fieldId]: value }))}
+                />
+              );
+            })()}
 
             <Separator />
 
@@ -1199,13 +1302,73 @@ export function CapaView() {
                       </p>
                     </div>
                   )}
+
+                  {/* P1-4: Linked NCRs (bidirectional) */}
+                  {((selectedCapa.linkedNcrIds && selectedCapa.linkedNcrIds.length > 0) || selectedCapa.linkedNcrId) && (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                        <Link2 className="h-4 w-4 text-primary" />
+                        Non-Conformances liées
+                      </h4>
+                      <div className="space-y-1">
+                        {(selectedCapa.linkedNcrIds || (selectedCapa.linkedNcrId ? [selectedCapa.linkedNcrId] : [])).map(ncrId => {
+                          const ncr = store.ncrs.find(n => n.id === ncrId);
+                          return (
+                            <div key={ncrId} className="bg-muted/30 p-2 rounded-md text-sm flex items-center gap-2">
+                              <Badge variant="outline" className="font-mono text-xs">{ncr?.ncrNumber || ncrId}</Badge>
+                              {ncr && (
+                                <>
+                                  <span>{ncr.title}</span>
+                                  <Badge className={cn('text-xs ml-auto',
+                                    ncr.status === 'Closed' ? 'bg-green-100 text-green-700' :
+                                    ncr.status === 'Under Investigation' ? 'bg-amber-100 text-amber-700' :
+                                    'bg-blue-100 text-blue-700'
+                                  )} variant="secondary">{ncr.status}</Badge>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* P1-4: Linked Audits (bidirectional) */}
+                  {((selectedCapa.linkedAuditIds && selectedCapa.linkedAuditIds.length > 0) || selectedCapa.linkedAuditId) && (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                        <Link2 className="h-4 w-4 text-primary" />
+                        Audits liés
+                      </h4>
+                      <div className="space-y-1">
+                        {(selectedCapa.linkedAuditIds || (selectedCapa.linkedAuditId ? [selectedCapa.linkedAuditId] : [])).map(auditId => {
+                          const audit = store.audits.find(a => a.id === auditId);
+                          return (
+                            <div key={auditId} className="bg-muted/30 p-2 rounded-md text-sm flex items-center gap-2">
+                              <Badge variant="outline" className="font-mono text-xs">{audit?.auditNumber || auditId}</Badge>
+                              {audit && (
+                                <>
+                                  <span>{audit.title}</span>
+                                  <Badge className={cn('text-xs ml-auto',
+                                    audit.status === 'Completed' ? 'bg-green-100 text-green-700' :
+                                    audit.status === 'In Progress' ? 'bg-amber-100 text-amber-700' :
+                                    'bg-blue-100 text-blue-700'
+                                  )} variant="secondary">{audit.status}</Badge>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Hybrid Supervision: Template associé (§4.2.4) */}
                 {selectedCapa.templateId && (() => {
                   const tmpl = store.formTemplates.find(t => t.id === selectedCapa.templateId);
                   return tmpl ? (
-                    <div className="space-y-1">
+                    <div className="space-y-2">
                       <h4 className="text-sm font-semibold flex items-center gap-2">
                         <FileSpreadsheet className="h-4 w-4 text-primary" />
                         Template associé (§4.2.4)
@@ -1219,6 +1382,21 @@ export function CapaView() {
                           {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
                         </Badge>
                       </div>
+
+                      {/* P1-2: Show template field values from FormInstance */}
+                      {selectedCapa.formInstanceId && (() => {
+                        const instance = store.formInstances.find(fi => fi.id === selectedCapa.formInstanceId);
+                        if (!instance || !tmpl.fields || tmpl.fields.length === 0) return null;
+                        return (
+                          <DynamicFormFields
+                            fields={tmpl.fields}
+                            values={instance.values}
+                            onChange={() => {}}
+                            readonly
+                            compact
+                          />
+                        );
+                      })()}
                     </div>
                   ) : null;
                 })()}

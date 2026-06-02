@@ -313,6 +313,11 @@ export function DocumentControlView() {
       store.deactivateTemplatesByDocument(doc.id, `Document ${doc.documentNumber} became ${next}`);
     }
 
+    // P1-3: Sync template versions when document version changes
+    if (next === 'Effective' && doc.version) {
+      store.syncTemplateVersionsByDocument(doc.id, doc.version);
+    }
+
     store.updateDocument(doc.id, updates);
 
     if (selectedDoc?.id === doc.id) {
@@ -354,6 +359,11 @@ export function DocumentControlView() {
         approvedById: currentUser?.id 
       });
     });
+
+    // P1-3: Sync template versions when document is approved
+    if (doc.version) {
+      store.syncTemplateVersionsByDocument(doc.id, doc.version);
+    }
 
     if (selectedDoc?.id === doc.id) {
       setSelectedDoc({
