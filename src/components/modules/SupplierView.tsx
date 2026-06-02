@@ -4,12 +4,12 @@ import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn, formatDate } from '@/lib/utils';
-import type { Supplier, SupplierCategory, SupplierStatus, QualificationMethod } from '@/types/qms';
+import type { Supplier, SupplierCategory, SupplierStatus, QualificationMethod, SignatureType } from '@/types/qms';
 import {
   Truck, Plus, Search, ArrowRight, CheckCircle2, XCircle, AlertTriangle,
   Award, FileText, Edit3, Save, Star, CalendarClock, TrendingUp,
   Globe, User, Mail, Phone, MapPin, Shield, ClipboardCheck,
-  Building2, Siren, ChevronLeft, ChevronRight, ListChecks, FileSpreadsheet,
+  Building2, Siren, ChevronLeft, ChevronRight, ListChecks, ShieldCheck,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 
 const statusColors: Record<SupplierStatus, string> = {
   'Qualified': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
@@ -154,7 +155,6 @@ export function SupplierView() {
   const [formEmergencyContactPhone, setFormEmergencyContactPhone] = useState('');
   const [formQualificationMethod, setFormQualificationMethod] = useState<QualificationMethod>('On-Site Audit');
   const [formQualificationDocRef, setFormQualificationDocRef] = useState('');
-  const [formTemplateId, setFormTemplateId] = useState('');
 
   // Wizard state
   const [wizardStep, setWizardStep] = useState(0);
@@ -162,6 +162,10 @@ export function SupplierView() {
   // Inline performance score editing
   const [editingScore, setEditingScore] = useState(false);
   const [editScoreValue, setEditScoreValue] = useState('');
+
+  // E-signature state for supplier qualification/disqualification (21 CFR Part 11 / ISO 13485 §7.4)
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [pendingSupplierAction, setPendingSupplierAction] = useState<{ supplier: Supplier; action: 'qualify' | 'disqualify' } | null>(null);
 
   // Filtered suppliers
   const filteredSuppliers = suppliers.filter(s => {
@@ -219,7 +223,6 @@ export function SupplierView() {
     setFormEmergencyContactPhone('');
     setFormQualificationMethod('On-Site Audit');
     setFormQualificationDocRef('');
-    setFormTemplateId('');
   };
 
   const handleCreate = () => {
@@ -247,7 +250,6 @@ export function SupplierView() {
       emergencyContactPhone: formEmergencyContactPhone || undefined,
       qualificationMethod: formQualificationMethod,
       qualificationDocRef: formQualificationDocRef || undefined,
-      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       organizationId: 'org-001',
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
@@ -258,13 +260,14 @@ export function SupplierView() {
   };
 
   const handleStatusAdvancement = (supplier: Supplier, newStatus: SupplierStatus) => {
-    const updates: Partial<Supplier> = { status: newStatus };
+    // Require e-signature for qualification (21 CFR Part 11 / ISO 13485 §7.4)
     if (newStatus === 'Qualified') {
-      updates.qualificationDate = new Date().toISOString();
-      if (supplier.performanceScore === undefined || supplier.performanceScore === 0) {
-        updates.performanceScore = 80;
-      }
+      setPendingSupplierAction({ supplier, action: 'qualify' });
+      setShowSignatureModal(true);
+      return;
     }
+    // Other status changes don't require e-signature
+    const updates: Partial<Supplier> = { status: newStatus };
     store.updateSupplier(supplier.id, updates);
     if (selectedSupplier?.id === supplier.id) {
       setSelectedSupplier({ ...supplier, ...updates });
@@ -272,10 +275,40 @@ export function SupplierView() {
   };
 
   const handleDisqualify = (supplier: Supplier) => {
-    store.updateSupplier(supplier.id, { status: 'Disqualified' });
-    if (selectedSupplier?.id === supplier.id) {
-      setSelectedSupplier({ ...supplier, status: 'Disqualified' });
+    setPendingSupplierAction({ supplier, action: 'disqualify' });
+    setShowSignatureModal(true);
+  };
+
+  const handleSignatureConfirm = (data: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
+    if (!pendingSupplierAction) return;
+    const { supplier, action } = pendingSupplierAction;
+
+    if (action === 'qualify') {
+      const updates: Partial<Supplier> = {
+        status: 'Qualified',
+        qualificationDate: new Date().toISOString(),
+      };
+      if (supplier.performanceScore === undefined || supplier.performanceScore === 0) {
+        updates.performanceScore = 80;
+      }
+      store.updateSupplier(supplier.id, updates);
+      if (selectedSupplier?.id === supplier.id) {
+        setSelectedSupplier({ ...supplier, ...updates });
+      }
+    } else if (action === 'disqualify') {
+      store.updateSupplier(supplier.id, { status: 'Disqualified' });
+      if (selectedSupplier?.id === supplier.id) {
+        setSelectedSupplier({ ...supplier, status: 'Disqualified' });
+      }
     }
+
+    setPendingSupplierAction(null);
+    setShowSignatureModal(false);
+  };
+
+  const handleSignatureCancel = () => {
+    setPendingSupplierAction(null);
+    setShowSignatureModal(false);
   };
 
   const handleSaveScore = () => {
@@ -608,21 +641,6 @@ export function SupplierView() {
                 {formQualificationDocRef && <p className="text-sm"><span className="font-medium">Doc Reference:</span> {formQualificationDocRef}</p>}
                 {formEmergencyContactName && <p className="text-sm"><span className="font-medium">Emergency Contact:</span> {formEmergencyContactName}{formEmergencyContactPhone ? ` (${formEmergencyContactPhone})` : ''}</p>}
               </div>
-              <div className="grid gap-2">
-                <Label>Template associé (§4.2.4)</Label>
-                <Select value={formTemplateId} onValueChange={setFormTemplateId}>
-                  <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Aucun</SelectItem>
-                    {store.formTemplates
-                      .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'SUPPLIER' || !t.associatedModule || t.associatedModule === 'GENERAL'))
-                      .map(t => (
-                        <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-                      ))
-                    }
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
           </div>
         );
@@ -641,7 +659,7 @@ export function SupplierView() {
             <Truck className="h-6 w-6 text-primary" />
             Suppliers
           </h1>
-          <p className="text-muted-foreground mt-1">Supplier qualification and management <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §7.4</Badge> <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
+          <p className="text-muted-foreground mt-1">Supplier qualification and management <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §7.4</Badge></p>
         </div>
         {hasPermission('supplier.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -1327,28 +1345,6 @@ export function SupplierView() {
                   </div>
                 )}
 
-                {/* Hybrid Supervision: Template associé (§4.2.4) */}
-                {selectedSupplier.templateId && (() => {
-                  const tmpl = store.formTemplates.find(t => t.id === selectedSupplier.templateId);
-                  return tmpl ? (
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-semibold flex items-center gap-2">
-                        <FileSpreadsheet className="h-4 w-4 text-primary" />
-                        Template associé (§4.2.4)
-                      </h4>
-                      <div className="border rounded-md p-2 text-sm flex items-center justify-between">
-                        <div>
-                          <span className="font-medium">{tmpl.title}</span>
-                          <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
-                        </div>
-                        <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
-                          {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
-                        </Badge>
-                      </div>
-                    </div>
-                  ) : null;
-                })()}
-
                 {/* Status Advancement Actions */}
                 {hasPermission('supplier.update') && (
                   <div className="flex flex-wrap gap-2">
@@ -1416,6 +1412,16 @@ export function SupplierView() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Electronic Signature Modal for Supplier Qualification/Disqualification (21 CFR Part 11) */}
+      <ElectronicSignatureModal
+        open={showSignatureModal}
+        onClose={handleSignatureCancel}
+        onSign={handleSignatureConfirm}
+        recordTitle={pendingSupplierAction ? `${pendingSupplierAction.action === 'qualify' ? 'Qualification' : 'Disqualification'}: ${pendingSupplierAction.supplier.name}` : ''}
+        recordId={pendingSupplierAction?.supplier.id || ''}
+        signatureType="approval"
+      />
     </div>
   );
 }

@@ -1,13 +1,11 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Document, DocumentType, DocumentStatus, DocumentLevel, DocumentClassification, SignatureType, ElectronicSignature } from '@/types/qms';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
-import { BulkOperationsBar } from '@/components/shared/BulkOperationsBar';
 import { cn, formatDate } from '@/lib/utils';
-import { useTranslation } from '@/lib/i18n';
 import {
   FileText,
   Plus,
@@ -43,7 +41,6 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -72,7 +69,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useToast } from '@/hooks/use-toast';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -100,21 +96,21 @@ const levelColors: Record<DocumentLevel, string> = {
   4: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
 };
 
-const classificationKeys: Record<DocumentClassification, 'classificationInternal' | 'classificationExternal' | 'classificationRegulatory' | 'classificationConfidential'> = {
-  'Internal': 'classificationInternal',
-  'External': 'classificationExternal',
-  'Regulatory': 'classificationRegulatory',
-  'Confidential': 'classificationConfidential',
+const classificationLabels: Record<DocumentClassification, string> = {
+  'Internal': 'Interne',
+  'External': 'Externe',
+  'Regulatory': 'Réglementaire',
+  'Confidential': 'Confidentiel',
 };
 
 const statusFlow: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'];
 
 const WIZARD_STEPS = [
-  { id: 0, labelKey: 'stepIdentification' as const, icon: FileText },
-  { id: 1, labelKey: 'stepClassification' as const, icon: Tag },
-  { id: 2, labelKey: 'stepDescription' as const, icon: FileSearch },
-  { id: 3, labelKey: 'stepReviewApproval' as const, icon: UserCheck },
-  { id: 4, labelKey: 'stepSummary' as const, icon: ListChecks },
+  { id: 0, label: 'Document Identification', icon: FileText },
+  { id: 1, label: 'Classification & Level', icon: Tag },
+  { id: 2, label: 'Description & Scope', icon: FileSearch },
+  { id: 3, label: 'Review & Approval Setup', icon: UserCheck },
+  { id: 4, label: 'Summary & Submit', icon: ListChecks },
 ];
 
 function getNextStatus(current: DocumentStatus): DocumentStatus | null {
@@ -132,13 +128,8 @@ const documentLevels: DocumentLevel[] = [1, 2, 3, 4];
 export function DocumentControlView() {
   const { currentUser, hasPermission } = useAuth();
   const store = useQMSStore();
-  const t = useTranslation();
-  const { toast } = useToast();
   const documents = store.documents;
   const profiles = store.profiles;
-
-  // Bulk selection
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -309,24 +300,23 @@ export function DocumentControlView() {
     }
 
     // For other status transitions, just update directly
-    store.updateDocument(doc.id, {
-      status: next,
-      effectiveDate: (next as DocumentStatus) === 'Approved' || (next as DocumentStatus) === 'Effective' ? new Date().toISOString() : undefined,
-      lastReviewed: (next as DocumentStatus) === 'Under Review' ? new Date().toISOString() : undefined,
-    });
+    const updates: Partial<Document> = { status: next };
+    // Note: 'Approved' case is handled above via e-signature modal path
+    if (next === 'Effective') {
+      updates.lastReviewed = new Date().toISOString();
+    } else if (next === 'Under Review') {
+      updates.lastReviewed = new Date().toISOString();
+    }
 
     // Hybrid Supervision: Cascade obsolescence to linked templates (§4.2.3)
     if (next === 'Obsolete' || next === 'Withdrawn') {
       store.deactivateTemplatesByDocument(doc.id, `Document ${doc.documentNumber} became ${next}`);
     }
 
+    store.updateDocument(doc.id, updates);
+
     if (selectedDoc?.id === doc.id) {
-      setSelectedDoc({
-        ...doc,
-        status: next,
-        effectiveDate: (next as DocumentStatus) === 'Approved' || (next as DocumentStatus) === 'Effective' ? new Date().toISOString() : doc.effectiveDate,
-        lastReviewed: (next as DocumentStatus) === 'Under Review' ? new Date().toISOString() : doc.lastReviewed,
-      });
+      setSelectedDoc({ ...doc, ...updates });
     }
   };
 
@@ -357,11 +347,11 @@ export function DocumentControlView() {
     // Hybrid Supervision: Activate pending templates when document is approved
     const linkedTemplates = store.formTemplates.filter(t => t.documentId === doc.id && t.templateStatus === 'Pending Approval');
     linkedTemplates.forEach(t => {
-      store.updateFormTemplate(t.id, {
-        templateStatus: 'Approved',
-        isActive: true,
+      store.updateFormTemplate(t.id, { 
+        templateStatus: 'Approved', 
+        isActive: true, 
         approvedAt: new Date().toISOString(),
-        approvedById: currentUser?.id,
+        approvedById: currentUser?.id 
       });
     });
 
@@ -383,57 +373,6 @@ export function DocumentControlView() {
     setShowSignatureModal(false);
   };
 
-  // ── Bulk Operations ──
-  const handleBulkAction = useCallback(async (action: string, ids: string[], payload?: Record<string, unknown>) => {
-    try {
-      const res = await fetch('/api/documents/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, ids, payload }),
-      });
-      const json = await res.json();
-
-      if (json.success) {
-        if (action === 'export') {
-          // Download CSV
-          const csv = json.data.csv;
-          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = `documents-export-${new Date().toISOString().slice(0, 10)}.csv`;
-          link.click();
-          URL.revokeObjectURL(url);
-          toast({ title: 'Export Complete', description: `${json.data.affected} documents exported.` });
-        } else if (action === 'delete') {
-          // Mark as obsolete in local store
-          for (const id of ids) {
-            store.updateDocument(id, { status: 'Obsolete' });
-          }
-          toast({ title: 'Bulk Delete', description: `${json.data.affected} documents marked as obsolete.` });
-        } else if (action === 'changeStatus') {
-          const newStatus = payload?.status as DocumentStatus;
-          for (const id of ids) {
-            store.updateDocument(id, { status: newStatus });
-          }
-          toast({ title: 'Status Updated', description: `${json.data.affected} documents changed to "${newStatus}".` });
-        } else if (action === 'changeDepartment') {
-          const newDept = payload?.department as string;
-          for (const id of ids) {
-            store.updateDocument(id, { department: newDept });
-          }
-          toast({ title: 'Department Updated', description: `${json.data.affected} documents moved to "${newDept}".` });
-        }
-      } else {
-        toast({ title: 'Error', description: json.error || 'Bulk operation failed', variant: 'destructive' });
-      }
-    } catch {
-      toast({ title: 'Error', description: 'Failed to perform bulk operation', variant: 'destructive' });
-    }
-
-    setSelectedIds([]);
-  }, [store, toast]);
-
   // ── Render: Wizard Step Content ──
   const renderStepContent = () => {
     switch (wizardStep) {
@@ -442,7 +381,7 @@ export function DocumentControlView() {
         return (
           <div className="grid gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="doc-number">{t.modules.documents.documentNumber} *</Label>
+              <Label htmlFor="doc-number">Document Number *</Label>
               <Input
                 id="doc-number"
                 value={formDocNumber}
@@ -452,10 +391,10 @@ export function DocumentControlView() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="doc-type">{t.common.type} *</Label>
+                <Label htmlFor="doc-type">Type *</Label>
                 <Select value={formType} onValueChange={(v) => setFormType(v as DocumentType)}>
                   <SelectTrigger>
-                    <SelectValue placeholder={t.modules.documents.docTypePlaceholder} />
+                    <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
                     {documentTypes.map(type => (
@@ -465,19 +404,19 @@ export function DocumentControlView() {
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="doc-title-inline">{t.common.title} *</Label>
+                <Label htmlFor="doc-title-inline">Title *</Label>
                 <Input
                   id="doc-title-inline"
                   value={formTitle}
                   onChange={(e) => setFormTitle(e.target.value)}
-                  placeholder={t.modules.documents.docTitlePlaceholder}
+                  placeholder="Document title"
                 />
               </div>
             </div>
             <div className="bg-muted/30 rounded-md p-3 flex items-start gap-2">
               <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
               <p className="text-sm text-muted-foreground">
-                {t.modules.documents.namingConventionNote}
+                The document number should follow your organization&apos;s naming convention (e.g., SOP-QMS-001, WI-PROD-010).
               </p>
             </div>
           </div>
@@ -489,18 +428,18 @@ export function DocumentControlView() {
           <div className="grid gap-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label>{t.modules.documents.classification} *</Label>
+                <Label>Classification *</Label>
                 <Select value={formClassification} onValueChange={(v) => setFormClassification(v as DocumentClassification)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {documentClassifications.map(c => (
-                      <SelectItem key={c} value={c}>{t.modules.documents[classificationKeys[c]]}</SelectItem>
+                      <SelectItem key={c} value={c}>{classificationLabels[c]}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label>{t.modules.documents.documentLevel} *</Label>
+                <Label>Document Level *</Label>
                 <Select value={String(formLevel)} onValueChange={(v) => setFormLevel(Number(v) as DocumentLevel)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -513,7 +452,7 @@ export function DocumentControlView() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="doc-department">{t.common.department}</Label>
+                <Label htmlFor="doc-department">Department</Label>
                 <Input
                   id="doc-department"
                   value={formDepartment}
@@ -522,18 +461,18 @@ export function DocumentControlView() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="doc-retention">{t.modules.documents.retentionPeriod}</Label>
+                <Label htmlFor="doc-retention">Retention Period</Label>
                 <Input
                   id="doc-retention"
                   value={formRetentionPeriod}
                   onChange={(e) => setFormRetentionPeriod(e.target.value)}
-                  placeholder={t.modules.documents.retentionPlaceholder}
+                  placeholder="e.g. 5 years"
                 />
               </div>
             </div>
             {/* Document Level Legend */}
             <div className="bg-muted/30 rounded-md p-3 space-y-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t.modules.documents.documentLevelHierarchy}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Document Level Hierarchy</p>
               <div className="grid grid-cols-2 gap-2">
                 {documentLevels.map(l => (
                   <div key={l} className="flex items-center gap-2">
@@ -541,10 +480,10 @@ export function DocumentControlView() {
                       {levelLabels[l]}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
-                      {l === 1 && t.modules.documents.levelN1}
-                      {l === 2 && t.modules.documents.levelN2}
-                      {l === 3 && t.modules.documents.levelN3}
-                      {l === 4 && t.modules.documents.levelN4}
+                      {l === 1 && 'Policy / Manual'}
+                      {l === 2 && 'SOP / Standard'}
+                      {l === 3 && 'Work Instruction'}
+                      {l === 4 && 'Form / Record'}
                     </span>
                   </div>
                 ))}
@@ -558,7 +497,7 @@ export function DocumentControlView() {
         return (
           <div className="grid gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="doc-description">{t.common.description} *</Label>
+              <Label htmlFor="doc-description">Description *</Label>
               <Textarea
                 id="doc-description"
                 value={formDescription}
@@ -568,7 +507,7 @@ export function DocumentControlView() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="doc-scope">{t.common.scope}</Label>
+              <Label htmlFor="doc-scope">Scope / Périmètre</Label>
               <Textarea
                 id="doc-scope"
                 value={formScope}
@@ -578,11 +517,11 @@ export function DocumentControlView() {
               />
             </div>
             <div className="grid gap-2">
-              <Label>{t.modules.documents.parentDocument}</Label>
+              <Label>Parent Document</Label>
               <Select value={formParentDocId} onValueChange={setFormParentDocId}>
-                <SelectTrigger><SelectValue placeholder={t.modules.documents.selectParent} /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select parent document" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">{t.modules.documents.noneTopLevel}</SelectItem>
+                  <SelectItem value="none">None (top-level)</SelectItem>
                   {documents.filter(d => d.status === 'Approved').map(d => (
                     <SelectItem key={d.id} value={d.id}>{d.documentNumber} — {d.title}</SelectItem>
                   ))}
@@ -593,9 +532,9 @@ export function DocumentControlView() {
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-3 flex items-start gap-2">
                 <GitBranch className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
                 <div className="text-sm">
-                  <p className="text-blue-700 dark:text-blue-400 font-medium">{t.modules.documents.linkedToParent}</p>
+                  <p className="text-blue-700 dark:text-blue-400 font-medium">Linked to Parent Document</p>
                   <p className="text-blue-600 dark:text-blue-400/80 text-xs mt-0.5">
-                    {t.modules.documents.linkedToParentNote}
+                    This document will be shown as a child of{' '}
                     {documents.find(d => d.id === formParentDocId)?.documentNumber || 'selected parent'}.
                   </p>
                 </div>
@@ -610,9 +549,9 @@ export function DocumentControlView() {
           <div className="grid gap-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label>{t.modules.documents.approver} *</Label>
+                <Label>Approver *</Label>
                 <Select value={formApprover} onValueChange={setFormApprover}>
-                  <SelectTrigger><SelectValue placeholder={t.modules.documents.selectApprover} /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select approver" /></SelectTrigger>
                   <SelectContent>
                     {profiles.map(p => (
                       <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>
@@ -621,7 +560,7 @@ export function DocumentControlView() {
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="effective-date">{t.modules.documents.effectiveDate} *</Label>
+                <Label htmlFor="effective-date">Effective Date *</Label>
                 <Input
                   id="effective-date"
                   type="date"
@@ -632,7 +571,7 @@ export function DocumentControlView() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="next-review-date">{t.modules.documents.nextReviewDate}</Label>
+                <Label htmlFor="next-review-date">Next Review Date</Label>
                 <Input
                   id="next-review-date"
                   type="date"
@@ -641,7 +580,7 @@ export function DocumentControlView() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="regulatory-ref">{t.modules.documents.regulatoryReferences}</Label>
+                <Label htmlFor="regulatory-ref">Regulatory References</Label>
                 <Input
                   id="regulatory-ref"
                   value={formRegulatoryRef}
@@ -653,9 +592,9 @@ export function DocumentControlView() {
             <div className="bg-muted/30 rounded-md p-3 flex items-start gap-2">
               <ShieldCheck className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
               <div className="text-sm">
-                <p className="font-medium text-muted-foreground">{t.modules.documents.electronicSignatureRequired}</p>
+                <p className="font-medium text-muted-foreground">Electronic Signature Required</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {t.modules.documents.electronicSignatureNote}
+                  Advancing this document to &quot;Approved&quot; status will require an electronic signature per 21 CFR Part 11 and EU Annex 11.
                 </p>
               </div>
             </div>
@@ -669,52 +608,52 @@ export function DocumentControlView() {
             <div className="bg-muted/30 rounded-lg p-4 space-y-3 max-h-[400px] overflow-y-auto">
               <h4 className="font-semibold text-sm flex items-center gap-2">
                 <ListChecks className="h-4 w-4 text-primary" />
-                {t.modules.documents.reviewSummary}
+                Review Summary
               </h4>
 
               {/* Step 1 Summary */}
               <div className="border rounded-md p-3 space-y-1">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t.modules.documents.stepIdentification}</p>
-                <p className="text-sm"><span className="font-medium">{t.modules.documents.documentNumber}:</span> <span className="font-mono">{formDocNumber || '—'}</span></p>
-                <p className="text-sm"><span className="font-medium">{t.common.title}:</span> {formTitle || '—'}</p>
-                <p className="text-sm"><span className="font-medium">{t.common.type}:</span> {formType}</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 1 — Document Identification</p>
+                <p className="text-sm"><span className="font-medium">Document Number:</span> <span className="font-mono">{formDocNumber || '—'}</span></p>
+                <p className="text-sm"><span className="font-medium">Title:</span> {formTitle || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Type:</span> {formType}</p>
               </div>
 
               {/* Step 2 Summary */}
               <div className="border rounded-md p-3 space-y-1">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t.modules.documents.stepClassification}</p>
-                <p className="text-sm"><span className="font-medium">{t.modules.documents.classification}:</span> {t.modules.documents[classificationKeys[formClassification]]}</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 2 — Classification & Level</p>
+                <p className="text-sm"><span className="font-medium">Classification:</span> {classificationLabels[formClassification]}</p>
                 <p className="text-sm">
-                  <span className="font-medium">{t.modules.documents.documentLevel}:</span>{' '}
+                  <span className="font-medium">Document Level:</span>{' '}
                   <Badge className={cn('text-xs font-mono', levelColors[formLevel])} variant="secondary">{levelLabels[formLevel]}</Badge>
                 </p>
-                <p className="text-sm"><span className="font-medium">{t.common.department}:</span> {formDepartment || '—'}</p>
-                <p className="text-sm"><span className="font-medium">{t.modules.documents.retentionPeriod}:</span> {formRetentionPeriod || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Department:</span> {formDepartment || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Retention Period:</span> {formRetentionPeriod || '—'}</p>
               </div>
 
               {/* Step 3 Summary */}
               <div className="border rounded-md p-3 space-y-1">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t.modules.documents.stepDescription}</p>
-                <p className="text-sm"><span className="font-medium">{t.common.description}:</span> {formDescription || '—'}</p>
-                {formScope && <p className="text-sm"><span className="font-medium">{t.common.scope}:</span> {formScope}</p>}
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 3 — Description & Scope</p>
+                <p className="text-sm"><span className="font-medium">Description:</span> {formDescription || '—'}</p>
+                {formScope && <p className="text-sm"><span className="font-medium">Scope:</span> {formScope}</p>}
                 <p className="text-sm">
-                  <span className="font-medium">{t.modules.documents.parentDocument}:</span>{' '}
+                  <span className="font-medium">Parent Document:</span>{' '}
                   {formParentDocId && formParentDocId !== 'none'
                     ? (() => {
                         const parent = documents.find(d => d.id === formParentDocId);
                         return parent ? `${parent.documentNumber} — ${parent.title}` : formParentDocId;
                       })()
-                    : t.modules.documents.noneTopLevel}
+                    : 'None (top-level)'}
                 </p>
               </div>
 
               {/* Step 4 Summary */}
               <div className="border rounded-md p-3 space-y-1">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t.modules.documents.stepReviewApproval}</p>
-                <p className="text-sm"><span className="font-medium">{t.modules.documents.approver}:</span> {formApprover ? getUserName(formApprover) : '—'}</p>
-                <p className="text-sm"><span className="font-medium">{t.modules.documents.effectiveDate}:</span> {formEffectiveDate || '—'}</p>
-                <p className="text-sm"><span className="font-medium">{t.modules.documents.nextReviewDate}:</span> {formNextReview || '—'}</p>
-                {formRegulatoryRef && <p className="text-sm"><span className="font-medium">{t.modules.documents.regulatoryReferences}:</span> {formRegulatoryRef}</p>}
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Step 4 — Review & Approval Setup</p>
+                <p className="text-sm"><span className="font-medium">Approver:</span> {formApprover ? getUserName(formApprover) : '—'}</p>
+                <p className="text-sm"><span className="font-medium">Effective Date:</span> {formEffectiveDate || '—'}</p>
+                <p className="text-sm"><span className="font-medium">Next Review Date:</span> {formNextReview || '—'}</p>
+                {formRegulatoryRef && <p className="text-sm"><span className="font-medium">Regulatory References:</span> {formRegulatoryRef}</p>}
               </div>
             </div>
           </div>
@@ -729,7 +668,7 @@ export function DocumentControlView() {
   const summaryCounts = {
     total: documents.length,
     approved: documents.filter(d => d.status === 'Approved' || d.status === 'Effective').length,
-    inReview: documents.filter(d => d.status === 'Under Review').length,
+    inReview: documents.filter(d => d.status === 'Under Review' || (d.status as string) === 'In Review').length,
     draft: documents.filter(d => d.status === 'Draft').length,
     obsolete: documents.filter(d => d.status === 'Obsolete' || d.status === 'Withdrawn').length,
   };
@@ -741,14 +680,14 @@ export function DocumentControlView() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <FileText className="h-6 w-6 text-primary" />
-            {t.modules.documents.documentControl}
+            Document Control
           </h1>
-          <p className="text-muted-foreground mt-1">{t.modules.documents.documentControl} <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2</Badge></p>
+          <p className="text-muted-foreground mt-1">Gestion des documents qualité / Quality Document Management <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2</Badge></p>
         </div>
         {hasPermission('documents.create') && (
           <Button onClick={() => { resetForm(); setShowNewDocDialog(true); }}>
             <Plus className="h-4 w-4 mr-2" />
-            {t.modules.documents.newDocument}
+            New Document
           </Button>
         )}
       </div>
@@ -759,7 +698,7 @@ export function DocumentControlView() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">{t.common.total}</span>
+              <span className="text-sm text-muted-foreground">Total</span>
             </div>
             <span className="text-2xl font-bold">{summaryCounts.total}</span>
           </CardContent>
@@ -768,7 +707,7 @@ export function DocumentControlView() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-green-500" />
-              <span className="text-sm text-muted-foreground">{t.statuses.approved}</span>
+              <span className="text-sm text-muted-foreground">Approved</span>
             </div>
             <span className="text-2xl font-bold text-green-600">{summaryCounts.approved}</span>
           </CardContent>
@@ -777,7 +716,7 @@ export function DocumentControlView() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-amber-500" />
-              <span className="text-sm text-muted-foreground">{t.statuses.inReview}</span>
+              <span className="text-sm text-muted-foreground">In Review</span>
             </div>
             <span className="text-2xl font-bold text-amber-600">{summaryCounts.inReview}</span>
           </CardContent>
@@ -786,7 +725,7 @@ export function DocumentControlView() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
               <Edit className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-muted-foreground">{t.statuses.draft}</span>
+              <span className="text-sm text-muted-foreground">Draft</span>
             </div>
             <span className="text-2xl font-bold text-gray-600">{summaryCounts.draft}</span>
           </CardContent>
@@ -795,7 +734,7 @@ export function DocumentControlView() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
               <XCircle className="h-4 w-4 text-red-500" />
-              <span className="text-sm text-muted-foreground">{t.statuses.obsolete}</span>
+              <span className="text-sm text-muted-foreground">Obsolete</span>
             </div>
             <span className="text-2xl font-bold text-red-600">{summaryCounts.obsolete}</span>
           </CardContent>
@@ -807,7 +746,7 @@ export function DocumentControlView() {
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder={t.modules.documents.searchDocuments}
+            placeholder="Search documents..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9"
@@ -818,7 +757,7 @@ export function DocumentControlView() {
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t.common.allTypes}</SelectItem>
+            <SelectItem value="all">All Types</SelectItem>
             {documentTypes.map(type => (
               <SelectItem key={type} value={type}>{type}</SelectItem>
             ))}
@@ -829,7 +768,7 @@ export function DocumentControlView() {
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t.common.allStatuses}</SelectItem>
+            <SelectItem value="all">All Statuses</SelectItem>
             {documentStatuses.map(status => (
               <SelectItem key={status} value={status}>{status}</SelectItem>
             ))}
@@ -844,27 +783,14 @@ export function DocumentControlView() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[40px]">
-                    <Checkbox
-                      checked={filteredDocs.length > 0 && filteredDocs.every(d => selectedIds.includes(d.id))}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedIds(filteredDocs.map(d => d.id));
-                        } else {
-                          setSelectedIds([]);
-                        }
-                      }}
-                      aria-label="Select all"
-                    />
-                  </TableHead>
-                  <TableHead className="w-[140px]">{t.modules.documents.docNumber}</TableHead>
-                  <TableHead>{t.common.title}</TableHead>
-                  <TableHead className="w-[80px]">{t.modules.documents.level}</TableHead>
-                  <TableHead className="w-[90px]">{t.common.type}</TableHead>
-                  <TableHead className="w-[70px]">{t.common.version}</TableHead>
-                  <TableHead className="w-[110px]">{t.common.status}</TableHead>
-                  <TableHead className="w-[120px]">{t.common.department}</TableHead>
-                  <TableHead className="w-[100px]">{t.modules.documents.effective}</TableHead>
+                  <TableHead className="w-[140px]">Doc Number</TableHead>
+                  <TableHead>Title</TableHead>
+                  <TableHead className="w-[80px]">Level</TableHead>
+                  <TableHead className="w-[90px]">Type</TableHead>
+                  <TableHead className="w-[70px]">Version</TableHead>
+                  <TableHead className="w-[110px]">Status</TableHead>
+                  <TableHead className="w-[120px]">Department</TableHead>
+                  <TableHead className="w-[100px]">Effective</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -872,22 +798,8 @@ export function DocumentControlView() {
                 {filteredDocs.map((doc) => {
                   const childDocs = getChildDocuments(doc.id);
                   const parentDoc = getParentDocument(doc.parentDocumentId);
-                  const isSelected = selectedIds.includes(doc.id);
                   return (
-                    <TableRow key={doc.id} className={cn('hover:bg-muted/50 cursor-pointer', isSelected && 'bg-primary/5')} onClick={() => openDetail(doc)}>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedIds(prev => [...prev, doc.id]);
-                            } else {
-                              setSelectedIds(prev => prev.filter(id => id !== doc.id));
-                            }
-                          }}
-                          aria-label={`Select ${doc.documentNumber}`}
-                        />
-                      </TableCell>
+                    <TableRow key={doc.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => openDetail(doc)}>
                       <TableCell className="font-mono text-xs">{doc.documentNumber}</TableCell>
                       <TableCell>
                         <div className="min-w-0">
@@ -910,12 +822,6 @@ export function DocumentControlView() {
                                 </span>
                               )}
                             </div>
-                          )}
-                          {/* Hybrid Supervision indicator */}
-                          {store.formTemplates.some(t => t.documentId === doc.id) && (
-                            <Badge variant="outline" className="text-[10px] border-purple-300 text-purple-700 dark:border-purple-700 dark:text-purple-400 ml-1">
-                              §4.2.3
-                            </Badge>
                           )}
                         </div>
                       </TableCell>
@@ -954,15 +860,15 @@ export function DocumentControlView() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDetail(doc); }}>
                               <Eye className="mr-2 h-4 w-4" />
-                              {t.common.viewDetails}
+                              View Details
                             </DropdownMenuItem>
-                            {hasPermission('documents.update') && doc.status !== 'Obsolete' && (
+                            {hasPermission('documents.update') && doc.status !== 'Obsolete' && doc.status !== 'Withdrawn' && (
                               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDetail(doc); }}>
                                 <Edit className="mr-2 h-4 w-4" />
-                                {t.common.edit}
+                                Edit
                               </DropdownMenuItem>
                             )}
-                            {hasPermission('documents.approve') && getNextStatus(doc.status) && doc.status !== 'Obsolete' && (
+                            {hasPermission('documents.approve') && getNextStatus(doc.status) && doc.status !== 'Obsolete' && doc.status !== 'Withdrawn' && (
                               <>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleAdvanceStatus(doc); }}>
@@ -971,7 +877,7 @@ export function DocumentControlView() {
                                   ) : (
                                     <ArrowRight className="mr-2 h-4 w-4" />
                                   )}
-                                  {t.common.advanceTo} {getNextStatus(doc.status)}
+                                  Advance to {getNextStatus(doc.status)}
                                 </DropdownMenuItem>
                               </>
                             )}
@@ -980,7 +886,7 @@ export function DocumentControlView() {
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
                                   <Trash2 className="mr-2 h-4 w-4" />
-                                  {t.common.delete}
+                                  Delete
                                 </DropdownMenuItem>
                               </>
                             )}
@@ -992,8 +898,8 @@ export function DocumentControlView() {
                 })}
                 {filteredDocs.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                      {t.modules.documents.noDocsFound}
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                      No documents found matching filters
                     </TableCell>
                   </TableRow>
                 )}
@@ -1009,7 +915,7 @@ export function DocumentControlView() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
-              {t.modules.documents.createNewDocument}
+              Create New Document
             </DialogTitle>
           </DialogHeader>
 
@@ -1037,7 +943,7 @@ export function DocumentControlView() {
                         idx === wizardStep ? 'border-blue-500 text-blue-600' : 'border-gray-300 text-gray-400',
                       )}>{idx + 1}</span>
                     )}
-                    <span className="hidden sm:inline">{t.modules.documents[step.labelKey]}</span>
+                    <span className="hidden sm:inline">{step.label}</span>
                   </button>
                   {idx < WIZARD_STEPS.length - 1 && (
                     <div className={cn('flex-1 h-0.5 mx-2', idx < wizardStep ? 'bg-green-300' : 'bg-gray-200')} />
@@ -1057,20 +963,20 @@ export function DocumentControlView() {
 
           {/* Navigation Buttons */}
           <div className="flex items-center justify-between pt-4 border-t">
-            <Button variant="outline" onClick={() => { resetForm(); setShowNewDocDialog(false); }} disabled={false}>{t.common.cancel}</Button>
+            <Button variant="outline" onClick={() => { resetForm(); setShowNewDocDialog(false); }} disabled={false}>Cancel</Button>
             <div className="flex gap-2">
               {wizardStep > 0 && (
                 <Button variant="outline" onClick={goPrev}>
-                  <ChevronLeft className="h-4 w-4 mr-1" />{t.common.previous}
+                  <ChevronLeft className="h-4 w-4 mr-1" />Previous
                 </Button>
               )}
               {wizardStep < WIZARD_STEPS.length - 1 ? (
                 <Button onClick={goNext} disabled={!isStepValid(wizardStep)} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  {t.common.next}<ChevronRight className="h-4 w-4 ml-1" />
+                  Next<ChevronRight className="h-4 w-4 ml-1" />
                 </Button>
               ) : (
                 <Button onClick={handleCreate} disabled={!isStepValid(wizardStep)} className="bg-green-600 hover:bg-green-700 text-white">
-                  {t.common.create}
+                  Create Document
                 </Button>
               )}
             </div>
@@ -1101,7 +1007,7 @@ export function DocumentControlView() {
                     </Badge>
                   )}
                   {selectedDoc.classification && (
-                    <Badge variant="outline">{selectedDoc.classification ? t.modules.documents[classificationKeys[selectedDoc.classification]] : '-'}</Badge>
+                    <Badge variant="outline">{classificationLabels[selectedDoc.classification]}</Badge>
                   )}
                   <Badge variant="outline" className="font-mono">
                     <History className="h-3 w-3 mr-1" />
@@ -1129,66 +1035,66 @@ export function DocumentControlView() {
                 {/* Key Information */}
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                   <div>
-                    <span className="text-muted-foreground">{t.modules.documents.documentNumber}:</span>{' '}
+                    <span className="text-muted-foreground">Document Number:</span>{' '}
                     <span className="font-mono font-medium">{selectedDoc.documentNumber}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">{t.common.version}:</span>{' '}
+                    <span className="text-muted-foreground">Version:</span>{' '}
                     <span className="font-medium">{selectedDoc.version}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">{t.common.type}:</span>{' '}
+                    <span className="text-muted-foreground">Type:</span>{' '}
                     <span className="font-medium">{selectedDoc.type}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">{t.common.department}:</span>{' '}
+                    <span className="text-muted-foreground">Department:</span>{' '}
                     <span className="font-medium">{selectedDoc.department || '-'}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">{t.modules.documents.classification}:</span>{' '}
-                    <span className="font-medium">{selectedDoc.classification ? t.modules.documents[classificationKeys[selectedDoc.classification]] : '-'}</span>
+                    <span className="text-muted-foreground">Classification:</span>{' '}
+                    <span className="font-medium">{selectedDoc.classification ? classificationLabels[selectedDoc.classification] : '-'}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">{t.modules.documents.retentionPeriod}:</span>{' '}
+                    <span className="text-muted-foreground">Retention:</span>{' '}
                     <span className="font-medium">{selectedDoc.retentionPeriod || '-'}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">{t.common.owner}:</span>{' '}
+                    <span className="text-muted-foreground">Owner:</span>{' '}
                     <span className="font-medium">{selectedDoc.owner || getUserName(selectedDoc.createdById)}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">{t.common.createdAt}:</span>{' '}
+                    <span className="text-muted-foreground">Created By:</span>{' '}
                     <span className="font-medium">{getUserName(selectedDoc.createdById)}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">{t.common.createdAt}:</span>{' '}
+                    <span className="text-muted-foreground">Created:</span>{' '}
                     <span className="font-medium">{formatDate(selectedDoc.createdAt)}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">{t.common.updatedAt}:</span>{' '}
+                    <span className="text-muted-foreground">Updated:</span>{' '}
                     <span className="font-medium">{formatDate(selectedDoc.updatedAt)}</span>
                   </div>
                   {selectedDoc.effectiveDate && (
                     <div>
-                      <span className="text-muted-foreground">{t.modules.documents.effectiveDate}:</span>{' '}
+                      <span className="text-muted-foreground">Effective Date:</span>{' '}
                       <span className="font-medium">{formatDate(selectedDoc.effectiveDate)}</span>
                     </div>
                   )}
                   {selectedDoc.expirationDate && (
                     <div>
-                      <span className="text-muted-foreground">{t.modules.documents.expirationDate}:</span>{' '}
+                      <span className="text-muted-foreground">Expiration:</span>{' '}
                       <span className="font-medium">{formatDate(selectedDoc.expirationDate)}</span>
                     </div>
                   )}
                   {selectedDoc.lastReviewed && (
                     <div>
-                      <span className="text-muted-foreground">{t.modules.documents.effectiveDate}:</span>{' '}
+                      <span className="text-muted-foreground">Last Reviewed:</span>{' '}
                       <span className="font-medium">{formatDate(selectedDoc.lastReviewed)}</span>
                     </div>
                   )}
                   {selectedDoc.nextReview && (
                     <div>
-                      <span className="text-muted-foreground">{t.modules.documents.nextReviewDate}:</span>{' '}
+                      <span className="text-muted-foreground">Next Review:</span>{' '}
                       <span className="font-medium">{formatDate(selectedDoc.nextReview)}</span>
                     </div>
                   )}
@@ -1199,7 +1105,7 @@ export function DocumentControlView() {
                 {/* Description */}
                 {selectedDoc.description && (
                   <div>
-                    <h4 className="font-medium text-sm mb-1">{t.common.description}</h4>
+                    <h4 className="font-medium text-sm mb-1">Description</h4>
                     <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDoc.description}</p>
                   </div>
                 )}
@@ -1207,7 +1113,7 @@ export function DocumentControlView() {
                 {/* Scope */}
                 {selectedDoc.scope && (
                   <div>
-                    <h4 className="font-medium text-sm mb-1">{t.common.scope}</h4>
+                    <h4 className="font-medium text-sm mb-1">Scope / Périmètre</h4>
                     <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDoc.scope}</p>
                   </div>
                 )}
@@ -1215,7 +1121,7 @@ export function DocumentControlView() {
                 {/* References */}
                 {selectedDoc.references && (
                   <div>
-                    <h4 className="font-medium text-sm mb-1">{t.modules.documents.regulatoryReferences}</h4>
+                    <h4 className="font-medium text-sm mb-1">References</h4>
                     <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDoc.references}</p>
                   </div>
                 )}
@@ -1225,12 +1131,12 @@ export function DocumentControlView() {
                   <div>
                     <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
                       <GitBranch className="h-4 w-4" />
-                      {t.modules.documentHierarchy.title}
+                      Document Hierarchy / Hiérarchie des documents
                     </h4>
                     <div className="bg-muted/30 p-3 rounded-md space-y-2">
                       {getParentDocument(selectedDoc.parentDocumentId) && (
                         <div className="flex items-center gap-2 text-sm">
-                          <span className="text-muted-foreground">{t.modules.documents.parentDocument}:</span>
+                          <span className="text-muted-foreground">Parent:</span>
                           <Badge variant="outline" className="font-mono text-xs cursor-pointer" onClick={() => openDetail(getParentDocument(selectedDoc.parentDocumentId)!)}>
                             ↑ {getParentDocument(selectedDoc.parentDocumentId)!.documentNumber}
                           </Badge>
@@ -1239,7 +1145,7 @@ export function DocumentControlView() {
                       )}
                       {getChildDocuments(selectedDoc.id).length > 0 && (
                         <div>
-                          <span className="text-sm text-muted-foreground">{t.modules.documents.linkedToParent}:</span>
+                          <span className="text-sm text-muted-foreground">Child documents:</span>
                           <div className="flex flex-wrap gap-1 mt-1">
                             {getChildDocuments(selectedDoc.id).map(child => (
                               <Badge key={child.id} variant="outline" className="font-mono text-xs cursor-pointer" onClick={() => openDetail(child)}>
@@ -1258,7 +1164,7 @@ export function DocumentControlView() {
                   <div>
                     <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
                       <ShieldCheck className="h-4 w-4" />
-                      {t.modules.documents.electronicSignatureRequired}
+                      Electronic Signatures / Signatures électroniques
                     </h4>
                     <div className="space-y-2">
                       {selectedDoc.signatures.map((sig) => (
@@ -1280,51 +1186,17 @@ export function DocumentControlView() {
                   </div>
                 )}
 
-                {/* Hybrid Supervision: Linked Templates (§4.2.3) */}
-                {store.formTemplates.filter(t => t.documentId === selectedDoc.id).length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold flex items-center gap-2">
-                      <Layers className="h-4 w-4 text-primary" />
-                      Templates supervisés (§4.2.3)
-                      <Badge variant="outline" className="text-[10px]">Supervision</Badge>
-                    </h4>
-                    <div className="space-y-1">
-                      {store.formTemplates.filter(t => t.documentId === selectedDoc.id).map(template => (
-                        <div key={template.id} className="flex items-center justify-between border rounded-md p-2 text-sm">
-                          <div>
-                            <span className="font-medium">{template.title}</span>
-                            <span className="text-muted-foreground ml-2">v{template.version}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge className={cn('text-xs',
-                              template.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                              template.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                              template.templateStatus === 'Pending Approval' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                              'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
-                            )} variant="secondary">
-                              {template.templateStatus || (template.isActive ? 'Approved' : 'Draft')}
-                            </Badge>
-                            <Badge variant="outline" className="text-xs">
-                              {template.instances?.length || store.formInstances.filter(i => i.templateId === template.id).length} instances
-                            </Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Advance Status Button */}
-                {hasPermission('documents.approve') && getNextStatus(selectedDoc.status) && selectedDoc.status !== 'Obsolete' && (
+                {hasPermission('documents.approve') && getNextStatus(selectedDoc.status) && selectedDoc.status !== 'Obsolete' && selectedDoc.status !== 'Withdrawn' && (
                   <Button className="w-full" onClick={() => handleAdvanceStatus(selectedDoc)}>
                     {getNextStatus(selectedDoc.status) === 'Approved' ? (
                       <>
                         <ShieldCheck className="h-4 w-4 mr-2" />
-                        {t.modules.documents.electronicSignatureRequired}
+                        Approve with Electronic Signature
                       </>
                     ) : (
                       <>
-                        {t.common.advanceTo} {getNextStatus(selectedDoc.status)}
+                        Advance to {getNextStatus(selectedDoc.status)}
                         <ArrowRight className="h-4 w-4 ml-2" />
                       </>
                     )}
@@ -1344,14 +1216,6 @@ export function DocumentControlView() {
         recordTitle={pendingStatusAdvance ? `${pendingStatusAdvance.documentNumber} — ${pendingStatusAdvance.title}` : ''}
         recordId={pendingStatusAdvance?.id || ''}
         signatureType="approval"
-      />
-
-      {/* Bulk Operations Bar */}
-      <BulkOperationsBar
-        selectedIds={selectedIds}
-        onAction={handleBulkAction}
-        onClearSelection={() => setSelectedIds([])}
-        entityType="document"
       />
     </div>
   );

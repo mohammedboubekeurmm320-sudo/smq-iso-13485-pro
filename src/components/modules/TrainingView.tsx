@@ -10,7 +10,7 @@ import {
   GraduationCap, Plus, Search, CheckCircle2, Clock, AlertTriangle,
   Eye, ArrowRight, FileText, BookOpen, Play, AlertCircle,
   ChevronLeft, ChevronRight, ClipboardCheck, Award, Shield,
-  Calendar, User, Target, Monitor, Timer, FileCheck, FileSpreadsheet,
+  Calendar, User, Target, Monitor, Timer, FileCheck,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -147,7 +147,6 @@ export function TrainingView() {
   const [formCertificationValidity, setFormCertificationValidity] = useState<TrainingExtendedMeta['certificationValidity']>('');
   const [formApplicableStandards, setFormApplicableStandards] = useState('');
   const [formCategory, setFormCategory] = useState<TrainingExtendedMeta['category']>('');
-  const [formTemplateId, setFormTemplateId] = useState('');
 
   // Extended metadata store (keyed by training ID)
   const [extendedMeta, setExtendedMeta] = useState<Record<string, TrainingExtendedMeta>>({});
@@ -213,7 +212,6 @@ export function TrainingView() {
     setFormCertificationValidity('');
     setFormApplicableStandards('');
     setFormCategory('');
-    setFormTemplateId('');
   };
 
   // ── Step validation ──
@@ -237,21 +235,7 @@ export function TrainingView() {
   const handleCreate = () => {
     if (!formTitle.trim() || !formAssignedTo || !formDueDate) return;
     const id = `train-${Date.now()}`;
-    const newTraining: Training = {
-      id,
-      title: formTitle.trim(),
-      description: formDescription.trim() || undefined,
-      type: formType,
-      status: 'Planned',
-      assignedTo: formAssignedTo,
-      dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
-      documentId: formDocumentId && formDocumentId !== 'none' ? formDocumentId : undefined,
-      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
-      organizationId: 'org-001',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    // Store extended metadata locally
+    // Build extended meta object from form state
     const meta: TrainingExtendedMeta = {
       regulatoryReference: formRegulatoryReference.trim() || undefined,
       materialsDescription: formMaterialsDescription.trim() || undefined,
@@ -268,6 +252,35 @@ export function TrainingView() {
       applicableStandards: formApplicableStandards.trim() || undefined,
       category: formCategory || undefined,
     };
+    const newTraining: Training = {
+      id,
+      title: formTitle.trim(),
+      description: formDescription.trim() || undefined,
+      type: formType,
+      status: 'Planned',
+      assignedTo: formAssignedTo,
+      dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
+      documentId: formDocumentId && formDocumentId !== 'none' ? formDocumentId : undefined,
+      // --- P0-3: Persist extended metadata directly in Training record (previously lost in local state) ---
+      regulatoryReference: meta.regulatoryReference || undefined,
+      materialsDescription: meta.materialsDescription || undefined,
+      duration: meta.duration || undefined,
+      deliveryMethod: meta.deliveryMethod || undefined,
+      trainer: meta.trainer || undefined,
+      priority: meta.priority || undefined,
+      assessmentRequired: meta.assessmentRequired,
+      assessmentMethod: meta.assessmentMethod || undefined,
+      passingScore: meta.passingScore || undefined,
+      retrainingInterval: meta.retrainingInterval || undefined,
+      certificationRequired: meta.certificationRequired,
+      certificationValidity: meta.certificationValidity || undefined,
+      applicableStandards: meta.applicableStandards || undefined,
+      trainingCategory: meta.category || undefined,
+      organizationId: 'org-001',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    // Keep local state as backup / for legacy compatibility
     setExtendedMeta(prev => ({ ...prev, [id]: meta }));
     store.addTraining(newTraining);
     resetForm();
@@ -696,23 +709,6 @@ export function TrainingView() {
             </div>
 
             {/* ISO 13485 §6.2 Verification Note */}
-            <div className="grid gap-2">
-              <Label>Template associé (§4.2.4)</Label>
-              <Select value={formTemplateId} onValueChange={setFormTemplateId}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Aucun</SelectItem>
-                  {store.formTemplates
-                    .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'TRAINING' || !t.associatedModule || t.associatedModule === 'GENERAL'))
-                    .map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-                    ))
-                  }
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* ISO 13485 §6.2 Verification Note */}
             <div className="bg-primary/5 border border-primary/20 rounded-md p-3 flex items-start gap-2">
               <Shield className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
               <div className="text-sm">
@@ -742,7 +738,7 @@ export function TrainingView() {
             <GraduationCap className="h-6 w-6 text-primary" />
             Training
           </h1>
-          <p className="text-muted-foreground mt-1">Training management and compliance tracking (ISO 13485 §6.2) <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
+          <p className="text-muted-foreground mt-1">Training management and compliance tracking (ISO 13485 §6.2)</p>
         </div>
         {hasPermission('training.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -1048,13 +1044,13 @@ export function TrainingView() {
                       {effectiveStatus}
                     </Badge>
                     <Badge variant="outline">{selectedTraining.type}</Badge>
-                    {meta?.priority && (
-                      <Badge className={cn(getPriorityColor(meta.priority))} variant="secondary">
-                        {meta.priority}
+                    {(selectedTraining.priority || meta?.priority) && (
+                      <Badge className={cn(getPriorityColor(selectedTraining.priority || meta?.priority))} variant="secondary">
+                        {selectedTraining.priority || meta?.priority}
                       </Badge>
                     )}
-                    {meta?.category && (
-                      <Badge variant="outline" className="text-xs">{meta.category}</Badge>
+                    {(selectedTraining.trainingCategory || meta?.category) && (
+                      <Badge variant="outline" className="text-xs">{selectedTraining.trainingCategory || meta?.category}</Badge>
                     )}
                   </div>
 
@@ -1111,10 +1107,10 @@ export function TrainingView() {
                       <span className="text-muted-foreground">Type:</span>{' '}
                       <span className="font-medium">{selectedTraining.type}</span>
                     </div>
-                    {meta?.trainer && (
+                    {(selectedTraining.trainer || meta?.trainer) && (
                       <div>
                         <span className="text-muted-foreground">Trainer:</span>{' '}
-                        <span className="font-medium">{getUserName(meta.trainer)}</span>
+                        <span className="font-medium">{getUserName(selectedTraining.trainer || meta?.trainer || '')}</span>
                       </div>
                     )}
                     <div>
@@ -1137,22 +1133,22 @@ export function TrainingView() {
                       <span className="text-muted-foreground">Updated:</span>{' '}
                       <span className="font-medium">{formatDate(selectedTraining.updatedAt)}</span>
                     </div>
-                    {meta?.duration && (
+                    {(selectedTraining.duration || meta?.duration) && (
                       <div>
                         <span className="text-muted-foreground">Duration:</span>{' '}
-                        <span className="font-medium">{meta.duration}</span>
+                        <span className="font-medium">{selectedTraining.duration || meta?.duration}</span>
                       </div>
                     )}
-                    {meta?.deliveryMethod && (
+                    {(selectedTraining.deliveryMethod || meta?.deliveryMethod) && (
                       <div>
                         <span className="text-muted-foreground">Delivery:</span>{' '}
-                        <span className="font-medium">{meta.deliveryMethod}</span>
+                        <span className="font-medium">{selectedTraining.deliveryMethod || meta?.deliveryMethod}</span>
                       </div>
                     )}
-                    {meta?.regulatoryReference && (
+                    {(selectedTraining.regulatoryReference || meta?.regulatoryReference) && (
                       <div className="col-span-2">
                         <span className="text-muted-foreground">Regulatory Reference:</span>{' '}
-                        <span className="font-medium font-mono text-xs">{meta.regulatoryReference}</span>
+                        <span className="font-medium font-mono text-xs">{selectedTraining.regulatoryReference || meta?.regulatoryReference}</span>
                       </div>
                     )}
                   </div>
@@ -1166,13 +1162,13 @@ export function TrainingView() {
                   )}
 
                   {/* Materials Description */}
-                  {meta?.materialsDescription && (
+                  {(selectedTraining.materialsDescription || meta?.materialsDescription) && (
                     <div>
                       <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
                         <FileCheck className="h-4 w-4" />
                         Training Materials
                       </h4>
-                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{meta.materialsDescription}</p>
+                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedTraining.materialsDescription || meta?.materialsDescription}</p>
                     </div>
                   )}
 
@@ -1195,7 +1191,7 @@ export function TrainingView() {
                   )}
 
                   {/* ─── Competency Assessment Details ─── */}
-                  {(meta?.assessmentRequired || meta?.retrainingInterval) && (
+                  {(selectedTraining.assessmentRequired || meta?.assessmentRequired || selectedTraining.retrainingInterval || meta?.retrainingInterval) && (
                     <div className="rounded-md border p-4 space-y-2">
                       <h4 className="font-medium text-sm flex items-center gap-1">
                         <Target className="h-4 w-4 text-primary" />
@@ -1204,24 +1200,24 @@ export function TrainingView() {
                       <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
                         <div>
                           <span className="text-muted-foreground">Assessment Required:</span>{' '}
-                          <span className="font-medium">{meta.assessmentRequired ? 'Yes' : 'No'}</span>
+                          <span className="font-medium">{(selectedTraining.assessmentRequired ?? meta?.assessmentRequired) ? 'Yes' : 'No'}</span>
                         </div>
-                        {meta.assessmentRequired && meta.assessmentMethod && (
+                        {(selectedTraining.assessmentRequired ?? meta?.assessmentRequired) && (selectedTraining.assessmentMethod || meta?.assessmentMethod) && (
                           <div>
                             <span className="text-muted-foreground">Method:</span>{' '}
-                            <span className="font-medium">{meta.assessmentMethod}</span>
+                            <span className="font-medium">{selectedTraining.assessmentMethod || meta?.assessmentMethod}</span>
                           </div>
                         )}
-                        {meta.assessmentRequired && meta.passingScore !== undefined && (
+                        {(selectedTraining.assessmentRequired ?? meta?.assessmentRequired) && ((selectedTraining.passingScore ?? meta?.passingScore) !== undefined) && (
                           <div>
                             <span className="text-muted-foreground">Passing Score:</span>{' '}
-                            <span className="font-medium">{meta.passingScore}%</span>
+                            <span className="font-medium">{selectedTraining.passingScore ?? meta?.passingScore}%</span>
                           </div>
                         )}
-                        {meta.retrainingInterval && meta.retrainingInterval !== 'None' && (
+                        {(selectedTraining.retrainingInterval || meta?.retrainingInterval) && (selectedTraining.retrainingInterval !== 'None' || meta?.retrainingInterval !== 'None') && (
                           <div>
                             <span className="text-muted-foreground">Retraining Interval:</span>{' '}
-                            <span className="font-medium">{meta.retrainingInterval}</span>
+                            <span className="font-medium">{selectedTraining.retrainingInterval || meta?.retrainingInterval}</span>
                           </div>
                         )}
                       </div>
@@ -1229,37 +1225,37 @@ export function TrainingView() {
                   )}
 
                   {/* ─── Compliance & Certification Info ─── */}
-                  {(meta?.certificationRequired || meta?.applicableStandards || meta?.category) && (
+                  {(selectedTraining.certificationRequired || meta?.certificationRequired || selectedTraining.applicableStandards || meta?.applicableStandards || selectedTraining.trainingCategory || meta?.category) && (
                     <div className="rounded-md border p-4 space-y-2">
                       <h4 className="font-medium text-sm flex items-center gap-1">
                         <Award className="h-4 w-4 text-primary" />
                         Compliance &amp; Certification
                       </h4>
                       <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                        {meta.certificationRequired && (
+                        {(selectedTraining.certificationRequired ?? meta?.certificationRequired) && (
                           <>
                             <div>
                               <span className="text-muted-foreground">Certification Required:</span>{' '}
                               <span className="font-medium text-green-600">Yes</span>
                             </div>
-                            {meta.certificationValidity && (
+                            {(selectedTraining.certificationValidity || meta?.certificationValidity) && (
                               <div>
                                 <span className="text-muted-foreground">Validity:</span>{' '}
-                                <span className="font-medium">{meta.certificationValidity}</span>
+                                <span className="font-medium">{selectedTraining.certificationValidity || meta?.certificationValidity}</span>
                               </div>
                             )}
                           </>
                         )}
-                        {meta.applicableStandards && (
+                        {(selectedTraining.applicableStandards || meta?.applicableStandards) && (
                           <div className="col-span-2">
                             <span className="text-muted-foreground">Applicable Standards:</span>{' '}
-                            <span className="font-medium">{meta.applicableStandards}</span>
+                            <span className="font-medium">{selectedTraining.applicableStandards || meta?.applicableStandards}</span>
                           </div>
                         )}
-                        {meta.category && (
+                        {(selectedTraining.trainingCategory || meta?.category) && (
                           <div>
                             <span className="text-muted-foreground">Category:</span>{' '}
-                            <Badge variant="outline" className="text-xs">{meta.category}</Badge>
+                            <Badge variant="outline" className="text-xs">{selectedTraining.trainingCategory || meta?.category}</Badge>
                           </div>
                         )}
                       </div>
@@ -1299,28 +1295,6 @@ export function TrainingView() {
                       )}
                     </div>
                   )}
-
-                  {/* Hybrid Supervision: Template associé (§4.2.4) */}
-                  {selectedTraining.templateId && (() => {
-                    const tmpl = store.formTemplates.find(t => t.id === selectedTraining.templateId);
-                    return tmpl ? (
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-semibold flex items-center gap-2">
-                          <FileSpreadsheet className="h-4 w-4 text-primary" />
-                          Template associé (§4.2.4)
-                        </h4>
-                        <div className="border rounded-md p-2 text-sm flex items-center justify-between">
-                          <div>
-                            <span className="font-medium">{tmpl.title}</span>
-                            <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
-                          </div>
-                          <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
-                            {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
-                          </Badge>
-                        </div>
-                      </div>
-                    ) : null;
-                  })()}
 
                   {/* ISO 13485 §6.2 reference note */}
                   <div className="bg-muted/30 rounded-md p-3 flex items-start gap-2">

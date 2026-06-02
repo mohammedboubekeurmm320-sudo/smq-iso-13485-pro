@@ -10,7 +10,7 @@ import {
   BarChart3, Plus, Search, Eye, AlertTriangle, Shield, ShieldCheck,
   ArrowRight, AlertCircle, CheckCircle2, XCircle, Info,
   ChevronLeft, ChevronRight, MapPin, FileText, Link2,
-  ClipboardCheck, UserCircle, BookOpen, Target, Scale, FileSpreadsheet,
+  ClipboardCheck, UserCircle, BookOpen, Target, Scale,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -331,7 +331,6 @@ export function RiskView() {
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1);
   const [wizardForm, setWizardForm] = useState<WizardFormState>({ ...initialWizardForm });
-  const [formTemplateId, setFormTemplateId] = useState('');
 
   // Electronic signature state
   const [showEsigModal, setShowEsigModal] = useState(false);
@@ -384,7 +383,6 @@ export function RiskView() {
   const resetWizard = () => {
     setWizardStep(1);
     setWizardForm({ ...initialWizardForm });
-    setFormTemplateId('');
   };
 
   const canAdvanceStep = (step: number): boolean => {
@@ -414,7 +412,19 @@ export function RiskView() {
       mitigation: wizardForm.mitigationMeasures.trim() || undefined,
       residualRisk: `Residual RPN: ${residualRpn} (${residualRiskLevel}) — Control: ${wizardForm.controlType}`,
       status: 'Open',
-      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
+      // --- P0-2: Persist ALL wizard data (previously lost) ---
+      hazardDescription: wizardForm.hazardDescription.trim() || undefined,
+      riskAcceptability: wizardForm.riskAcceptability,
+      regulatoryReference: wizardForm.regulatoryReference.trim() || undefined,
+      controlType: wizardForm.controlType,
+      verificationMethod: wizardForm.verificationMethod.trim() || undefined,
+      residualProbability: wizardForm.residualProbability,
+      residualImpact: wizardForm.residualImpact,
+      residualDetectability: wizardForm.residualDetectability,
+      riskOwner: wizardForm.riskOwner.trim() || undefined,
+      priorityNotes: wizardForm.priorityNotes.trim() || undefined,
+      linkedDocumentId: wizardForm.linkedDocument && wizardForm.linkedDocument !== 'none' ? wizardForm.linkedDocument : undefined,
+      linkedCapaId: wizardForm.linkedCapa && wizardForm.linkedCapa !== 'none' ? wizardForm.linkedCapa : undefined,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -466,7 +476,7 @@ export function RiskView() {
             <BarChart3 className="h-6 w-6 text-primary" />
             Risk Management
           </h1>
-          <p className="text-muted-foreground mt-1">Risk assessment and management (ISO 14971:2019) <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
+          <p className="text-muted-foreground mt-1">Risk assessment and management (ISO 14971:2019)</p>
         </div>
         {hasPermission('risk.create') && (
           <Button onClick={() => { resetWizard(); setShowCreateDialog(true); }}>
@@ -1350,23 +1360,6 @@ export function RiskView() {
                   </Card>
 
                   {/* ISO 14971 Compliance Note */}
-                  <div className="grid gap-2">
-                    <Label>Template associé (§4.2.4)</Label>
-                    <Select value={formTemplateId} onValueChange={setFormTemplateId}>
-                      <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Aucun</SelectItem>
-                        {store.formTemplates
-                          .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'RISK' || !t.associatedModule || t.associatedModule === 'GENERAL'))
-                          .map(t => (
-                            <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-                          ))
-                        }
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* ISO 14971 Compliance Note */}
                   <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 flex items-start gap-3">
                     <ClipboardCheck className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
                     <div>
@@ -1568,33 +1561,83 @@ export function RiskView() {
                   )}
                 </div>
 
+                {/* Hazard Description */}
+                {selectedRisk.hazardDescription && (
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-semibold">Hazard Description</h4>
+                    <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedRisk.hazardDescription}</p>
+                  </div>
+                )}
+
+                {/* Risk Owner */}
+                {selectedRisk.riskOwner && (
+                  <div className="text-sm"><span className="font-medium">Risk Owner:</span> {selectedRisk.riskOwner}</div>
+                )}
+
+                {/* Regulatory Reference & Control Type */}
+                {(selectedRisk.regulatoryReference || selectedRisk.controlType || selectedRisk.verificationMethod) && (
+                  <div className="rounded-md border p-4 space-y-2">
+                    <h4 className="text-sm font-semibold flex items-center gap-1">
+                      <BookOpen className="h-4 w-4 text-primary" />
+                      Control &amp; Verification
+                    </h4>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                      {selectedRisk.regulatoryReference && (
+                        <div><span className="text-muted-foreground">Regulatory Ref:</span> <span className="font-medium font-mono text-xs">{selectedRisk.regulatoryReference}</span></div>
+                      )}
+                      {selectedRisk.controlType && (
+                        <div><span className="text-muted-foreground">Control Type:</span> <span className="font-medium">{selectedRisk.controlType}</span></div>
+                      )}
+                      {selectedRisk.verificationMethod && (
+                        <div><span className="text-muted-foreground">Verification:</span> <span className="font-medium">{selectedRisk.verificationMethod}</span></div>
+                      )}
+                      {selectedRisk.riskAcceptability && (
+                        <div><span className="text-muted-foreground">Acceptability:</span> <span className="font-medium">{selectedRisk.riskAcceptability}</span></div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Priority Notes */}
+                {selectedRisk.priorityNotes && (
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-semibold">Priority Notes</h4>
+                    <p className="text-sm text-muted-foreground">{selectedRisk.priorityNotes}</p>
+                  </div>
+                )}
+
+                {/* Linked Records */}
+                {(selectedRisk.linkedDocumentId || selectedRisk.linkedCapaId) && (
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-semibold">Linked Records</h4>
+                    {selectedRisk.linkedDocumentId && (() => {
+                      const doc = store.documents.find(d => d.id === selectedRisk.linkedDocumentId);
+                      return doc ? (
+                        <div className="text-sm flex items-center gap-2">
+                          <FileText className="h-3 w-3 text-muted-foreground" />
+                          <span className="font-mono">{doc.documentNumber}</span>
+                          <span className="text-muted-foreground">{doc.title}</span>
+                        </div>
+                      ) : null;
+                    })()}
+                    {selectedRisk.linkedCapaId && (() => {
+                      const capa = store.capas.find(c => c.id === selectedRisk.linkedCapaId);
+                      return capa ? (
+                        <div className="text-sm flex items-center gap-2">
+                          <ShieldCheck className="h-3 w-3 text-muted-foreground" />
+                          <span className="font-mono">{capa.capaNumber}</span>
+                          <span className="text-muted-foreground">{capa.title}</span>
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                )}
+
                 {/* Dates */}
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div><span className="text-muted-foreground">Created:</span> <span className="font-medium ml-1">{formatDate(selectedRisk.createdAt)}</span></div>
                   <div><span className="text-muted-foreground">Updated:</span> <span className="font-medium ml-1">{formatDate(selectedRisk.updatedAt)}</span></div>
                 </div>
-
-                {/* Hybrid Supervision: Template associé (§4.2.4) */}
-                {selectedRisk.templateId && (() => {
-                  const tmpl = store.formTemplates.find(t => t.id === selectedRisk.templateId);
-                  return tmpl ? (
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-semibold flex items-center gap-2">
-                        <FileSpreadsheet className="h-4 w-4 text-primary" />
-                        Template associé (§4.2.4)
-                      </h4>
-                      <div className="border rounded-md p-2 text-sm flex items-center justify-between">
-                        <div>
-                          <span className="font-medium">{tmpl.title}</span>
-                          <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
-                        </div>
-                        <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
-                          {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
-                        </Badge>
-                      </div>
-                    </div>
-                  ) : null;
-                })()}
 
                 <Separator />
 

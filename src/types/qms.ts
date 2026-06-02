@@ -280,12 +280,6 @@ export interface Document {
   isPrerequisite?: boolean;
   /** Review cycle in months */
   reviewCycleMonths?: number;
-  /** Custom field values */
-  customFields?: CustomFieldValue[];
-
-  // --- Hybrid supervision: linked form templates (§4.2.3) ---
-  /** Form templates that reference this document */
-  linkedTemplates?: FormTemplate[];
 }
 
 // ============================================================================
@@ -346,8 +340,6 @@ export interface Capa {
   closedDate?: string;
   createdById?: string;
   organizationId?: string;
-  /** Linked form template ID (§4.2.4) */
-  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -393,8 +385,6 @@ export interface NonConformance {
   createdDate: string;
   createdById?: string;
   organizationId?: string;
-  /** Linked form template ID (§4.2.4) */
-  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -452,8 +442,6 @@ export interface BatchRecord {
   createdAt: string;
   steps?: BatchStep[];
   rawMaterials?: RawMaterial[];
-  /** Linked form template ID (§4.2.4) */
-  templateId?: string;
 }
 
 // ============================================================================
@@ -490,8 +478,6 @@ export interface Supplier {
   qualificationDocRef?: string;
   organizationId?: string;
   createdById?: string;
-  /** Linked form template ID (§4.2.4) */
-  templateId?: string;
   createdAt: string;
 }
 
@@ -528,7 +514,7 @@ export interface FormTemplateCompliance {
   cfrPart11Compliance: boolean;
 }
 
-export type FormTemplateModule = 'CAPA' | 'NCR' | 'DEVIATION' | 'CHANGE_CONTROL' | 'AUDIT' | 'RISK' | 'TRAINING' | 'SUPPLIER' | 'BATCH_RECORD' | 'OOS_OOT' | 'GENERAL';
+export type FormTemplateStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'Inactive' | 'Obsolete';
 
 export interface FormTemplate {
   id: string;
@@ -538,26 +524,18 @@ export interface FormTemplate {
   description?: string;
   fields: FormFieldDefinition[];
   isActive: boolean;
-  templateStatus?: 'Draft' | 'Approved' | 'Obsolete';
-  associatedModule?: FormTemplateModule;
+  /** Template lifecycle status */
+  templateStatus?: FormTemplateStatus;
+  /** When the template was approved */
+  approvedAt?: string;
+  /** Who approved the template */
+  approvedById?: string;
   workflow?: FormTemplateWorkflow;
   compliance?: FormTemplateCompliance;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
   instances?: FormInstance[];
-
-  // --- Hybrid supervision fields (§4.2.3 + §4.2.4) ---
-  /** Template lifecycle status — governed by Documents module (§4.2.3) */
-  templateStatus: FormTemplateStatus;
-  /** Which record module this template serves */
-  associatedModule?: FormTemplateModule;
-  /** When the template was approved (set when document status = Approved/Effective) */
-  approvedAt?: string;
-  /** Who approved the template */
-  approvedById?: string;
-  /** Reason for obsolescence (if templateStatus = Obsolete) */
-  obsolescenceReason?: string;
 }
 
 export type FormInstanceStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected';
@@ -578,19 +556,6 @@ export interface FormInstance {
   createdById?: string;
   createdAt: string;
 }
-
-// ============================================================================
-// Hybrid 2-Layer Supervision — Form Template Lifecycle (§4.2.3 + §4.2.4)
-// ============================================================================
-
-/** Template lifecycle status — controlled by Documents module (§4.2.3) */
-export type FormTemplateStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'Obsolete';
-
-/** Record module that a form template can be associated with */
-export type FormTemplateModule =
-  | 'CAPA' | 'NCR' | 'DEVIATION' | 'CHANGE_CONTROL'
-  | 'AUDIT' | 'RISK' | 'TRAINING' | 'SUPPLIER'
-  | 'BATCH_RECORD' | 'OOS_OOT' | 'GENERAL';
 
 // ============================================================================
 // Audit Trail
@@ -617,7 +582,7 @@ export interface AuditTrail {
 // Document Prerequisite
 // ============================================================================
 
-export type PrerequisiteRecordType = 'CAPA' | 'NCR' | 'TRAINING' | 'RISK' | 'AUDIT' | 'CHANGE_CONTROL' | 'DEVIATION' | 'FORM';
+export type PrerequisiteRecordType = 'CAPA' | 'NCR' | 'TRAINING' | 'RISK' | 'AUDIT' | 'CHANGE_CONTROL' | 'DEVIATION';
 
 export interface DocumentPrerequisite {
   id: string;
@@ -699,9 +664,50 @@ export interface Audit {
   leadAuditor: string;
   auditees?: string[];
   findings?: AuditFinding[];
+  // --- Extended audit data (previously lost in wizard) ---
+  /** Audit team members */
+  teamMembers?: { member: string; role: string; assignedScope: string }[];
+  /** Audit checklist items */
+  checklistItems?: { clauseRef: string; requirement: string; evidenceExpected: string }[];
+  /** Documents reviewed during audit */
+  documentsReviewed?: { docNumber: string; revision: string; compliance: string }[];
+  /** Interviews conducted during audit */
+  interviews?: { person: string; topics: string; keyPoints: string }[];
+  /** Corrective actions identified */
+  correctiveActions?: { action: string; responsible: string; dueDate: string; requiredEvidence: string }[];
+  /** Document updates required */
+  documentUpdates?: { document: string; requiredChange: string; changeControlRef: string }[];
+  /** Training required as a result */
+  trainingRequired?: { scope: string; targetPersonnel: string; plannedDate: string }[];
+  /** Opening meeting date */
+  openingMeetingDate?: string;
+  /** Closing meeting date */
+  closingMeetingDate?: string;
+  /** Meeting attendees */
+  attendees?: string;
+  /** General observations */
+  generalObservations?: string;
+  /** Executive summary */
+  executiveSummary?: string;
+  /** Compliance rating (1-5) */
+  complianceRating?: number;
+  /** Risk assessment */
+  riskAssessment?: string;
+  /** Whether management review is required */
+  managementReviewRequired?: boolean;
+  /** Follow-up date */
+  followUpDate?: string;
+  /** Next scheduled audit date */
+  nextAuditDate?: string;
+  /** Previous audit reference */
+  previousAuditRef?: string;
+  /** Audit criteria */
+  criteria?: string[];
+  /** Audit objectives */
+  objectives?: string[];
+  /** End date */
+  endDate?: string;
   organizationId?: string;
-  /** Linked form template ID (§4.2.4) */
-  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -723,9 +729,36 @@ export interface Training {
   dueDate: string;
   completedDate?: string;
   documentId?: string;
+  // --- Extended training data (previously lost in local state) ---
+  /** Regulatory reference */
+  regulatoryReference?: string;
+  /** Training materials description */
+  materialsDescription?: string;
+  /** Duration of training */
+  duration?: string;
+  /** Delivery method */
+  deliveryMethod?: 'Classroom' | 'Online' | 'On-the-Job Training' | 'Webinar' | 'Blended';
+  /** Trainer name */
+  trainer?: string;
+  /** Priority level */
+  priority?: 'Low' | 'Medium' | 'High' | 'Critical';
+  /** Whether competency assessment is required */
+  assessmentRequired?: boolean;
+  /** Assessment method */
+  assessmentMethod?: 'Written Exam' | 'Practical Demonstration' | 'Oral' | 'Observation' | 'Combined';
+  /** Passing score for assessment */
+  passingScore?: number;
+  /** Retraining interval */
+  retrainingInterval?: 'None' | '6 Months' | '12 Months' | '24 Months' | '36 Months';
+  /** Whether certification is required */
+  certificationRequired?: boolean;
+  /** Certification validity period */
+  certificationValidity?: 'Indefinite' | '1 Year' | '2 Years' | '3 Years' | '5 Years';
+  /** Applicable standards */
+  applicableStandards?: string;
+  /** Training category */
+  trainingCategory?: 'GMP' | 'GLP' | 'GCP' | 'Safety' | 'Quality' | 'Other';
   organizationId?: string;
-  /** Linked form template ID (§4.2.4) */
-  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -751,9 +784,32 @@ export interface Risk {
   mitigation?: string;
   residualRisk?: string;
   status: RiskStatus;
+  // --- Extended risk data (previously lost in wizard) ---
+  /** Hazard description */
+  hazardDescription?: string;
+  /** Risk acceptability level */
+  riskAcceptability?: 'Acceptable' | 'ALARP' | 'Unacceptable';
+  /** Regulatory reference */
+  regulatoryReference?: string;
+  /** Control type from hierarchy of controls */
+  controlType?: string;
+  /** Verification method for mitigation */
+  verificationMethod?: string;
+  /** Residual probability (1-5) */
+  residualProbability?: number;
+  /** Residual impact (1-5) */
+  residualImpact?: number;
+  /** Residual detectability (1-5) */
+  residualDetectability?: number;
+  /** Risk owner */
+  riskOwner?: string;
+  /** Priority notes */
+  priorityNotes?: string;
+  /** Linked document ID */
+  linkedDocumentId?: string;
+  /** Linked CAPA ID */
+  linkedCapaId?: string;
   organizationId?: string;
-  /** Linked form template ID (§4.2.4) */
-  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -813,8 +869,6 @@ export interface ChangeControl {
   dueDate: string;
   createdById?: string;
   organizationId?: string;
-  /** Linked form template ID (§4.2.4) */
-  templateId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -864,35 +918,6 @@ export interface Deviation {
   closedDate?: string;
   createdById?: string;
   organizationId?: string;
-  /** Linked form template ID (§4.2.4) */
-  templateId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// ============================================================================
-// Scheduled Report
-// ============================================================================
-
-export type ReportFrequency = 'daily' | 'weekly' | 'monthly' | 'quarterly';
-export type ReportType = 'management-review' | 'capa-summary' | 'audit-summary' | 'compliance-overview' | 'training-status' | 'risk-profile';
-export type ReportFormat = 'csv' | 'html' | 'pdf';
-export type ScheduledReportStatus = 'active' | 'paused' | 'completed' | 'error';
-
-export interface ScheduledReport {
-  id: string;
-  name: string;
-  reportType: ReportType;
-  format: ReportFormat;
-  frequency: ReportFrequency;
-  status: ScheduledReportStatus;
-  recipients: string[]; // email addresses
-  filters?: Record<string, string>; // e.g., { department: 'Quality', priority: 'Critical' }
-  lastRunAt?: string;
-  nextRunAt: string;
-  lastResult?: { success: boolean; recordCount: number; error?: string };
-  organizationId?: string;
-  createdById?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -905,32 +930,5 @@ export type ActiveSection =
   | 'dashboard'
   | 'documents' | 'document-hierarchy'
   | 'ncr' | 'capa' | 'audits' | 'risks' | 'training' | 'change-control' | 'deviations' | 'batch-records' | 'suppliers' | 'oos-oot' | 'forms'
-  | 'reports' | 'compliance' | 'scheduled-reports'
+  | 'reports' | 'compliance'
   | 'user-management';
-
-// ============================================================================
-// Custom Fields
-// ============================================================================
-
-export type CustomFieldType = 'text' | 'number' | 'date' | 'select' | 'checkbox' | 'textarea' | 'url';
-
-export interface CustomFieldDefinition {
-  id: string;
-  name: string;
-  label: string;
-  type: CustomFieldType;
-  required: boolean;
-  options?: string[]; // for select type
-  placeholder?: string;
-  defaultValue?: string;
-  applicableTo: string[]; // document types this field applies to, or ['*'] for all
-  organizationId: string;
-  sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CustomFieldValue {
-  definitionId: string;
-  value: string;
-}

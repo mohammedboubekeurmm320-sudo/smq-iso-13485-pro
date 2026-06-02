@@ -1,6 +1,6 @@
 // Demo Store - Zustand store for managing QMS data in memory (demo mode)
 import { create } from 'zustand';
-import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation, CustomFieldDefinition, ScheduledReport } from '@/types/qms';
+import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation } from '@/types/qms';
 import { mockProfiles, mockOrganizations, mockOrgMembers, mockDocuments, mockCapas, mockNCRs, mockBatchRecords, mockSuppliers, mockFormTemplates, mockFormInstances, mockAudits, mockTraining, mockRisks, mockAuditTrails, mockPrerequisites, mockChangeControls, mockDeviations } from './mock-data';
 
 interface QMSStore {
@@ -22,8 +22,6 @@ interface QMSStore {
   prerequisites: DocumentPrerequisite[];
   changeControls: ChangeControl[];
   deviations: Deviation[];
-  customFieldDefinitions: CustomFieldDefinition[];
-  scheduledReports: ScheduledReport[];
 
   // Computed helpers
   getProfile: (id: string) => Profile | undefined;
@@ -49,23 +47,13 @@ interface QMSStore {
   updateRisk: (id: string, updates: Partial<Risk>) => void;
   addFormTemplate: (template: FormTemplate) => void;
   updateFormTemplate: (id: string, updates: Partial<FormTemplate>) => void;
-  deactivateTemplatesByDocument: (documentId: string, reason?: string) => void;
+  deactivateTemplatesByDocument: (documentId: string, reason: string) => void;
   addFormInstance: (instance: FormInstance) => void;
   updateFormInstance: (id: string, updates: Partial<FormInstance>) => void;
   addChangeControl: (cc: ChangeControl) => void;
   updateChangeControl: (id: string, updates: Partial<ChangeControl>) => void;
   addDeviation: (dev: Deviation) => void;
   updateDeviation: (id: string, updates: Partial<Deviation>) => void;
-
-  // Custom field definitions
-  addCustomFieldDefinition: (def: CustomFieldDefinition) => void;
-  updateCustomFieldDefinition: (id: string, updates: Partial<CustomFieldDefinition>) => void;
-  deleteCustomFieldDefinition: (id: string) => void;
-
-  // Scheduled reports
-  addScheduledReport: (report: ScheduledReport) => void;
-  updateScheduledReport: (id: string, updates: Partial<ScheduledReport>) => void;
-  deleteScheduledReport: (id: string) => void;
 
   // Profile management
   addProfile: (profile: Profile) => void;
@@ -101,8 +89,6 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
   prerequisites: mockPrerequisites,
   changeControls: mockChangeControls,
   deviations: mockDeviations,
-  customFieldDefinitions: [],
-  scheduledReports: [],
 
   // Computed helpers
   getProfile: (id: string) => get().profiles.find(p => p.id === id),
@@ -125,7 +111,7 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
     const missing: DocumentPrerequisite[] = [];
     for (const prereq of prereqs) {
       const hasDoc = state.documents.some(
-        d => d.type === prereq.requiredDocType && d.status === 'Approved' &&
+        d => d.type === prereq.requiredDocType && (d.status === 'Approved' || d.status === 'Effective') &&
         (!prereq.requiredDocRef || d.documentNumber === prereq.requiredDocRef)
       );
       if (!hasDoc) {
@@ -225,27 +211,28 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
   }),
 
   addFormTemplate: (template) => set(state => {
-    state.logAudit('CREATE', 'FormTemplate', template.id, undefined, { title: template.title, version: template.version, isActive: template.isActive, templateStatus: template.templateStatus });
+    state.logAudit('CREATE', 'FormTemplate', template.id, undefined, { title: template.title, version: template.version, isActive: template.isActive });
     return { formTemplates: [...state.formTemplates, template] };
   }),
 
   updateFormTemplate: (id, updates) => set(state => {
     const old = state.formTemplates.find(t => t.id === id);
-    state.logAudit('UPDATE', 'FormTemplate', id, old ? { templateStatus: old.templateStatus, isActive: old.isActive } : undefined, updates);
+    state.logAudit('UPDATE', 'FormTemplate', id, old ? { isActive: old.isActive, templateStatus: old.templateStatus } : undefined, updates);
     return { formTemplates: state.formTemplates.map(t => t.id === id ? { ...t, ...updates } : t) };
   }),
 
   deactivateTemplatesByDocument: (documentId, reason) => set(state => {
-    const affected = state.formTemplates.filter(t => t.documentId === documentId);
-    if (affected.length > 0) {
-      state.logAudit('UPDATE', 'FormTemplate', undefined, undefined, { action: 'cascade_obsolete', documentId, reason: reason || 'Parent document became obsolete', affectedTemplates: affected.map(t => t.id) });
-    }
+    const linkedTemplates = state.formTemplates.filter(t => t.documentId === documentId && t.isActive);
+    if (linkedTemplates.length === 0) return state;
+    linkedTemplates.forEach(t => {
+      state.logAudit('UPDATE', 'FormTemplate', t.id, { isActive: true, templateStatus: t.templateStatus }, { isActive: false, templateStatus: 'Obsolete' });
+    });
     return {
       formTemplates: state.formTemplates.map(t =>
-        t.documentId === documentId
-          ? { ...t, isActive: false, templateStatus: 'Obsolete' as const, obsolescenceReason: reason || 'Parent document became obsolete' }
+        t.documentId === documentId && t.isActive
+          ? { ...t, isActive: false, templateStatus: 'Obsolete' as const }
           : t
-      )
+      ),
     };
   }),
 
@@ -280,42 +267,6 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
     const old = state.deviations.find(d => d.id === id);
     state.logAudit('UPDATE', 'Deviation', id, old ? { status: old.status } : undefined, updates);
     return { deviations: state.deviations.map(d => d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d) };
-  }),
-
-  // Custom field definitions
-  addCustomFieldDefinition: (def) => set(state => {
-    state.logAudit('CREATE', 'CustomFieldDefinition', def.id, undefined, { name: def.name, label: def.label, type: def.type });
-    return { customFieldDefinitions: [...state.customFieldDefinitions, def] };
-  }),
-
-  updateCustomFieldDefinition: (id, updates) => set(state => {
-    const old = state.customFieldDefinitions.find(d => d.id === id);
-    state.logAudit('UPDATE', 'CustomFieldDefinition', id, old ? { name: old.name, label: old.label } : undefined, updates);
-    return { customFieldDefinitions: state.customFieldDefinitions.map(d => d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d) };
-  }),
-
-  deleteCustomFieldDefinition: (id) => set(state => {
-    const old = state.customFieldDefinitions.find(d => d.id === id);
-    state.logAudit('DELETE', 'CustomFieldDefinition', id, old ? { name: old.name } : undefined);
-    return { customFieldDefinitions: state.customFieldDefinitions.filter(d => d.id !== id) };
-  }),
-
-  // Scheduled reports
-  addScheduledReport: (report) => set(state => {
-    state.logAudit('CREATE', 'ScheduledReport', report.id, undefined, { name: report.name, reportType: report.reportType, frequency: report.frequency });
-    return { scheduledReports: [...state.scheduledReports, report] };
-  }),
-
-  updateScheduledReport: (id, updates) => set(state => {
-    const old = state.scheduledReports.find(r => r.id === id);
-    state.logAudit('UPDATE', 'ScheduledReport', id, old ? { status: old.status } : undefined, updates);
-    return { scheduledReports: state.scheduledReports.map(r => r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r) };
-  }),
-
-  deleteScheduledReport: (id) => set(state => {
-    const old = state.scheduledReports.find(r => r.id === id);
-    state.logAudit('DELETE', 'ScheduledReport', id, old ? { name: old.name } : undefined);
-    return { scheduledReports: state.scheduledReports.filter(r => r.id !== id) };
   }),
 
   // Profile management

@@ -418,6 +418,14 @@ export function AuditView() {
   // ============================================================================
 
   const handleCreate = () => {
+    const complianceRatingMap: Record<string, number> = {
+      'Non-compliant': 1,
+      'Partially compliant': 2,
+      'Largely compliant': 3,
+      'Substantially compliant': 4,
+      'Fully compliant': 5,
+    };
+
     const newAudit: Audit = {
       id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       auditNumber: nextAuditNumber,
@@ -437,6 +445,27 @@ export function AuditView() {
         correctiveActionRequired: f.carRequired,
         capaId: f.capaReference.trim() || undefined,
       })),
+      teamMembers: formTeamMembers.length > 0 ? formTeamMembers.map(tm => ({ member: tm.member, role: tm.role, assignedScope: tm.assignedScope })) : undefined,
+      checklistItems: formChecklistItems.length > 0 ? formChecklistItems.map(ci => ({ clauseRef: ci.clauseRef, requirement: ci.requirement, evidenceExpected: ci.evidenceExpected })) : undefined,
+      documentsReviewed: formDocumentsReviewed.length > 0 ? formDocumentsReviewed.map(dr => ({ docNumber: dr.docNumber, revision: dr.revision, compliance: dr.compliance })) : undefined,
+      interviews: formInterviews.length > 0 ? formInterviews.map(iv => ({ person: iv.person, topics: iv.topics, keyPoints: iv.keyPoints })) : undefined,
+      correctiveActions: formCorrectiveActions.length > 0 ? formCorrectiveActions.map(ca => ({ action: ca.action, responsible: ca.responsible, dueDate: ca.dueDate, requiredEvidence: ca.requiredEvidence })) : undefined,
+      documentUpdates: formDocumentUpdates.length > 0 ? formDocumentUpdates.map(du => ({ document: du.document, requiredChange: du.requiredChange, changeControlRef: du.changeControlRef })) : undefined,
+      trainingRequired: formTrainingRequired.length > 0 ? formTrainingRequired.map(tr => ({ scope: tr.scope, targetPersonnel: tr.targetPersonnel, plannedDate: tr.plannedDate })) : undefined,
+      openingMeetingDate: formOpeningMeetingDate || undefined,
+      closingMeetingDate: formClosingMeetingDate || undefined,
+      attendees: formAttendees || undefined,
+      generalObservations: formGeneralObservations || undefined,
+      executiveSummary: formExecutiveSummary || undefined,
+      complianceRating: formComplianceRating ? complianceRatingMap[formComplianceRating] : undefined,
+      riskAssessment: formRiskAssessment || undefined,
+      managementReviewRequired: formManagementReviewRequired || undefined,
+      followUpDate: formFollowUpDate || undefined,
+      nextAuditDate: formNextAuditDate || undefined,
+      previousAuditRef: formPreviousAuditRef || undefined,
+      criteria: formCriteria.length > 0 ? formCriteria : undefined,
+      objectives: formObjectives.trim() ? formObjectives.split('\n').map(o => o.trim()).filter(Boolean) : undefined,
+      endDate: formEndDate || undefined,
       organizationId: 'org-001',
       templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       createdAt: new Date().toISOString(),
@@ -1651,6 +1680,224 @@ export function AuditView() {
                     </div>
                   </div>
                 )}
+
+                {/* Extended Audit Data Sections */}
+                {(selectedAudit.teamMembers && selectedAudit.teamMembers.length > 0) ||
+                 (selectedAudit.checklistItems && selectedAudit.checklistItems.length > 0) ||
+                 (selectedAudit.documentsReviewed && selectedAudit.documentsReviewed.length > 0) ||
+                 (selectedAudit.correctiveActions && selectedAudit.correctiveActions.length > 0) ||
+                 selectedAudit.executiveSummary ||
+                 selectedAudit.criteria ||
+                 selectedAudit.objectives ||
+                 selectedAudit.endDate ||
+                 selectedAudit.openingMeetingDate ||
+                 selectedAudit.closingMeetingDate ||
+                 selectedAudit.attendees ||
+                 selectedAudit.generalObservations ||
+                 selectedAudit.riskAssessment ||
+                 selectedAudit.managementReviewRequired ||
+                 selectedAudit.followUpDate ||
+                 selectedAudit.nextAuditDate ||
+                 selectedAudit.previousAuditRef ||
+                 selectedAudit.complianceRating ? (
+                  <>
+                    <Separator />
+
+                    {/* Schedule & Meetings */}
+                    {(selectedAudit.endDate || selectedAudit.openingMeetingDate || selectedAudit.closingMeetingDate || selectedAudit.attendees) && (
+                      <div className="bg-muted/30 rounded-lg p-4 space-y-2">
+                        <h4 className="font-semibold text-sm flex items-center gap-2">
+                          <Calendar className="h-4 w-4" />Schedule & Meetings
+                        </h4>
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                          {selectedAudit.endDate && (
+                            <div>
+                              <span className="text-muted-foreground">End Date:</span>{' '}
+                              <span className="font-medium">{formatDate(selectedAudit.endDate)}</span>
+                            </div>
+                          )}
+                          {selectedAudit.openingMeetingDate && (
+                            <div>
+                              <span className="text-muted-foreground">Opening Meeting:</span>{' '}
+                              <span className="font-medium">{formatDate(selectedAudit.openingMeetingDate)}</span>
+                            </div>
+                          )}
+                          {selectedAudit.closingMeetingDate && (
+                            <div>
+                              <span className="text-muted-foreground">Closing Meeting:</span>{' '}
+                              <span className="font-medium">{formatDate(selectedAudit.closingMeetingDate)}</span>
+                            </div>
+                          )}
+                          {selectedAudit.attendees && (
+                            <div className="col-span-2">
+                              <span className="text-muted-foreground">Attendees:</span>{' '}
+                              <span className="font-medium">{selectedAudit.attendees}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Criteria & Objectives */}
+                    {(selectedAudit.criteria || selectedAudit.objectives || selectedAudit.previousAuditRef) && (
+                      <div className="bg-muted/30 rounded-lg p-4 space-y-2">
+                        <h4 className="font-semibold text-sm flex items-center gap-2">
+                          <ClipboardList className="h-4 w-4" />Planning Details
+                        </h4>
+                        <div className="text-sm space-y-2">
+                          {selectedAudit.criteria && selectedAudit.criteria.length > 0 && (
+                            <div>
+                              <span className="text-muted-foreground">Criteria:</span>{' '}
+                              <span className="flex flex-wrap gap-1 mt-0.5">
+                                {selectedAudit.criteria.map(c => (
+                                  <Badge key={c} variant="secondary" className="text-xs">{c}</Badge>
+                                ))}
+                              </span>
+                            </div>
+                          )}
+                          {selectedAudit.objectives && selectedAudit.objectives.length > 0 && (
+                            <div>
+                              <span className="text-muted-foreground">Objectives:</span>
+                              <ul className="list-disc list-inside mt-0.5 space-y-0.5">
+                                {selectedAudit.objectives.map((o, i) => (
+                                  <li key={i} className="text-muted-foreground">{o}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {selectedAudit.previousAuditRef && (
+                            <div>
+                              <span className="text-muted-foreground">Previous Audit Ref:</span>{' '}
+                              <span className="font-mono font-medium">{selectedAudit.previousAuditRef}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Team Members */}
+                    {selectedAudit.teamMembers && selectedAudit.teamMembers.length > 0 && (
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-semibold">Team Members</h4>
+                        <div className="text-sm space-y-0.5">
+                          {selectedAudit.teamMembers.map((tm, i) => (
+                            <div key={i} className="flex gap-2">
+                              <span className="font-medium">{tm.member}</span>
+                              <span className="text-muted-foreground">— {tm.role}</span>
+                              {tm.assignedScope && <span className="text-muted-foreground text-xs">({tm.assignedScope})</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Checklist Items */}
+                    {selectedAudit.checklistItems && selectedAudit.checklistItems.length > 0 && (
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-semibold">Checklist</h4>
+                        <div className="text-sm space-y-0.5">
+                          {selectedAudit.checklistItems.map((ci, i) => (
+                            <div key={i} className="flex gap-2">
+                              <Badge variant="outline" className="text-xs font-mono">{ci.clauseRef}</Badge>
+                              <span>{ci.requirement}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Documents Reviewed */}
+                    {selectedAudit.documentsReviewed && selectedAudit.documentsReviewed.length > 0 && (
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-semibold">Documents Reviewed</h4>
+                        <div className="text-sm space-y-0.5">
+                          {selectedAudit.documentsReviewed.map((dr, i) => (
+                            <div key={i} className="flex gap-2">
+                              <span className="font-mono">{dr.docNumber}</span>
+                              <span className="text-muted-foreground">Rev. {dr.revision}</span>
+                              <Badge variant="outline" className={cn('text-xs', complianceColors[dr.compliance] || '')}>{dr.compliance}</Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Corrective Actions */}
+                    {selectedAudit.correctiveActions && selectedAudit.correctiveActions.length > 0 && (
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-semibold">Corrective Actions</h4>
+                        <div className="text-sm space-y-0.5">
+                          {selectedAudit.correctiveActions.map((ca, i) => (
+                            <div key={i} className="flex gap-2">
+                              <span>{ca.action}</span>
+                              <span className="text-muted-foreground">— {ca.responsible}</span>
+                              {ca.dueDate && <span className="text-xs text-muted-foreground">Due: {ca.dueDate}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* General Observations */}
+                    {selectedAudit.generalObservations && (
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-semibold">General Observations</h4>
+                        <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedAudit.generalObservations}</p>
+                      </div>
+                    )}
+
+                    {/* Executive Summary */}
+                    {selectedAudit.executiveSummary && (
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-semibold">Executive Summary</h4>
+                        <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedAudit.executiveSummary}</p>
+                      </div>
+                    )}
+
+                    {/* Compliance & Risk */}
+                    {(selectedAudit.complianceRating || selectedAudit.riskAssessment || selectedAudit.managementReviewRequired || selectedAudit.followUpDate || selectedAudit.nextAuditDate) && (
+                      <div className="bg-muted/30 rounded-lg p-4 space-y-2">
+                        <h4 className="font-semibold text-sm flex items-center gap-2">
+                          <ShieldCheck className="h-4 w-4" />Closure & Compliance
+                        </h4>
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                          {selectedAudit.complianceRating && (
+                            <div>
+                              <span className="text-muted-foreground">Compliance Rating:</span>{' '}
+                              <Badge className={cn('text-xs', ratingColors[complianceRatingOptions[selectedAudit.complianceRating - 1] || ''] || '')} variant="secondary">
+                                {complianceRatingOptions[selectedAudit.complianceRating - 1] || `${selectedAudit.complianceRating}/5`}
+                              </Badge>
+                            </div>
+                          )}
+                          {selectedAudit.managementReviewRequired && (
+                            <div>
+                              <span className="text-muted-foreground">Management Review:</span>{' '}
+                              <Badge variant="outline" className="text-xs">Required</Badge>
+                            </div>
+                          )}
+                          {selectedAudit.followUpDate && (
+                            <div>
+                              <span className="text-muted-foreground">Follow-Up Date:</span>{' '}
+                              <span className="font-medium">{formatDate(selectedAudit.followUpDate)}</span>
+                            </div>
+                          )}
+                          {selectedAudit.nextAuditDate && (
+                            <div>
+                              <span className="text-muted-foreground">Next Audit Date:</span>{' '}
+                              <span className="font-medium">{formatDate(selectedAudit.nextAuditDate)}</span>
+                            </div>
+                          )}
+                          {selectedAudit.riskAssessment && (
+                            <div className="col-span-2">
+                              <span className="text-muted-foreground">Risk Assessment:</span>
+                              <p className="text-sm text-muted-foreground mt-0.5">{selectedAudit.riskAssessment}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : null}
 
                 {/* Electronic Signature Section for Completed Audits */}
                 {selectedAudit.status === 'Completed' && (
