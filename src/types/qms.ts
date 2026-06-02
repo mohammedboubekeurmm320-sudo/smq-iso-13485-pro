@@ -501,6 +501,9 @@ export interface Supplier {
   templateId?: string;
   /** Associated form instance ID (§4.2.4 execution) */
   formInstanceId?: string;
+  // --- P2: Supplier → Document link (ISO 13485 §7.4) ---
+  /** Linked document IDs (qualification certificates, audit reports, etc.) */
+  linkedDocumentIds?: string[];
   organizationId?: string;
   createdById?: string;
   createdAt: string;
@@ -795,6 +798,19 @@ export interface Training {
   templateId?: string;
   /** Associated form instance ID (§4.2.4 execution) */
   formInstanceId?: string;
+  // --- P2: Training effectiveness evaluation (ISO 13485 §6.2) ---
+  /** Whether effectiveness evaluation is required after completion */
+  effectivenessEvaluationRequired?: boolean;
+  /** Effectiveness evaluation method */
+  effectivenessMethod?: 'Supervisor Observation' | 'Knowledge Test' | 'Skill Demonstration' | 'On-the-Job Performance Review' | 'Peer Assessment' | 'Other';
+  /** Effectiveness evaluation date */
+  effectivenessEvaluationDate?: string;
+  /** Effectiveness evaluation result */
+  effectivenessResult?: 'Competent' | 'Needs Improvement' | 'Not Competent' | 'Pending';
+  /** Effectiveness evaluation notes */
+  effectivenessNotes?: string;
+  /** Effectiveness evaluated by */
+  effectivenessEvaluatedBy?: string;
   organizationId?: string;
   createdAt: string;
   updatedAt: string;
@@ -875,7 +891,7 @@ export interface NavItem {
 // ============================================================================
 
 export type ChangeControlType = 'Planned' | 'Unplanned' | 'Emergency';
-export type ChangeControlStatus = 'Requested' | 'Under Review' | 'Approved' | 'In Implementation' | 'Completed' | 'Rejected';
+export type ChangeControlStatus = 'Requested' | 'Under Review' | 'Approved' | 'In Implementation' | 'Completed' | 'Post-Implementation Review' | 'Closed' | 'Rejected';
 export type ChangeControlPriority = 'Critical' | 'High' | 'Medium' | 'Low';
 export type ChangeControlCategory = 'Process' | 'Equipment' | 'Facility' | 'Document' | 'Material' | 'Computer System' | 'Organizational' | 'Manufacturing' | 'Regulatory' | 'Supply Chain' | 'Warehouse' | 'Other';
 
@@ -914,6 +930,19 @@ export interface ChangeControl {
   approvedBy?: string;
   approver?: string;
   dueDate: string;
+  // --- P2: Post-Implementation Review fields (ISO 13485 §7.1 / §8.5.1) ---
+  /** Whether post-implementation review is required */
+  postImplReviewRequired?: boolean;
+  /** Post-implementation review date */
+  postImplReviewDate?: string;
+  /** Post-implementation review outcome */
+  postImplReviewOutcome?: 'Successful' | 'Partially Successful' | 'Unsuccessful' | 'Pending';
+  /** Post-implementation review findings */
+  postImplReviewFindings?: string;
+  /** Post-implementation review verified by */
+  postImplReviewVerifiedBy?: string;
+  /** Date when CC was fully closed after post-impl review */
+  closedDate?: string;
   createdById?: string;
   organizationId?: string;
   createdAt: string;

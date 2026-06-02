@@ -78,6 +78,12 @@ interface QMSStore {
   linkCapaToRecords: (capaId: string, ncrIds: string[], auditIds: string[]) => void;
   /** Link NCR to CAPA(s) bidirectionally */
   linkNcrToCapas: (ncrId: string, capaIds: string[]) => void;
+
+  // P2: Medium-priority integration helpers
+  /** Create a CAPA from an Audit Finding and bidirectionally link them (P2-4) */
+  createCapaFromAuditFinding: (auditId: string, findingId: string, capaData: { title: string; description: string; priority: Capa['priority']; assignedTo: string; dueDate: string }) => Capa | null;
+  /** Link documents to a Supplier (P2-5) */
+  linkDocumentsToSupplier: (supplierId: string, documentIds: string[]) => void;
 }
 
 export const useQMSStore = create<QMSStore>((set, get) => ({
@@ -488,5 +494,79 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
     }
 
     state.logAudit('UPDATE', 'NonConformance', ncrId, { linkedCapaIds: ncr?.linkedCapaIds }, { linkedCapaIds: capaIds });
+  },
+
+  // ─── P2: Medium-Priority Integration Helpers ──────────────────────────────────
+
+  /** Create a CAPA from an Audit Finding and bidirectionally link them (P2-4).
+   *  When an audit finding requires corrective action, this creates a new CAPA
+   *  and links it both to the finding (via capaId) and to the audit (via linkedCapaIds). */
+  createCapaFromAuditFinding: (auditId, findingId, capaData) => {
+    const state = get();
+    const audit = state.audits.find(a => a.id === auditId);
+    if (!audit) return null;
+
+    const newCapaId = `capa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newCapa: Capa = {
+      id: newCapaId,
+      capaNumber: `CAPA-2024-${String(state.capas.length + 1).padStart(3, '0')}`,
+      title: capaData.title,
+      type: 'Corrective',
+      status: 'Open',
+      priority: capaData.priority || 'Medium',
+      source: 'Audit Finding',
+      sourceReferenceId: findingId,
+      description: capaData.description,
+      linkedAuditIds: [auditId],
+      assignedTo: capaData.assignedTo,
+      dueDate: capaData.dueDate,
+      createdDate: new Date().toISOString(),
+      createdById: 'user-001',
+      organizationId: 'org-001',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    set({ capas: [...state.capas, newCapa] });
+    state.logAudit('CREATE', 'Capa', newCapaId, undefined, { capaNumber: newCapa.capaNumber, title: newCapa.title, source: 'Audit Finding' });
+
+    // Update the finding's capaId
+    const updatedFindings = (audit.findings || []).map(f =>
+      f.id === findingId ? { ...f, capaId: newCapaId } : f
+    );
+    // Update the audit's linkedCapaIds
+    const existingCapaIds = audit.linkedCapaIds || [];
+    const mergedCapaIds = [...new Set([...existingCapaIds, newCapaId])];
+
+    set({
+      audits: state.audits.map(a =>
+        a.id === auditId
+          ? { ...a, findings: updatedFindings, linkedCapaIds: mergedCapaIds }
+          : a
+      ),
+    });
+    state.logAudit('UPDATE', 'Audit', auditId, { findingCapaId: undefined }, { findingCapaId: newCapaId, linkedCapaIds: mergedCapaIds });
+
+    return newCapa;
+  },
+
+  /** Link documents to a Supplier (P2-5).
+   *  Adds document references to the supplier record for qualification certificates,
+   *  audit reports, and other relevant documents. */
+  linkDocumentsToSupplier: (supplierId, documentIds) => {
+    const state = get();
+    const supplier = state.suppliers.find(s => s.id === supplierId);
+    if (!supplier) return;
+
+    const existingDocIds = supplier.linkedDocumentIds || [];
+    const mergedDocIds = [...new Set([...existingDocIds, ...documentIds])];
+
+    set({
+      suppliers: state.suppliers.map(s =>
+        s.id === supplierId
+          ? { ...s, linkedDocumentIds: mergedDocIds }
+          : s
+      ),
+    });
+    state.logAudit('UPDATE', 'Supplier', supplierId, { linkedDocumentIds: existingDocIds }, { linkedDocumentIds: mergedDocIds });
   },
 }));

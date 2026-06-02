@@ -10,6 +10,7 @@ import {
   Award, FileText, Edit3, Save, Star, CalendarClock, TrendingUp,
   Globe, User, Mail, Phone, MapPin, Shield, ClipboardCheck,
   Building2, Siren, ChevronLeft, ChevronRight, ListChecks, ShieldCheck,
+  Link2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -155,6 +156,7 @@ export function SupplierView() {
   const [formEmergencyContactPhone, setFormEmergencyContactPhone] = useState('');
   const [formQualificationMethod, setFormQualificationMethod] = useState<QualificationMethod>('On-Site Audit');
   const [formQualificationDocRef, setFormQualificationDocRef] = useState('');
+  const [formLinkedDocIds, setFormLinkedDocIds] = useState<string[]>([]);
 
   // Wizard state
   const [wizardStep, setWizardStep] = useState(0);
@@ -166,6 +168,10 @@ export function SupplierView() {
   // E-signature state for supplier qualification/disqualification (21 CFR Part 11 / ISO 13485 §7.4)
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [pendingSupplierAction, setPendingSupplierAction] = useState<{ supplier: Supplier; action: 'qualify' | 'disqualify' } | null>(null);
+
+  // Detail dialog — document linking state
+  const [showLinkDocs, setShowLinkDocs] = useState(false);
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
 
   // Filtered suppliers
   const filteredSuppliers = suppliers.filter(s => {
@@ -223,6 +229,7 @@ export function SupplierView() {
     setFormEmergencyContactPhone('');
     setFormQualificationMethod('On-Site Audit');
     setFormQualificationDocRef('');
+    setFormLinkedDocIds([]);
   };
 
   const handleCreate = () => {
@@ -250,6 +257,7 @@ export function SupplierView() {
       emergencyContactPhone: formEmergencyContactPhone || undefined,
       qualificationMethod: formQualificationMethod,
       qualificationDocRef: formQualificationDocRef || undefined,
+      linkedDocumentIds: formLinkedDocIds.length > 0 ? formLinkedDocIds : undefined,
       organizationId: 'org-001',
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
@@ -577,6 +585,50 @@ export function SupplierView() {
                 />
               </div>
             </div>
+            <Separator />
+            {/* Linked Documents */}
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-1.5">
+                <Link2 className="h-4 w-4" /> Linked Documents
+              </Label>
+              <p className="text-xs text-muted-foreground">Select approved/effective documents to associate with this supplier.</p>
+              <div className="border rounded-md max-h-48 overflow-y-auto">
+                {documents.filter(d => d.status === 'Approved' || d.status === 'Effective').length === 0 ? (
+                  <p className="text-sm text-muted-foreground p-3">No approved or effective documents available.</p>
+                ) : (
+                  documents
+                    .filter(d => d.status === 'Approved' || d.status === 'Effective')
+                    .map(doc => (
+                      <label
+                        key={doc.id}
+                        className={cn(
+                          'flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 border-b last:border-b-0',
+                          formLinkedDocIds.includes(doc.id) && 'bg-primary/5'
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formLinkedDocIds.includes(doc.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormLinkedDocIds([...formLinkedDocIds, doc.id]);
+                            } else {
+                              setFormLinkedDocIds(formLinkedDocIds.filter(id => id !== doc.id));
+                            }
+                          }}
+                          className="rounded border-gray-300"
+                        />
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                        <span className="font-mono text-xs text-muted-foreground">{doc.documentNumber}</span>
+                        <span className="truncate">{doc.title}</span>
+                      </label>
+                    ))
+                )}
+              </div>
+              {formLinkedDocIds.length > 0 && (
+                <p className="text-xs text-muted-foreground">{formLinkedDocIds.length} document(s) selected</p>
+              )}
+            </div>
           </div>
         );
 
@@ -641,6 +693,23 @@ export function SupplierView() {
                 {formQualificationDocRef && <p className="text-sm"><span className="font-medium">Doc Reference:</span> {formQualificationDocRef}</p>}
                 {formEmergencyContactName && <p className="text-sm"><span className="font-medium">Emergency Contact:</span> {formEmergencyContactName}{formEmergencyContactPhone ? ` (${formEmergencyContactPhone})` : ''}</p>}
               </div>
+
+              {/* Linked Documents Summary */}
+              {formLinkedDocIds.length > 0 && (
+                <div className="border rounded-md p-3 space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Linked Documents</p>
+                  {formLinkedDocIds.map(docId => {
+                    const doc = documents.find(d => d.id === docId);
+                    return doc ? (
+                      <p key={docId} className="text-sm flex items-center gap-1.5">
+                        <FileText className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                        <span className="font-mono text-xs text-muted-foreground">{doc.documentNumber}</span>
+                        <span>{doc.title}</span>
+                      </p>
+                    ) : null;
+                  })}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -1314,6 +1383,109 @@ export function SupplierView() {
                     </div>
                   );
                 })()}
+
+                {/* Linked Documents */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-medium text-sm flex items-center gap-1">
+                      <Link2 className="h-4 w-4" /> Linked Documents
+                    </h4>
+                    {hasPermission('supplier.update') && !showLinkDocs && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setShowLinkDocs(true); setSelectedDocIds([]); }}>
+                        <Plus className="h-3 w-3 mr-1" />Add Documents
+                      </Button>
+                    )}
+                  </div>
+                  {(selectedSupplier.linkedDocumentIds && selectedSupplier.linkedDocumentIds.length > 0) ? (
+                    <div className="space-y-1.5">
+                      {selectedSupplier.linkedDocumentIds.map(docId => {
+                        const doc = documents.find(d => d.id === docId);
+                        return doc ? (
+                          <div key={docId} className="bg-muted/30 p-2 rounded-md flex items-center gap-3">
+                            <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">{doc.title}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {doc.documentNumber} · v{doc.version} · <Badge className={cn('text-[10px]', doc.status === 'Approved' ? 'bg-green-100 text-green-700' : doc.status === 'Effective' ? 'bg-emerald-100 text-emerald-700' : '')} variant="secondary">{doc.status}</Badge>
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div key={docId} className="bg-muted/30 p-2 rounded-md flex items-center gap-3">
+                            <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <span className="text-sm text-muted-foreground">Document ref: {docId}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No documents linked to this supplier.</p>
+                  )}
+                  {/* Add Documents dropdown */}
+                  {showLinkDocs && (
+                    <div className="mt-3 border rounded-md p-3 space-y-3">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Select documents to link</p>
+                      <div className="max-h-48 overflow-y-auto space-y-0.5">
+                        {documents
+                          .filter(d => d.status === 'Approved' || d.status === 'Effective')
+                          .filter(d => !(selectedSupplier.linkedDocumentIds || []).includes(d.id))
+                          .length === 0 ? (
+                          <p className="text-sm text-muted-foreground py-2">No additional approved/effective documents available to link.</p>
+                        ) : (
+                          documents
+                            .filter(d => d.status === 'Approved' || d.status === 'Effective')
+                            .filter(d => !(selectedSupplier.linkedDocumentIds || []).includes(d.id))
+                            .map(doc => (
+                              <label
+                                key={doc.id}
+                                className={cn(
+                                  'flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded hover:bg-muted/50',
+                                  selectedDocIds.includes(doc.id) && 'bg-primary/5'
+                                )}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedDocIds.includes(doc.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedDocIds([...selectedDocIds, doc.id]);
+                                    } else {
+                                      setSelectedDocIds(selectedDocIds.filter(id => id !== doc.id));
+                                    }
+                                  }}
+                                  className="rounded border-gray-300"
+                                />
+                                <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                                <span className="font-mono text-xs text-muted-foreground">{doc.documentNumber}</span>
+                                <span className="truncate">{doc.title}</span>
+                              </label>
+                            ))
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          disabled={selectedDocIds.length === 0}
+                          onClick={() => {
+                            if (selectedDocIds.length > 0) {
+                              store.linkDocumentsToSupplier(selectedSupplier.id, selectedDocIds);
+                              const updatedLinkedDocIds = [...(selectedSupplier.linkedDocumentIds || []), ...selectedDocIds];
+                              setSelectedSupplier({ ...selectedSupplier, linkedDocumentIds: updatedLinkedDocIds });
+                              setSelectedDocIds([]);
+                              setShowLinkDocs(false);
+                            }
+                          }}
+                        >
+                          <Link2 className="h-3.5 w-3.5 mr-1" />
+                          Link {selectedDocIds.length > 0 ? `(${selectedDocIds.length})` : ''}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => { setShowLinkDocs(false); setSelectedDocIds([]); }}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 <Separator />
 

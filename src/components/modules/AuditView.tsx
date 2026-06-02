@@ -5,7 +5,7 @@ import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
-import type { Audit, AuditStatus, AuditType, AuditFinding, SignatureType } from '@/types/qms';
+import type { Audit, AuditStatus, AuditType, AuditFinding, SignatureType, Capa, CapaPriority } from '@/types/qms';
 import {
   ClipboardCheck, Plus, Search, ArrowRight, AlertCircle,
   CheckCircle2, ShieldCheck, Link2, PlusCircle, Flag,
@@ -250,6 +250,14 @@ export function AuditView() {
   const [findingDescription, setFindingDescription] = useState('');
   const [findingReferenceClause, setFindingReferenceClause] = useState('');
   const [findingCar, setFindingCar] = useState(false);
+
+  // P2-4: Create CAPA from finding
+  const [showCreateCapaFromFinding, setShowCreateCapaFromFinding] = useState(false);
+  const [pendingFindingForCapa, setPendingFindingForCapa] = useState<{ findingId: string; findingDesc: string } | null>(null);
+  const [capaFromFindingTitle, setCapaFromFindingTitle] = useState('');
+  const [capaFromFindingPriority, setCapaFromFindingPriority] = useState<CapaPriority>('High');
+  const [capaFromFindingAssignedTo, setCapaFromFindingAssignedTo] = useState('');
+  const [capaFromFindingDueDate, setCapaFromFindingDueDate] = useState('');
 
   // Auto-generated audit number
   const nextAuditNumber = `AUD-2024-${String(audits.length + 1).padStart(3, '0')}`;
@@ -1625,19 +1633,40 @@ export function AuditView() {
                               )}
                             </div>
                             <p className="text-sm mt-1">{f.description}</p>
-                            {f.capaId && (
+                            {f.capaId && linkedCapa ? (
                               <div className="flex items-center gap-2 mt-2">
-                                <Link2 className="h-3 w-3 text-muted-foreground" />
+                                <Link2 className="h-3 w-3 text-green-600" />
                                 <span className="text-xs text-muted-foreground">Linked CAPA:</span>
-                                {linkedCapa ? (
-                                  <Badge variant="outline" className="font-mono text-xs">
-                                    {linkedCapa.capaNumber}
-                                  </Badge>
+                                <Badge variant="outline" className="font-mono text-xs border-green-300 text-green-700 dark:border-green-700 dark:text-green-400">
+                                  {linkedCapa.capaNumber}
+                                </Badge>
+                              </div>
+                            ) : f.correctiveActionRequired && !f.capaId ? (
+                              <div className="mt-2">
+                                {hasPermission('capa.create') ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-xs h-7"
+                                    onClick={() => {
+                                      setPendingFindingForCapa({ findingId: f.id, findingDesc: f.description });
+                                      setCapaFromFindingTitle(`CAPA - ${f.description}`);
+                                      setCapaFromFindingPriority(f.severity === 'Critical' ? 'Critical' : f.severity === 'Major' ? 'High' : 'Medium');
+                                      setCapaFromFindingAssignedTo('');
+                                      setCapaFromFindingDueDate('');
+                                      setShowCreateCapaFromFinding(true);
+                                    }}
+                                  >
+                                    <ShieldCheck className="h-3 w-3 mr-1" />
+                                    Create CAPA
+                                  </Button>
                                 ) : (
-                                  <span className="text-xs font-mono text-muted-foreground">{f.capaId}</span>
+                                  <Badge variant="outline" className="text-xs border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400">
+                                    CAR Required — No CAPA
+                                  </Badge>
                                 )}
                               </div>
-                            )}
+                            ) : null}
                           </div>
                         );
                       })}
@@ -1958,6 +1987,113 @@ export function AuditView() {
                 })()}
               </div>
             </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* P2-4: Create CAPA from Finding Dialog */}
+      <Dialog open={showCreateCapaFromFinding} onOpenChange={(open) => { setShowCreateCapaFromFinding(open); if (!open) setPendingFindingForCapa(null); }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              Create CAPA from Finding
+            </DialogTitle>
+          </DialogHeader>
+          {pendingFindingForCapa && selectedAudit && (
+            <div className="space-y-4">
+              {/* Finding context */}
+              <div className="bg-muted/30 p-3 rounded-md space-y-2 text-sm">
+                <p><span className="font-medium">Audit:</span> <span className="font-mono">{selectedAudit.auditNumber}</span></p>
+                <p><span className="font-medium">Finding:</span> {pendingFindingForCapa.findingDesc}</p>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                A new CAPA will be created and bidirectionally linked to this audit finding.
+              </p>
+
+              {/* Title */}
+              <div className="grid gap-2">
+                <Label>CAPA Title</Label>
+                <Input
+                  value={capaFromFindingTitle}
+                  onChange={(e) => setCapaFromFindingTitle(e.target.value)}
+                  placeholder="CAPA title"
+                />
+              </div>
+
+              {/* Priority */}
+              <div className="grid gap-2">
+                <Label>Priority</Label>
+                <Select value={capaFromFindingPriority} onValueChange={(v) => setCapaFromFindingPriority(v as CapaPriority)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Critical">Critical</SelectItem>
+                    <SelectItem value="High">High</SelectItem>
+                    <SelectItem value="Medium">Medium</SelectItem>
+                    <SelectItem value="Low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Assigned To */}
+              <div className="grid gap-2">
+                <Label>Assigned To</Label>
+                <Select value={capaFromFindingAssignedTo} onValueChange={setCapaFromFindingAssignedTo}>
+                  <SelectTrigger><SelectValue placeholder="Select person" /></SelectTrigger>
+                  <SelectContent>
+                    {profiles.map(p => (
+                      <SelectItem key={p.id} value={p.fullName || p.email}>{p.fullName || p.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Due Date */}
+              <div className="grid gap-2">
+                <Label>Due Date</Label>
+                <Input
+                  type="date"
+                  value={capaFromFindingDueDate}
+                  onChange={(e) => setCapaFromFindingDueDate(e.target.value)}
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2">
+                <Button variant="outline" onClick={() => { setShowCreateCapaFromFinding(false); setPendingFindingForCapa(null); }}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!selectedAudit || !pendingFindingForCapa) return;
+                    const newCapa = store.createCapaFromAuditFinding(
+                      selectedAudit.id,
+                      pendingFindingForCapa.findingId,
+                      {
+                        title: capaFromFindingTitle,
+                        description: pendingFindingForCapa.findingDesc,
+                        priority: capaFromFindingPriority,
+                        assignedTo: capaFromFindingAssignedTo || currentUser?.id || 'user-001',
+                        dueDate: capaFromFindingDueDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+                      }
+                    );
+                    if (newCapa) {
+                      // Refresh selectedAudit with updated findings
+                      const updatedAudit = store.audits.find(a => a.id === selectedAudit.id);
+                      if (updatedAudit) {
+                        setSelectedAudit(updatedAudit);
+                      }
+                    }
+                    setShowCreateCapaFromFinding(false);
+                    setPendingFindingForCapa(null);
+                  }}
+                  disabled={!capaFromFindingTitle.trim() || !capaFromFindingAssignedTo}
+                >
+                  <ShieldCheck className="h-4 w-4 mr-2" />
+                  Create CAPA
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>

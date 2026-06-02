@@ -72,6 +72,7 @@ const assessmentMethods = ['Written Exam', 'Practical Demonstration', 'Oral', 'O
 const retrainingIntervals = ['None', '6 Months', '12 Months', '24 Months', '36 Months'] as const;
 const certificationValidities = ['Indefinite', '1 Year', '2 Years', '3 Years', '5 Years'] as const;
 const complianceCategories = ['GMP', 'GLP', 'GCP', 'Safety', 'Quality', 'Other'] as const;
+const effectivenessMethods = ['Supervisor Observation', 'Knowledge Test', 'Skill Demonstration', 'On-the-Job Performance Review', 'Peer Assessment', 'Other'] as const;
 
 const WIZARD_STEPS = [
   { label: 'Training Details', icon: ClipboardCheck },
@@ -141,12 +142,20 @@ export function TrainingView() {
   const [formAssessmentMethod, setFormAssessmentMethod] = useState<TrainingExtendedMeta['assessmentMethod']>('');
   const [formPassingScore, setFormPassingScore] = useState<number>(70);
   const [formRetrainingInterval, setFormRetrainingInterval] = useState<TrainingExtendedMeta['retrainingInterval']>('');
+  const [formEffectivenessRequired, setFormEffectivenessRequired] = useState(false);
+  const [formEffectivenessMethod, setFormEffectivenessMethod] = useState<Training['effectivenessMethod']>('');
 
   // ── Step 5: Compliance & Certification ──
   const [formCertificationRequired, setFormCertificationRequired] = useState(false);
   const [formCertificationValidity, setFormCertificationValidity] = useState<TrainingExtendedMeta['certificationValidity']>('');
   const [formApplicableStandards, setFormApplicableStandards] = useState('');
   const [formCategory, setFormCategory] = useState<TrainingExtendedMeta['category']>('');
+
+  // ── Detail dialog: Effectiveness Evaluation ──
+  const [effEvalDate, setEffEvalDate] = useState('');
+  const [effEvalResult, setEffEvalResult] = useState<Training['effectivenessResult']>('Pending');
+  const [effEvalNotes, setEffEvalNotes] = useState('');
+  const [effEvaluatedBy, setEffEvaluatedBy] = useState('');
 
   // Extended metadata store (keyed by training ID)
   const [extendedMeta, setExtendedMeta] = useState<Record<string, TrainingExtendedMeta>>({});
@@ -212,6 +221,8 @@ export function TrainingView() {
     setFormCertificationValidity('');
     setFormApplicableStandards('');
     setFormCategory('');
+    setFormEffectivenessRequired(false);
+    setFormEffectivenessMethod('');
   };
 
   // ── Step validation ──
@@ -220,7 +231,7 @@ export function TrainingView() {
       case 0: return !!formTitle.trim();
       case 1: return true; // optional fields
       case 2: return !!formAssignedTo && !!formDueDate;
-      case 3: return !formAssessmentRequired || !!formAssessmentMethod;
+      case 3: return (!formAssessmentRequired || !!formAssessmentMethod) && (!formEffectivenessRequired || !!formEffectivenessMethod);
       case 4: return !formCertificationRequired || !!formCertificationValidity;
       case 5: return true;
       default: return false;
@@ -276,6 +287,8 @@ export function TrainingView() {
       certificationValidity: meta.certificationValidity || undefined,
       applicableStandards: meta.applicableStandards || undefined,
       trainingCategory: meta.category || undefined,
+      effectivenessEvaluationRequired: formEffectivenessRequired || undefined,
+      effectivenessMethod: formEffectivenessMethod || undefined,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -289,6 +302,10 @@ export function TrainingView() {
 
   const openDetail = (training: Training) => {
     setSelectedTraining(training);
+    setEffEvalDate(training.effectivenessEvaluationDate ? new Date(training.effectivenessEvaluationDate).toISOString().split('T')[0] : '');
+    setEffEvalResult(training.effectivenessResult || 'Pending');
+    setEffEvalNotes(training.effectivenessNotes || '');
+    setEffEvaluatedBy(training.effectivenessEvaluatedBy || '');
     setShowDetailDialog(true);
   };
 
@@ -331,6 +348,20 @@ export function TrainingView() {
   const handleSignatureCancel = () => {
     setPendingCompleteTraining(null);
     setShowSignatureModal(false);
+  };
+
+  // ── Submit Effectiveness Evaluation ──
+  const handleSubmitEffectiveness = () => {
+    if (!selectedTraining || !effEvalDate || !effEvalResult || !effEvaluatedBy) return;
+    const updates: Partial<Training> = {
+      effectivenessEvaluationDate: new Date(effEvalDate).toISOString(),
+      effectivenessResult: effEvalResult,
+      effectivenessNotes: effEvalNotes.trim() || undefined,
+      effectivenessEvaluatedBy: effEvaluatedBy,
+      updatedAt: new Date().toISOString(),
+    };
+    store.updateTraining(selectedTraining.id, updates);
+    setSelectedTraining({ ...selectedTraining, ...updates });
   };
 
   // Linked document lookup
@@ -568,6 +599,40 @@ export function TrainingView() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* ─── Effectiveness Evaluation ─── */}
+              <div className="flex items-center justify-between rounded-md border p-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="train-effectiveness-required" className="font-medium">Effectiveness Evaluation Required</Label>
+                  <p className="text-sm text-muted-foreground">Evaluate training effectiveness after completion</p>
+                </div>
+                <Switch
+                  id="train-effectiveness-required"
+                  checked={formEffectivenessRequired}
+                  onCheckedChange={setFormEffectivenessRequired}
+                />
+              </div>
+
+              {formEffectivenessRequired && (
+                <div className="space-y-4 pl-4 border-l-2 border-primary/30">
+                  <div className="grid gap-2">
+                    <Label htmlFor="train-effectiveness-method">Effectiveness Method *</Label>
+                    <Select value={formEffectivenessMethod || 'none'} onValueChange={(v) => setFormEffectivenessMethod(v === 'none' ? '' : v as Training['effectivenessMethod'])}>
+                      <SelectTrigger id="train-effectiveness-method"><SelectValue placeholder="Select method" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Not specified</SelectItem>
+                        {effectivenessMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="bg-primary/5 border border-primary/20 rounded-md p-3 flex items-start gap-2">
+                    <Shield className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">
+                      Effectiveness will be evaluated after training completion per ISO 13485 §6.2
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -688,10 +753,21 @@ export function TrainingView() {
                 {formAssessmentRequired && formAssessmentMethod && <div><span className="text-muted-foreground">Method:</span> <span className="font-medium">{formAssessmentMethod}</span></div>}
                 {formAssessmentRequired && <div><span className="text-muted-foreground">Passing Score:</span> <span className="font-medium">{formPassingScore}%</span></div>}
                 {formRetrainingInterval && <div><span className="text-muted-foreground">Retraining:</span> <span className="font-medium">{formRetrainingInterval}</span></div>}
-                {!formAssessmentRequired && !formRetrainingInterval && (
+                {!formAssessmentRequired && !formRetrainingInterval && !formEffectivenessRequired && (
                   <div className="col-span-2 text-muted-foreground italic">No assessment configured</div>
                 )}
               </div>
+              {formEffectivenessRequired && (
+                <div className="mt-2 pt-2 border-t">
+                  <h5 className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                    <Shield className="h-3 w-3" /> Effectiveness Evaluation
+                  </h5>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                    <div><span className="text-muted-foreground">Required:</span> <span className="font-medium">Yes</span></div>
+                    {formEffectivenessMethod && <div><span className="text-muted-foreground">Method:</span> <span className="font-medium">{formEffectivenessMethod}</span></div>}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Compliance & Certification Summary */}
@@ -1259,6 +1335,111 @@ export function TrainingView() {
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {/* ─── Effectiveness Evaluation ─── */}
+                  {selectedTraining.effectivenessEvaluationRequired && (
+                    <div className="rounded-md border p-4 space-y-3">
+                      <h4 className="font-medium text-sm flex items-center gap-1">
+                        <Monitor className="h-4 w-4 text-primary" />
+                        Effectiveness Evaluation
+                      </h4>
+
+                      {/* Evaluation method (read-only, set during creation) */}
+                      {selectedTraining.effectivenessMethod && (
+                        <div className="text-sm">
+                          <span className="text-muted-foreground">Evaluation Method:</span>{' '}
+                          <span className="font-medium">{selectedTraining.effectivenessMethod}</span>
+                        </div>
+                      )}
+
+                      {/* If evaluation has been completed, show results with color coding */}
+                      {selectedTraining.effectivenessResult && selectedTraining.effectivenessResult !== 'Pending' && selectedTraining.effectivenessEvaluationDate && (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">Evaluation Date:</span>{' '}
+                              <span className="font-medium">{formatDate(selectedTraining.effectivenessEvaluationDate)}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Result:</span>{' '}
+                              <Badge className={cn('text-xs', selectedTraining.effectivenessResult === 'Competent' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : selectedTraining.effectivenessResult === 'Needs Improvement' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400')} variant="secondary">
+                                {selectedTraining.effectivenessResult}
+                              </Badge>
+                            </div>
+                            {selectedTraining.effectivenessEvaluatedBy && (
+                              <div>
+                                <span className="text-muted-foreground">Evaluated By:</span>{' '}
+                                <span className="font-medium">{getUserName(selectedTraining.effectivenessEvaluatedBy)}</span>
+                              </div>
+                            )}
+                          </div>
+                          {selectedTraining.effectivenessNotes && (
+                            <div className="text-sm">
+                              <span className="text-muted-foreground">Notes:</span>{' '}
+                              <span>{selectedTraining.effectivenessNotes}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* If completed but evaluation not yet submitted, show form */}
+                      {effectiveStatus === 'Completed' && (!selectedTraining.effectivenessResult || selectedTraining.effectivenessResult === 'Pending' || !selectedTraining.effectivenessEvaluationDate) && (
+                        <div className="space-y-3 pt-2 border-t">
+                          <p className="text-sm text-muted-foreground italic">
+                            This training requires an effectiveness evaluation. Please complete the evaluation below.
+                          </p>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="grid gap-2">
+                              <Label htmlFor="eff-eval-date">Evaluation Date *</Label>
+                              <Input id="eff-eval-date" type="date" value={effEvalDate} onChange={(e) => setEffEvalDate(e.target.value)} />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="eff-eval-result">Evaluation Result *</Label>
+                              <Select value={effEvalResult || 'none'} onValueChange={(v) => setEffEvalResult(v === 'none' ? 'Pending' : v as Training['effectivenessResult'])}>
+                                <SelectTrigger id="eff-eval-result"><SelectValue placeholder="Select result" /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Competent">Competent</SelectItem>
+                                  <SelectItem value="Needs Improvement">Needs Improvement</SelectItem>
+                                  <SelectItem value="Not Competent">Not Competent</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="eff-eval-notes">Evaluation Notes</Label>
+                            <Textarea id="eff-eval-notes" value={effEvalNotes} onChange={(e) => setEffEvalNotes(e.target.value)} placeholder="Enter evaluation notes..." rows={3} />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="eff-evaluated-by">Evaluated By *</Label>
+                            <Select value={effEvaluatedBy || 'none'} onValueChange={(v) => setEffEvaluatedBy(v === 'none' ? '' : v)}>
+                              <SelectTrigger id="eff-evaluated-by"><SelectValue placeholder="Select evaluator" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Not specified</SelectItem>
+                                {profiles.map(p => (
+                                  <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Button
+                            className="w-full"
+                            onClick={handleSubmitEffectiveness}
+                            disabled={!effEvalDate || !effEvalResult || effEvalResult === 'Pending' || !effEvaluatedBy}
+                          >
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                            Submit Evaluation
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* If not yet completed, show note */}
+                      {effectiveStatus !== 'Completed' && (
+                        <p className="text-sm text-muted-foreground italic">
+                          Effectiveness evaluation will be available after training completion.
+                        </p>
+                      )}
                     </div>
                   )}
 

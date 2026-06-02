@@ -156,6 +156,12 @@ export function CapaView() {
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{ capa: Capa; nextStatus: CapaStatus } | null>(null);
 
+  // ── P2-2: Effectiveness Check ──
+  const [effVerificationMethod, setEffVerificationMethod] = useState('');
+  const [effCriteria, setEffCriteria] = useState('');
+  const [effResult, setEffResult] = useState<'Effective' | 'Not Effective' | 'Pending Review'>('Pending Review');
+  const [effNotEffectiveWarning, setEffNotEffectiveWarning] = useState(false);
+
   // ── Computed ──
   const filteredCapas = capas.filter(c => {
     const matchesSearch = searchTerm === '' ||
@@ -340,8 +346,48 @@ export function CapaView() {
     setPendingStatusChange(null);
   };
 
+  // ── P2-2: Submit Effectiveness Check ──
+  const handleSubmitEffectiveness = () => {
+    if (!selectedCapa) return;
+    if (!effVerificationMethod.trim() || !effCriteria.trim()) return;
+
+    store.updateCapa(selectedCapa.id, {
+      effectivenessVerificationMethod: effVerificationMethod.trim(),
+      effectivenessCriteria: effCriteria.trim(),
+      effectivenessResult: effResult,
+    });
+
+    // Update the local selectedCapa so the UI reflects immediately
+    const updated = {
+      ...selectedCapa,
+      effectivenessVerificationMethod: effVerificationMethod.trim(),
+      effectivenessCriteria: effCriteria.trim(),
+      effectivenessResult: effResult,
+    };
+    setSelectedCapa(updated);
+
+    // If result is "Not Effective", show warning
+    if (effResult === 'Not Effective') {
+      setEffNotEffectiveWarning(true);
+    } else {
+      setEffNotEffectiveWarning(false);
+    }
+  };
+
+  // P2-2: Advance to Closed after effective result (with e-signature)
+  const handleEffectivenessAdvanceToClosed = () => {
+    if (!selectedCapa) return;
+    setPendingStatusChange({ capa: selectedCapa, nextStatus: 'Closed' });
+    setShowSignatureModal(true);
+  };
+
   const openDetail = (capa: Capa) => {
     setSelectedCapa(capa);
+    // P2-2: Pre-populate effectiveness fields from existing CAPA data
+    setEffVerificationMethod(capa.effectivenessVerificationMethod || '');
+    setEffCriteria(capa.effectivenessCriteria || '');
+    setEffResult(capa.effectivenessResult || 'Pending Review');
+    setEffNotEffectiveWarning(false);
     setShowDetailDialog(true);
   };
 
@@ -1142,11 +1188,25 @@ export function CapaView() {
                         'bg-muted text-muted-foreground'
                       )}>
                         {s}
+                        {/* P2-2: Show requirement indicator on Effectiveness Check step when in that status */}
+                        {s === 'Effectiveness Check' && selectedCapa.status === 'Effectiveness Check' && !selectedCapa.effectivenessResult && (
+                          <span className="ml-1 inline-flex items-center justify-center w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                        )}
+                        {s === 'Effectiveness Check' && selectedCapa.status === 'Effectiveness Check' && selectedCapa.effectivenessResult === 'Effective' && (
+                          <CheckCircle2 className="h-3 w-3 ml-1 inline text-green-500" />
+                        )}
                       </div>
                       {i < statusFlow.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
                     </React.Fragment>
                   ))}
                 </div>
+                {/* P2-2: Effectiveness verification required banner */}
+                {selectedCapa.status === 'Effectiveness Check' && !selectedCapa.effectivenessResult && (
+                  <div className="flex items-center gap-2 p-2 bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 rounded-md text-sm text-cyan-700 dark:text-cyan-400">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    <span>Effectiveness verification is required before this CAPA can be closed.</span>
+                  </div>
+                )}
 
                 {/* Details Grid */}
                 <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1154,6 +1214,22 @@ export function CapaView() {
                   <div><span className="text-muted-foreground">Due Date:</span> <span className="font-medium ml-1">{formatDate(selectedCapa.dueDate)}</span></div>
                   <div><span className="text-muted-foreground">Created:</span> <span className="font-medium ml-1">{formatDate(selectedCapa.createdDate)}</span></div>
                   {selectedCapa.closedDate && <div><span className="text-muted-foreground">Closed:</span> <span className="font-medium ml-1">{formatDate(selectedCapa.closedDate)}</span></div>}
+                  {/* P2-2: Show effectiveness result in summary if set */}
+                  {selectedCapa.effectivenessResult && (
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground">Effectiveness Result:</span>{' '}
+                      <Badge className={cn(
+                        'ml-1 text-xs',
+                        selectedCapa.effectivenessResult === 'Effective'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : selectedCapa.effectivenessResult === 'Not Effective'
+                          ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                      )} variant="secondary">
+                        {selectedCapa.effectivenessResult}
+                      </Badge>
+                    </div>
+                  )}
                 </div>
 
                 {/* ── Sections ── */}
@@ -1246,19 +1322,160 @@ export function CapaView() {
                     </div>
                   )}
 
-                  {/* Effectiveness Verification */}
-                  {selectedCapa.effectivenessVerificationMethod && (
+                  {/* P2-2: Effectiveness Verification Section */}
+                  {selectedCapa.status === 'Effectiveness Check' ? (
+                    <div className="border border-cyan-200 dark:border-cyan-800 rounded-lg p-4 bg-cyan-50/50 dark:bg-cyan-900/10 space-y-4">
+                      <h4 className="font-semibold text-sm flex items-center gap-2 text-cyan-700 dark:text-cyan-400">
+                        <ClipboardCheck className="h-4 w-4" />
+                        Effectiveness Verification
+                        {selectedCapa.effectivenessResult && (
+                          <Badge className={cn(
+                            'ml-2 text-xs',
+                            selectedCapa.effectivenessResult === 'Effective'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : selectedCapa.effectivenessResult === 'Not Effective'
+                              ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                          )} variant="secondary">
+                            {selectedCapa.effectivenessResult}
+                          </Badge>
+                        )}
+                      </h4>
+
+                      <div className="grid gap-3">
+                        <div className="grid gap-2">
+                          <Label htmlFor="eff-verification-method">Verification Method *</Label>
+                          <Textarea
+                            id="eff-verification-method"
+                            value={effVerificationMethod}
+                            onChange={(e) => setEffVerificationMethod(e.target.value)}
+                            placeholder="Describe the method used to verify effectiveness of the corrective/preventive action..."
+                            rows={3}
+                            className="bg-white dark:bg-background"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="eff-criteria">Effectiveness Criteria *</Label>
+                          <Textarea
+                            id="eff-criteria"
+                            value={effCriteria}
+                            onChange={(e) => setEffCriteria(e.target.value)}
+                            placeholder="Define the criteria that must be met to consider the action effective..."
+                            rows={3}
+                            className="bg-white dark:bg-background"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Effectiveness Result *</Label>
+                          <Select value={effResult} onValueChange={(v) => setEffResult(v as 'Effective' | 'Not Effective' | 'Pending Review')}>
+                            <SelectTrigger className="bg-white dark:bg-background">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Effective">
+                                <span className="flex items-center gap-2">
+                                  <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                  Effective
+                                </span>
+                              </SelectItem>
+                              <SelectItem value="Not Effective">
+                                <span className="flex items-center gap-2">
+                                  <XCircle className="h-3 w-3 text-red-500" />
+                                  Not Effective
+                                </span>
+                              </SelectItem>
+                              <SelectItem value="Pending Review">
+                                <span className="flex items-center gap-2">
+                                  <Clock className="h-3 w-3 text-amber-500" />
+                                  Pending Review
+                                </span>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Not Effective Warning */}
+                      {effNotEffectiveWarning && selectedCapa.effectivenessResult === 'Not Effective' && (
+                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                          <div className="text-sm text-red-700 dark:text-red-400">
+                            <p className="font-medium">Effectiveness check failed</p>
+                            <p className="mt-1">Further corrective action may be required. Consider reopening the investigation or creating a new CAPA to address the remaining non-conformity per ISO 13485 §8.5.2.</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Effective: allow advancing to Closed */}
+                      {selectedCapa.effectivenessResult === 'Effective' && !effNotEffectiveWarning && (
+                        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md p-3 flex items-start gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                          <div className="text-sm text-green-700 dark:text-green-400 flex-1">
+                            <p className="font-medium">CAPA verified effective</p>
+                            <p className="mt-1">This CAPA can now be advanced to Closed status.</p>
+                          </div>
+                          {hasPermission('capa.update') && (
+                            <Button
+                              size="sm"
+                              onClick={handleEffectivenessAdvanceToClosed}
+                              className="ml-2 bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              <Shield className="h-3 w-3 mr-1" />
+                              Close CAPA
+                            </Button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Submit button */}
+                      {!selectedCapa.effectivenessResult && (
+                        <Button
+                          className="w-full"
+                          disabled={!effVerificationMethod.trim() || !effCriteria.trim()}
+                          onClick={handleSubmitEffectiveness}
+                        >
+                          <ClipboardCheck className="h-4 w-4 mr-2" />
+                          Submit Effectiveness Check
+                        </Button>
+                      )}
+
+                      {/* Allow re-submission if already submitted but wants to change */}
+                      {selectedCapa.effectivenessResult && (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          disabled={!effVerificationMethod.trim() || !effCriteria.trim()}
+                          onClick={handleSubmitEffectiveness}
+                        >
+                          <ClipboardCheck className="h-4 w-4 mr-2" />
+                          Update Effectiveness Check
+                        </Button>
+                      )}
+                    </div>
+                  ) : selectedCapa.effectivenessVerificationMethod ? (
                     <div>
-                      <h4 className="font-medium text-sm mb-1">Effectiveness Verification</h4>
+                      <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
+                        <ClipboardCheck className="h-4 w-4 text-primary" />
+                        Effectiveness Verification
+                      </h4>
                       <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCapa.effectivenessVerificationMethod}</p>
                       {selectedCapa.effectivenessCriteria && (
                         <p className="text-sm text-muted-foreground mt-1"><span className="font-medium">Criteria:</span> {selectedCapa.effectivenessCriteria}</p>
                       )}
                       {selectedCapa.effectivenessResult && (
-                        <Badge variant="outline" className="mt-2 text-xs">Result: {selectedCapa.effectivenessResult}</Badge>
+                        <Badge className={cn(
+                          'mt-2 text-xs',
+                          selectedCapa.effectivenessResult === 'Effective'
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                            : selectedCapa.effectivenessResult === 'Not Effective'
+                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        )} variant="secondary">
+                          Result: {selectedCapa.effectivenessResult}
+                        </Badge>
                       )}
                     </div>
-                  )}
+                  ) : null}
 
                   {/* ── NEW: Linked CAPA Reference (clickable) ── */}
                   {selectedCapa.linkedCapaId && (() => {
@@ -1401,13 +1618,37 @@ export function CapaView() {
                   ) : null;
                 })()}
 
-                {/* Action Button — requires electronic signature */}
+                {/* P2-2: Action Button — modified for Effectiveness Check status */}
                 {hasPermission('capa.update') && selectedCapa.status !== 'Closed' && (
-                  <Button className="w-full" onClick={() => handleAdvanceStatus(selectedCapa)}>
-                    <Shield className="h-4 w-4 mr-2" />
-                    Advance to {getNextStatus(selectedCapa.status)}
-                    <ArrowRight className="h-4 w-4 ml-2" />
-                  </Button>
+                  selectedCapa.status === 'Effectiveness Check' ? (
+                    // When in Effectiveness Check: require effectiveness result before advancing
+                    selectedCapa.effectivenessResult === 'Effective' ? (
+                      <Button className="w-full" onClick={handleEffectivenessAdvanceToClosed}>
+                        <Shield className="h-4 w-4 mr-2" />
+                        Advance to Closed
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </Button>
+                    ) : (
+                      <div className="w-full space-y-2">
+                        <Button className="w-full" disabled>
+                          <Shield className="h-4 w-4 mr-2" />
+                          Advance to Closed
+                          <ArrowRight className="h-4 w-4 ml-2" />
+                        </Button>
+                        <p className="text-xs text-muted-foreground text-center">
+                          {selectedCapa.effectivenessResult === 'Not Effective'
+                            ? 'CAPA cannot be closed until effectiveness is verified. Further action required.'
+                            : 'Complete the effectiveness verification above before advancing to Closed.'}
+                        </p>
+                      </div>
+                    )
+                  ) : (
+                    <Button className="w-full" onClick={() => handleAdvanceStatus(selectedCapa)}>
+                      <Shield className="h-4 w-4 mr-2" />
+                      Advance to {getNextStatus(selectedCapa.status)}
+                      <ArrowRight className="h-4 w-4 ml-2" />
+                    </Button>
+                  )
                 )}
               </div>
             </>
