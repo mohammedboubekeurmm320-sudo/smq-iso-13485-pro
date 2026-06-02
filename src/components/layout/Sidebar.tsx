@@ -70,7 +70,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     labelKey: 'nav.documents',
     items: [
-      { id: 'documents' as ActiveSection, labelKey: 'nav.documents', icon: FileText, module: 'documents', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.documents.filter(d => d.status === 'In Review').length },
+      { id: 'documents' as ActiveSection, labelKey: 'nav.documents', icon: FileText, module: 'documents', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.documents.filter(d => d.status === 'Under Review').length },
       { id: 'document-hierarchy' as ActiveSection, labelKey: 'nav.documentHierarchy', icon: GitBranch, module: 'hierarchy' },
     ],
   },

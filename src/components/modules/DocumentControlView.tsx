@@ -72,14 +72,13 @@ import {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const statusColors: Record<string, string> = {
+const statusColors: Record<DocumentStatus, string> = {
   'Draft': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  'Under Review': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  'In Review': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  'Under Review': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   'Approved': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   'Effective': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
   'Obsolete': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  'Withdrawn': 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400',
+  'Withdrawn': 'bg-gray-100 text-gray-500 dark:bg-gray-900/30 dark:text-gray-400',
 };
 
 const levelLabels: Record<DocumentLevel, string> = {
@@ -103,7 +102,7 @@ const classificationLabels: Record<DocumentClassification, string> = {
   'Confidential': 'Confidentiel',
 };
 
-const statusFlow: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'];
+const statusFlow: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Obsolete'];
 
 const WIZARD_STEPS = [
   { id: 0, label: 'Document Identification', icon: FileText },
@@ -119,7 +118,7 @@ function getNextStatus(current: DocumentStatus): DocumentStatus | null {
 }
 
 const documentTypes: DocumentType[] = ['SOP', 'WI', 'Form', 'Policy', 'Specification', 'Technical', 'Risk Analysis', 'Validation Protocol', 'Record', 'Manual', 'Instruction', 'Register', 'Master Batch', 'Procedure', 'Process Map', 'Organigram'];
-const documentStatuses: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'];
+const documentStatuses: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Obsolete'];
 const documentClassifications: DocumentClassification[] = ['Internal', 'External', 'Regulatory', 'Confidential'];
 const documentLevels: DocumentLevel[] = [1, 2, 3, 4];
 
@@ -300,28 +299,19 @@ export function DocumentControlView() {
     }
 
     // For other status transitions, just update directly
-    const updates: Partial<Document> = { status: next };
-    // Note: 'Approved' case is handled above via e-signature modal path
-    if (next === 'Effective') {
-      updates.lastReviewed = new Date().toISOString();
-    } else if (next === 'Under Review') {
-      updates.lastReviewed = new Date().toISOString();
-    }
-
-    // Hybrid Supervision: Cascade obsolescence to linked templates (§4.2.3)
-    if (next === 'Obsolete' || next === 'Withdrawn') {
-      store.deactivateTemplatesByDocument(doc.id, `Document ${doc.documentNumber} became ${next}`);
-    }
-
-    // P1-3: Sync template versions when document version changes
-    if (next === 'Effective' && doc.version) {
-      store.syncTemplateVersionsByDocument(doc.id, doc.version);
-    }
-
-    store.updateDocument(doc.id, updates);
+    store.updateDocument(doc.id, {
+      status: next,
+      effectiveDate: (next as DocumentStatus) === 'Approved' ? new Date().toISOString() : undefined,
+      lastReviewed: (next as DocumentStatus) === 'Under Review' ? new Date().toISOString() : undefined,
+    });
 
     if (selectedDoc?.id === doc.id) {
-      setSelectedDoc({ ...doc, ...updates });
+      setSelectedDoc({
+        ...doc,
+        status: next,
+        effectiveDate: (next as DocumentStatus) === 'Approved' ? new Date().toISOString() : doc.effectiveDate,
+        lastReviewed: (next as DocumentStatus) === 'Under Review' ? new Date().toISOString() : doc.lastReviewed,
+      });
     }
   };
 
@@ -348,22 +338,6 @@ export function DocumentControlView() {
       effectiveDate: new Date().toISOString(),
       signatures: [...existingSignatures, newSignature],
     });
-
-    // Hybrid Supervision: Activate pending templates when document is approved
-    const linkedTemplates = store.formTemplates.filter(t => t.documentId === doc.id && t.templateStatus === 'Pending Approval');
-    linkedTemplates.forEach(t => {
-      store.updateFormTemplate(t.id, { 
-        templateStatus: 'Approved', 
-        isActive: true, 
-        approvedAt: new Date().toISOString(),
-        approvedById: currentUser?.id 
-      });
-    });
-
-    // P1-3: Sync template versions when document is approved
-    if (doc.version) {
-      store.syncTemplateVersionsByDocument(doc.id, doc.version);
-    }
 
     if (selectedDoc?.id === doc.id) {
       setSelectedDoc({
@@ -677,10 +651,10 @@ export function DocumentControlView() {
   // Summary counts
   const summaryCounts = {
     total: documents.length,
-    approved: documents.filter(d => d.status === 'Approved' || d.status === 'Effective').length,
-    inReview: documents.filter(d => d.status === 'Under Review' || (d.status as string) === 'In Review').length,
+    approved: documents.filter(d => d.status === 'Approved').length,
+    inReview: documents.filter(d => d.status === 'Under Review').length,
     draft: documents.filter(d => d.status === 'Draft').length,
-    obsolete: documents.filter(d => d.status === 'Obsolete' || d.status === 'Withdrawn').length,
+    obsolete: documents.filter(d => d.status === 'Obsolete').length,
   };
 
   return (
@@ -726,7 +700,7 @@ export function DocumentControlView() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-amber-500" />
-              <span className="text-sm text-muted-foreground">In Review</span>
+              <span className="text-sm text-muted-foreground">Under Review</span>
             </div>
             <span className="text-2xl font-bold text-amber-600">{summaryCounts.inReview}</span>
           </CardContent>
@@ -872,13 +846,13 @@ export function DocumentControlView() {
                               <Eye className="mr-2 h-4 w-4" />
                               View Details
                             </DropdownMenuItem>
-                            {hasPermission('documents.update') && doc.status !== 'Obsolete' && doc.status !== 'Withdrawn' && (
+                            {hasPermission('documents.update') && doc.status !== 'Obsolete' && (
                               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDetail(doc); }}>
                                 <Edit className="mr-2 h-4 w-4" />
                                 Edit
                               </DropdownMenuItem>
                             )}
-                            {hasPermission('documents.approve') && getNextStatus(doc.status) && doc.status !== 'Obsolete' && doc.status !== 'Withdrawn' && (
+                            {hasPermission('documents.approve') && getNextStatus(doc.status) && doc.status !== 'Obsolete' && (
                               <>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleAdvanceStatus(doc); }}>
@@ -1197,7 +1171,7 @@ export function DocumentControlView() {
                 )}
 
                 {/* Advance Status Button */}
-                {hasPermission('documents.approve') && getNextStatus(selectedDoc.status) && selectedDoc.status !== 'Obsolete' && selectedDoc.status !== 'Withdrawn' && (
+                {hasPermission('documents.approve') && getNextStatus(selectedDoc.status) && selectedDoc.status !== 'Obsolete' && (
                   <Button className="w-full" onClick={() => handleAdvanceStatus(selectedDoc)}>
                     {getNextStatus(selectedDoc.status) === 'Approved' ? (
                       <>

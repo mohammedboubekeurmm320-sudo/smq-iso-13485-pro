@@ -5,13 +5,14 @@ import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
-import type { NonConformance, NcrStatus, NcrDisposition, SignatureType } from '@/types/qms';
+import type { NonConformance, NcrStatus, NcrDisposition, SignatureType, FormTemplateModule } from '@/types/qms';
+import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import {
   FlaskConical, Search, Eye, ArrowRight, CheckCircle2,
   AlertTriangle, XCircle, AlertCircle, ChevronRight, Plus,
   ShieldCheck, ClipboardCheck, Beaker, Ban, Gavel,
   ChevronLeft, FileText, Activity, Wrench, Scale,
-  BookOpen, ListChecks, Trash2, Info, FileSpreadsheet,
+  BookOpen, ListChecks, Trash2, Info,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -179,6 +180,9 @@ export function OosOotView() {
   const ncrs = store.ncrs;
   const profiles = store.profiles;
   const capas = store.capas;
+  const { getApprovedTemplates, hasApprovedTemplate } = useRecordWorkflow();
+  const approvedOosTemplates = getApprovedTemplates('OOS_OOT');
+  const oosHasApprovedTemplate = hasApprovedTemplate('OOS_OOT');
 
   // Filter to only OOS/OOT NCRs
   const oosOotNcrs = useMemo(() => ncrs.filter(n => n.isOosOot), [ncrs]);
@@ -198,7 +202,10 @@ export function OosOotView() {
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1);
   const [wizardData, setWizardData] = useState<WizardFormData>({ ...initialWizardData });
+
+  // Template selection
   const [formTemplateId, setFormTemplateId] = useState('');
+  const [formTemplateVersion, setFormTemplateVersion] = useState('');
 
   // Phase advancement state for detail dialog
   const [phase1Conclusion, setPhase1Conclusion] = useState<string>('');
@@ -341,6 +348,7 @@ export function OosOotView() {
     setWizardStep(1);
     setWizardData({ ...initialWizardData });
     setFormTemplateId('');
+    setFormTemplateVersion('');
   };
 
   const openCreateDialog = () => {
@@ -372,22 +380,16 @@ export function OosOotView() {
       phase2Conclusion: (wizardData.phase2Conclusion || 'Pending') as NonConformance['phase2Conclusion'],
       rejectLot: wizardData.lotDisposition === 'Reject Lot',
       linkedCapaId: wizardData.linkedCapaRef || undefined,
+      templateId: formTemplateId || undefined,
+      templateVersion: formTemplateVersion || undefined,
       assignedTo: undefined,
       createdDate: new Date().toISOString(),
       createdById: currentUser?.id,
       organizationId: 'org-001',
-      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     store.addNCR(newNcr);
-    // P3-4: Create FormInstance when templateId is selected
-    if (newNcr.templateId) {
-      const fi = store.createFormInstanceForRecord(newNcr.templateId, newNcr.id, 'OOS_OOT', { title: newNcr.title, type: wizardData.type });
-      if (fi) {
-        store.updateNCR(newNcr.id, { formInstanceId: fi.id });
-      }
-    }
     resetCreateForm();
     setShowCreateDialog(false);
   };
@@ -465,6 +467,29 @@ export function OosOotView() {
               <h3 className="font-semibold">Step 1: Identification</h3>
             </div>
             <p className="text-sm text-muted-foreground">Enter the identification details for this OOS/OOT investigation.</p>
+
+            {/* Template Selector */}
+            <div className="grid gap-2">
+              <Label>Template</Label>
+              <Select value={formTemplateId || 'none'} onValueChange={(v) => {
+                if (v === 'none') {
+                  setFormTemplateId('');
+                  setFormTemplateVersion('');
+                } else {
+                  setFormTemplateId(v);
+                  const tpl = approvedOosTemplates.find(t => t.id === v);
+                  setFormTemplateVersion(tpl?.version || '');
+                }
+              }}>
+                <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No template</SelectItem>
+                  {approvedOosTemplates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-2 sm:col-span-2">
@@ -1027,23 +1052,6 @@ export function OosOotView() {
             )}
 
             {/* Regulatory Compliance Note */}
-            <div className="grid gap-2">
-              <Label>Template associé (§4.2.4)</Label>
-              <Select value={formTemplateId} onValueChange={setFormTemplateId}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Aucun</SelectItem>
-                  {store.formTemplates
-                    .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'OOS_OOT' || !t.associatedModule || t.associatedModule === 'GENERAL'))
-                    .map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-                    ))
-                  }
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Regulatory Compliance Note */}
             <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-start gap-3">
               <BookOpen className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
               <div className="text-sm text-blue-700 dark:text-blue-400">
@@ -1194,6 +1202,15 @@ export function OosOotView() {
             Basic Information
           </h4>
           <div className="grid grid-cols-2 gap-3 text-sm">
+            {selectedNcr.templateId && (() => {
+              const tpl = store.formTemplates.find(t => t.id === selectedNcr.templateId);
+              return tpl ? (
+                <div className="col-span-2">
+                  <span className="text-muted-foreground">Template:</span>{' '}
+                  <Badge variant="outline" className="text-xs">{tpl.title} (v{selectedNcr.templateVersion || tpl.version})</Badge>
+                </div>
+              ) : null;
+            })()}
             <div><span className="text-muted-foreground">NCR Number:</span> <span className="font-medium ml-1 font-mono text-xs">{selectedNcr.ncrNumber}</span></div>
             <div><span className="text-muted-foreground">Type:</span> <span className="font-medium ml-1">{selectedNcr.type}</span></div>
             <div><span className="text-muted-foreground">Lot Number:</span> <span className="font-medium ml-1 font-mono text-xs">{selectedNcr.lotNumber || '-'}</span></div>
@@ -1437,28 +1454,6 @@ export function OosOotView() {
           </div>
         </div>
 
-        {/* Hybrid Supervision: Template associé (§4.2.4) */}
-        {selectedNcr.templateId && (() => {
-          const tmpl = store.formTemplates.find(t => t.id === selectedNcr.templateId);
-          return tmpl ? (
-            <div className="space-y-1">
-              <h4 className="text-sm font-semibold flex items-center gap-2">
-                <FileSpreadsheet className="h-4 w-4 text-primary" />
-                Template associé (§4.2.4)
-              </h4>
-              <div className="border rounded-md p-2 text-sm flex items-center justify-between">
-                <div>
-                  <span className="font-medium">{tmpl.title}</span>
-                  <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
-                </div>
-                <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
-                  {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
-                </Badge>
-              </div>
-            </div>
-          ) : null;
-        })()}
-
         {/* Linked CAPA */}
         {selectedNcr.linkedCapaId && (
           <div className="border rounded-lg p-4">
@@ -1485,6 +1480,17 @@ export function OosOotView() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+      {/* Layer 1 Gate Warning */}
+      {!oosHasApprovedTemplate && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-amber-700 dark:text-amber-400">
+            <p className="font-medium">No approved template found for OOS/OOT records</p>
+            <p className="mt-0.5">Please create and approve a template in the Forms module first.</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -1492,7 +1498,7 @@ export function OosOotView() {
             <FlaskConical className="h-6 w-6 text-primary" />
             OOS / OOT Investigations
           </h1>
-          <p className="text-muted-foreground mt-1">Out of Specification / Out of Trend — FDA &amp; ICH Q2(R1) Guidance <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
+          <p className="text-muted-foreground mt-1">Out of Specification / Out of Trend — FDA &amp; ICH Q2(R1) Guidance</p>
         </div>
         {hasPermission('ncr.create') && (
           <Button onClick={openCreateDialog}>
@@ -1601,6 +1607,7 @@ export function OosOotView() {
                   <TableHead className="w-[120px]">Phase 1</TableHead>
                   <TableHead className="w-[120px]">Phase 2</TableHead>
                   <TableHead className="w-[140px]">Status</TableHead>
+                  <TableHead className="w-[100px]">Template</TableHead>
                   <TableHead className="w-[80px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1660,6 +1667,18 @@ export function OosOotView() {
                       <Badge className={cn('text-xs', ncrStatusColors[ncr.status] || '')} variant="secondary">{ncr.status}</Badge>
                     </TableCell>
                     <TableCell>
+                      {ncr.templateId ? (() => {
+                        const tpl = store.formTemplates.find(t => t.id === ncr.templateId);
+                        return tpl ? (
+                          <Badge variant="outline" className="text-xs">{tpl.title}</Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        );
+                      })() : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openDetail(ncr); }}>
                         <Eye className="h-4 w-4" />
                       </Button>
@@ -1668,7 +1687,7 @@ export function OosOotView() {
                 ))}
                 {filteredNcrs.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                       No OOS/OOT records found
                     </TableCell>
                   </TableRow>

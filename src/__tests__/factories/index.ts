@@ -5,7 +5,7 @@ import type {
   Document, Capa, NonConformance, Audit, Training, Risk,
   BatchRecord, Supplier, FormTemplate, FormInstance,
   AuditTrail, ChangeControl, Deviation, Profile, Organization,
-  OrganizationMember, DocumentPrerequisite,
+  OrganizationMember, DocumentPrerequisite, FormTemplateStatus, FormTemplateModule,
 } from '@/types/qms';
 
 let counter = 0;
@@ -419,6 +419,8 @@ export function createFormTemplate(overrides: Partial<FormTemplate> = {}): FormT
       },
     ],
     isActive: true,
+    status: 'Draft' as FormTemplateStatus,
+    moduleType: 'GENERAL' as FormTemplateModule,
     organizationId: 'org-001',
     createdById: 'user-001',
     createdAt: '2024-01-01T00:00:00.000Z',

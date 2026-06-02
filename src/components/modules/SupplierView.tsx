@@ -4,13 +4,13 @@ import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn, formatDate } from '@/lib/utils';
-import type { Supplier, SupplierCategory, SupplierStatus, QualificationMethod, SignatureType } from '@/types/qms';
+import type { Supplier, SupplierCategory, SupplierStatus, QualificationMethod, FormTemplateModule } from '@/types/qms';
+import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import {
   Truck, Plus, Search, ArrowRight, CheckCircle2, XCircle, AlertTriangle,
   Award, FileText, Edit3, Save, Star, CalendarClock, TrendingUp,
   Globe, User, Mail, Phone, MapPin, Shield, ClipboardCheck,
-  Building2, Siren, ChevronLeft, ChevronRight, ListChecks, ShieldCheck,
-  Link2,
+  Building2, Siren, ChevronLeft, ChevronRight, ListChecks,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,7 +27,6 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 
 const statusColors: Record<SupplierStatus, string> = {
   'Qualified': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
@@ -122,6 +121,9 @@ export function SupplierView() {
   const store = useQMSStore();
   const suppliers = store.suppliers;
   const documents = store.documents;
+  const { getApprovedTemplates, hasApprovedTemplate } = useRecordWorkflow();
+  const approvedSupplierTemplates = getApprovedTemplates('SUPPLIER');
+  const supplierHasApprovedTemplate = hasApprovedTemplate('SUPPLIER');
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -132,6 +134,10 @@ export function SupplierView() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+
+  // Template selection
+  const [formTemplateId, setFormTemplateId] = useState('');
+  const [formTemplateVersion, setFormTemplateVersion] = useState('');
 
   // Create form state — existing
   const [formAutoCode, setFormAutoCode] = useState(true);
@@ -156,7 +162,6 @@ export function SupplierView() {
   const [formEmergencyContactPhone, setFormEmergencyContactPhone] = useState('');
   const [formQualificationMethod, setFormQualificationMethod] = useState<QualificationMethod>('On-Site Audit');
   const [formQualificationDocRef, setFormQualificationDocRef] = useState('');
-  const [formLinkedDocIds, setFormLinkedDocIds] = useState<string[]>([]);
 
   // Wizard state
   const [wizardStep, setWizardStep] = useState(0);
@@ -164,14 +169,6 @@ export function SupplierView() {
   // Inline performance score editing
   const [editingScore, setEditingScore] = useState(false);
   const [editScoreValue, setEditScoreValue] = useState('');
-
-  // E-signature state for supplier qualification/disqualification (21 CFR Part 11 / ISO 13485 §7.4)
-  const [showSignatureModal, setShowSignatureModal] = useState(false);
-  const [pendingSupplierAction, setPendingSupplierAction] = useState<{ supplier: Supplier; action: 'qualify' | 'disqualify' } | null>(null);
-
-  // Detail dialog — document linking state
-  const [showLinkDocs, setShowLinkDocs] = useState(false);
-  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
 
   // Filtered suppliers
   const filteredSuppliers = suppliers.filter(s => {
@@ -229,7 +226,8 @@ export function SupplierView() {
     setFormEmergencyContactPhone('');
     setFormQualificationMethod('On-Site Audit');
     setFormQualificationDocRef('');
-    setFormLinkedDocIds([]);
+    setFormTemplateId('');
+    setFormTemplateVersion('');
   };
 
   const handleCreate = () => {
@@ -257,7 +255,8 @@ export function SupplierView() {
       emergencyContactPhone: formEmergencyContactPhone || undefined,
       qualificationMethod: formQualificationMethod,
       qualificationDocRef: formQualificationDocRef || undefined,
-      linkedDocumentIds: formLinkedDocIds.length > 0 ? formLinkedDocIds : undefined,
+      templateId: formTemplateId || undefined,
+      templateVersion: formTemplateVersion || undefined,
       organizationId: 'org-001',
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
@@ -268,14 +267,13 @@ export function SupplierView() {
   };
 
   const handleStatusAdvancement = (supplier: Supplier, newStatus: SupplierStatus) => {
-    // Require e-signature for qualification (21 CFR Part 11 / ISO 13485 §7.4)
-    if (newStatus === 'Qualified') {
-      setPendingSupplierAction({ supplier, action: 'qualify' });
-      setShowSignatureModal(true);
-      return;
-    }
-    // Other status changes don't require e-signature
     const updates: Partial<Supplier> = { status: newStatus };
+    if (newStatus === 'Qualified') {
+      updates.qualificationDate = new Date().toISOString();
+      if (supplier.performanceScore === undefined || supplier.performanceScore === 0) {
+        updates.performanceScore = 80;
+      }
+    }
     store.updateSupplier(supplier.id, updates);
     if (selectedSupplier?.id === supplier.id) {
       setSelectedSupplier({ ...supplier, ...updates });
@@ -283,40 +281,10 @@ export function SupplierView() {
   };
 
   const handleDisqualify = (supplier: Supplier) => {
-    setPendingSupplierAction({ supplier, action: 'disqualify' });
-    setShowSignatureModal(true);
-  };
-
-  const handleSignatureConfirm = (data: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
-    if (!pendingSupplierAction) return;
-    const { supplier, action } = pendingSupplierAction;
-
-    if (action === 'qualify') {
-      const updates: Partial<Supplier> = {
-        status: 'Qualified',
-        qualificationDate: new Date().toISOString(),
-      };
-      if (supplier.performanceScore === undefined || supplier.performanceScore === 0) {
-        updates.performanceScore = 80;
-      }
-      store.updateSupplier(supplier.id, updates);
-      if (selectedSupplier?.id === supplier.id) {
-        setSelectedSupplier({ ...supplier, ...updates });
-      }
-    } else if (action === 'disqualify') {
-      store.updateSupplier(supplier.id, { status: 'Disqualified' });
-      if (selectedSupplier?.id === supplier.id) {
-        setSelectedSupplier({ ...supplier, status: 'Disqualified' });
-      }
+    store.updateSupplier(supplier.id, { status: 'Disqualified' });
+    if (selectedSupplier?.id === supplier.id) {
+      setSelectedSupplier({ ...supplier, status: 'Disqualified' });
     }
-
-    setPendingSupplierAction(null);
-    setShowSignatureModal(false);
-  };
-
-  const handleSignatureCancel = () => {
-    setPendingSupplierAction(null);
-    setShowSignatureModal(false);
   };
 
   const handleSaveScore = () => {
@@ -385,6 +353,28 @@ export function SupplierView() {
       case 0:
         return (
           <div className="grid gap-4">
+            {/* Template Selector */}
+            <div className="grid gap-2">
+              <Label>Template</Label>
+              <Select value={formTemplateId || 'none'} onValueChange={(v) => {
+                if (v === 'none') {
+                  setFormTemplateId('');
+                  setFormTemplateVersion('');
+                } else {
+                  setFormTemplateId(v);
+                  const tpl = approvedSupplierTemplates.find(t => t.id === v);
+                  setFormTemplateVersion(tpl?.version || '');
+                }
+              }}>
+                <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No template</SelectItem>
+                  {approvedSupplierTemplates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-center gap-2">
               <Label htmlFor="autoCode" className="text-sm">Auto-generate supplier code</Label>
               <input
@@ -585,50 +575,6 @@ export function SupplierView() {
                 />
               </div>
             </div>
-            <Separator />
-            {/* Linked Documents */}
-            <div className="grid gap-2">
-              <Label className="flex items-center gap-1.5">
-                <Link2 className="h-4 w-4" /> Linked Documents
-              </Label>
-              <p className="text-xs text-muted-foreground">Select approved/effective documents to associate with this supplier.</p>
-              <div className="border rounded-md max-h-48 overflow-y-auto">
-                {documents.filter(d => d.status === 'Approved' || d.status === 'Effective').length === 0 ? (
-                  <p className="text-sm text-muted-foreground p-3">No approved or effective documents available.</p>
-                ) : (
-                  documents
-                    .filter(d => d.status === 'Approved' || d.status === 'Effective')
-                    .map(doc => (
-                      <label
-                        key={doc.id}
-                        className={cn(
-                          'flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 border-b last:border-b-0',
-                          formLinkedDocIds.includes(doc.id) && 'bg-primary/5'
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={formLinkedDocIds.includes(doc.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setFormLinkedDocIds([...formLinkedDocIds, doc.id]);
-                            } else {
-                              setFormLinkedDocIds(formLinkedDocIds.filter(id => id !== doc.id));
-                            }
-                          }}
-                          className="rounded border-gray-300"
-                        />
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                        <span className="font-mono text-xs text-muted-foreground">{doc.documentNumber}</span>
-                        <span className="truncate">{doc.title}</span>
-                      </label>
-                    ))
-                )}
-              </div>
-              {formLinkedDocIds.length > 0 && (
-                <p className="text-xs text-muted-foreground">{formLinkedDocIds.length} document(s) selected</p>
-              )}
-            </div>
           </div>
         );
 
@@ -693,23 +639,6 @@ export function SupplierView() {
                 {formQualificationDocRef && <p className="text-sm"><span className="font-medium">Doc Reference:</span> {formQualificationDocRef}</p>}
                 {formEmergencyContactName && <p className="text-sm"><span className="font-medium">Emergency Contact:</span> {formEmergencyContactName}{formEmergencyContactPhone ? ` (${formEmergencyContactPhone})` : ''}</p>}
               </div>
-
-              {/* Linked Documents Summary */}
-              {formLinkedDocIds.length > 0 && (
-                <div className="border rounded-md p-3 space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Linked Documents</p>
-                  {formLinkedDocIds.map(docId => {
-                    const doc = documents.find(d => d.id === docId);
-                    return doc ? (
-                      <p key={docId} className="text-sm flex items-center gap-1.5">
-                        <FileText className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                        <span className="font-mono text-xs text-muted-foreground">{doc.documentNumber}</span>
-                        <span>{doc.title}</span>
-                      </p>
-                    ) : null;
-                  })}
-                </div>
-              )}
             </div>
           </div>
         );
@@ -721,6 +650,17 @@ export function SupplierView() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+      {/* Layer 1 Gate Warning */}
+      {!supplierHasApprovedTemplate && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-amber-700 dark:text-amber-400">
+            <p className="font-medium">No approved template found for Supplier records</p>
+            <p className="mt-0.5">Please create and approve a template in the Forms module first.</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -832,6 +772,7 @@ export function SupplierView() {
                   <TableHead className="w-[130px]">Qual. Method</TableHead>
                   <TableHead className="w-[140px]">Performance</TableHead>
                   <TableHead className="w-[110px]">Next Review</TableHead>
+                  <TableHead className="w-[100px]">Template</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -897,11 +838,23 @@ export function SupplierView() {
                         </div>
                       ) : <span className="text-muted-foreground text-sm">-</span>}
                     </TableCell>
+                    <TableCell>
+                      {supplier.templateId ? (() => {
+                        const tpl = store.formTemplates.find(t => t.id === supplier.templateId);
+                        return tpl ? (
+                          <Badge variant="outline" className="text-xs">{tpl.title}</Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        );
+                      })() : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
                 {filteredSuppliers.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No suppliers found</TableCell>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No suppliers found</TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -1105,6 +1058,15 @@ export function SupplierView() {
 
                 {/* Supplier Metadata */}
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  {selectedSupplier.templateId && (() => {
+                    const tpl = store.formTemplates.find(t => t.id === selectedSupplier.templateId);
+                    return tpl ? (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Template:</span>{' '}
+                        <Badge variant="outline" className="text-xs">{tpl.title} (v{selectedSupplier.templateVersion || tpl.version})</Badge>
+                      </div>
+                    ) : null;
+                  })()}
                   <div>
                     <span className="text-muted-foreground">Code:</span>{' '}
                     <span className="font-mono font-medium">{selectedSupplier.supplierCode}</span>
@@ -1384,183 +1346,6 @@ export function SupplierView() {
                   );
                 })()}
 
-                {/* Linked Documents */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-sm flex items-center gap-1">
-                      <Link2 className="h-4 w-4" /> Linked Documents
-                    </h4>
-                    {hasPermission('supplier.update') && !showLinkDocs && (
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setShowLinkDocs(true); setSelectedDocIds([]); }}>
-                        <Plus className="h-3 w-3 mr-1" />Add Documents
-                      </Button>
-                    )}
-                  </div>
-                  {(selectedSupplier.linkedDocumentIds && selectedSupplier.linkedDocumentIds.length > 0) ? (
-                    <div className="space-y-1.5">
-                      {selectedSupplier.linkedDocumentIds.map(docId => {
-                        const doc = documents.find(d => d.id === docId);
-                        return doc ? (
-                          <div key={docId} className="bg-muted/30 p-2 rounded-md flex items-center gap-3">
-                            <FileText className="h-4 w-4 text-primary flex-shrink-0" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium truncate">{doc.title}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {doc.documentNumber} · v{doc.version} · <Badge className={cn('text-[10px]', doc.status === 'Approved' ? 'bg-green-100 text-green-700' : doc.status === 'Effective' ? 'bg-emerald-100 text-emerald-700' : '')} variant="secondary">{doc.status}</Badge>
-                              </p>
-                            </div>
-                          </div>
-                        ) : (
-                          <div key={docId} className="bg-muted/30 p-2 rounded-md flex items-center gap-3">
-                            <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                            <span className="text-sm text-muted-foreground">Document ref: {docId}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No documents linked to this supplier.</p>
-                  )}
-                  {/* Add Documents dropdown */}
-                  {showLinkDocs && (
-                    <div className="mt-3 border rounded-md p-3 space-y-3">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Select documents to link</p>
-                      <div className="max-h-48 overflow-y-auto space-y-0.5">
-                        {documents
-                          .filter(d => d.status === 'Approved' || d.status === 'Effective')
-                          .filter(d => !(selectedSupplier.linkedDocumentIds || []).includes(d.id))
-                          .length === 0 ? (
-                          <p className="text-sm text-muted-foreground py-2">No additional approved/effective documents available to link.</p>
-                        ) : (
-                          documents
-                            .filter(d => d.status === 'Approved' || d.status === 'Effective')
-                            .filter(d => !(selectedSupplier.linkedDocumentIds || []).includes(d.id))
-                            .map(doc => (
-                              <label
-                                key={doc.id}
-                                className={cn(
-                                  'flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer rounded hover:bg-muted/50',
-                                  selectedDocIds.includes(doc.id) && 'bg-primary/5'
-                                )}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedDocIds.includes(doc.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedDocIds([...selectedDocIds, doc.id]);
-                                    } else {
-                                      setSelectedDocIds(selectedDocIds.filter(id => id !== doc.id));
-                                    }
-                                  }}
-                                  className="rounded border-gray-300"
-                                />
-                                <FileText className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                                <span className="font-mono text-xs text-muted-foreground">{doc.documentNumber}</span>
-                                <span className="truncate">{doc.title}</span>
-                              </label>
-                            ))
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          disabled={selectedDocIds.length === 0}
-                          onClick={() => {
-                            if (selectedDocIds.length > 0) {
-                              store.linkDocumentsToSupplier(selectedSupplier.id, selectedDocIds);
-                              const updatedLinkedDocIds = [...(selectedSupplier.linkedDocumentIds || []), ...selectedDocIds];
-                              setSelectedSupplier({ ...selectedSupplier, linkedDocumentIds: updatedLinkedDocIds });
-                              setSelectedDocIds([]);
-                              setShowLinkDocs(false);
-                            }
-                          }}
-                        >
-                          <Link2 className="h-3.5 w-3.5 mr-1" />
-                          Link {selectedDocIds.length > 0 ? `(${selectedDocIds.length})` : ''}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => { setShowLinkDocs(false); setSelectedDocIds([]); }}>
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <Separator />
-
-                {/* Re-qualification Section (P3-2: ISO 13485 §7.4) */}
-                <div>
-                  <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
-                    <CalendarClock className="h-4 w-4 text-primary" />
-                    Re-qualification Status
-                  </h4>
-                  <div className="flex items-center justify-between mb-2">
-                    {(() => {
-                      const requalStatus = getRequalStatus(selectedSupplier.nextReviewDate);
-                      const requalBadgeColors: Record<string, string> = {
-                        'overdue': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-                        'due-soon': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-                        'ok': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-                        'none': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-                      };
-                      const requalLabels: Record<string, string> = {
-                        'overdue': 'Overdue',
-                        'due-soon': 'Due Soon',
-                        'ok': 'OK',
-                        'none': 'Not Set',
-                      };
-                      return (
-                        <Badge className={cn('text-xs', requalBadgeColors[requalStatus])} variant="secondary">
-                          {requalLabels[requalStatus]}
-                        </Badge>
-                      );
-                    })()}
-                    {selectedSupplier.nextReviewDate && (
-                      <span className="text-xs text-muted-foreground">
-                        Next review: {formatDate(selectedSupplier.nextReviewDate)}
-                        {getDaysUntilReview(selectedSupplier.nextReviewDate) !== null && (
-                          <span className={cn(
-                            'ml-1',
-                            isReviewOverdue(selectedSupplier.nextReviewDate) ? 'text-red-600 font-medium' :
-                            isReviewApproaching(selectedSupplier.nextReviewDate) ? 'text-amber-600' : ''
-                          )}>
-                            ({isReviewOverdue(selectedSupplier.nextReviewDate) ? `${Math.abs(getDaysUntilReview(selectedSupplier.nextReviewDate)!)} days overdue` :
-                            getDaysUntilReview(selectedSupplier.nextReviewDate)! <= 0 ? 'Due today' :
-                            `${getDaysUntilReview(selectedSupplier.nextReviewDate)} days remaining`})
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                  {(getRequalStatus(selectedSupplier.nextReviewDate) === 'overdue' || getRequalStatus(selectedSupplier.nextReviewDate) === 'due-soon') && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs"
-                      onClick={() => {
-                        store.triggerSupplierRequalification(selectedSupplier.id);
-                        const nextReview = new Date();
-                        nextReview.setDate(nextReview.getDate() + 90);
-                        setSelectedSupplier({
-                          ...selectedSupplier,
-                          status: 'Under Evaluation',
-                          qualificationDate: undefined,
-                          nextReviewDate: nextReview.toISOString(),
-                        });
-                      }}
-                    >
-                      <CalendarClock className="h-3.5 w-3.5 mr-1" />
-                      Trigger Re-qualification
-                    </Button>
-                  )}
-                  {selectedSupplier.status === 'Under Evaluation' && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Re-qualification in progress — Last re-qualification triggered on {formatDate(new Date().toISOString())}
-                    </p>
-                  )}
-                </div>
-
                 <Separator />
 
                 {/* Re-qualification Warning */}
@@ -1658,16 +1443,6 @@ export function SupplierView() {
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Electronic Signature Modal for Supplier Qualification/Disqualification (21 CFR Part 11) */}
-      <ElectronicSignatureModal
-        open={showSignatureModal}
-        onClose={handleSignatureCancel}
-        onSign={handleSignatureConfirm}
-        recordTitle={pendingSupplierAction ? `${pendingSupplierAction.action === 'qualify' ? 'Qualification' : 'Disqualification'}: ${pendingSupplierAction.supplier.name}` : ''}
-        recordId={pendingSupplierAction?.supplier.id || ''}
-        signatureType="approval"
-      />
     </div>
   );
 }

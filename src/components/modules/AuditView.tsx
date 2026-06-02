@@ -3,14 +3,16 @@
 import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
-import type { Audit, AuditStatus, AuditType, AuditFinding, SignatureType, Capa, CapaPriority } from '@/types/qms';
+import type { Audit, AuditStatus, AuditType, AuditFinding, SignatureType, FormTemplateModule } from '@/types/qms';
 import {
   ClipboardCheck, Plus, Search, ArrowRight, AlertCircle,
   CheckCircle2, ShieldCheck, Link2, PlusCircle, Flag,
   ChevronLeft, ChevronRight, Calendar, Users, FileText,
-  ListChecks, ClipboardList, BookOpen, Trash2, Info, FileSpreadsheet,
+  ListChecks, ClipboardList, BookOpen, Trash2, Info,
+  AlertTriangle,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -184,9 +186,14 @@ function mapExtendedType(ext: string): AuditType {
 export function AuditView() {
   const { currentUser, hasPermission } = useAuth();
   const store = useQMSStore();
+  const { getApprovedTemplates, hasApprovedTemplate, moduleTypeLabels } = useRecordWorkflow();
   const audits = store.audits;
   const profiles = store.profiles;
   const capas = store.capas;
+  const formTemplates = store.formTemplates;
+
+  const MODULE_TYPE: FormTemplateModule = 'AUDIT';
+  const approvedTemplates = getApprovedTemplates(MODULE_TYPE);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -242,6 +249,8 @@ export function AuditView() {
   const [formRiskAssessment, setFormRiskAssessment] = useState('');
   const [formManagementReviewRequired, setFormManagementReviewRequired] = useState(false);
   const [formNextAuditDate, setFormNextAuditDate] = useState('');
+
+  // Template selection
   const [formTemplateId, setFormTemplateId] = useState('');
 
   // Add finding (in detail dialog)
@@ -250,14 +259,6 @@ export function AuditView() {
   const [findingDescription, setFindingDescription] = useState('');
   const [findingReferenceClause, setFindingReferenceClause] = useState('');
   const [findingCar, setFindingCar] = useState(false);
-
-  // P2-4: Create CAPA from finding
-  const [showCreateCapaFromFinding, setShowCreateCapaFromFinding] = useState(false);
-  const [pendingFindingForCapa, setPendingFindingForCapa] = useState<{ findingId: string; findingDesc: string } | null>(null);
-  const [capaFromFindingTitle, setCapaFromFindingTitle] = useState('');
-  const [capaFromFindingPriority, setCapaFromFindingPriority] = useState<CapaPriority>('High');
-  const [capaFromFindingAssignedTo, setCapaFromFindingAssignedTo] = useState('');
-  const [capaFromFindingDueDate, setCapaFromFindingDueDate] = useState('');
 
   // Auto-generated audit number
   const nextAuditNumber = `AUD-2024-${String(audits.length + 1).padStart(3, '0')}`;
@@ -426,13 +427,8 @@ export function AuditView() {
   // ============================================================================
 
   const handleCreate = () => {
-    const complianceRatingMap: Record<string, number> = {
-      'Non-compliant': 1,
-      'Partially compliant': 2,
-      'Largely compliant': 3,
-      'Substantially compliant': 4,
-      'Fully compliant': 5,
-    };
+    // Resolve template reference
+    const selectedTemplate = formTemplateId ? approvedTemplates.find(t => t.id === formTemplateId) : undefined;
 
     const newAudit: Audit = {
       id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -440,6 +436,8 @@ export function AuditView() {
       title: formTitle,
       type: mapExtendedType(formExtendedType),
       status: 'Planned',
+      templateId: selectedTemplate?.id,
+      templateVersion: selectedTemplate?.version,
       scope: formScope || undefined,
       scheduledDate: formStartDate ? new Date(formStartDate).toISOString() : new Date().toISOString(),
       completedDate: undefined,
@@ -453,29 +451,7 @@ export function AuditView() {
         correctiveActionRequired: f.carRequired,
         capaId: f.capaReference.trim() || undefined,
       })),
-      teamMembers: formTeamMembers.length > 0 ? formTeamMembers.map(tm => ({ member: tm.member, role: tm.role, assignedScope: tm.assignedScope })) : undefined,
-      checklistItems: formChecklistItems.length > 0 ? formChecklistItems.map(ci => ({ clauseRef: ci.clauseRef, requirement: ci.requirement, evidenceExpected: ci.evidenceExpected })) : undefined,
-      documentsReviewed: formDocumentsReviewed.length > 0 ? formDocumentsReviewed.map(dr => ({ docNumber: dr.docNumber, revision: dr.revision, compliance: dr.compliance })) : undefined,
-      interviews: formInterviews.length > 0 ? formInterviews.map(iv => ({ person: iv.person, topics: iv.topics, keyPoints: iv.keyPoints })) : undefined,
-      correctiveActions: formCorrectiveActions.length > 0 ? formCorrectiveActions.map(ca => ({ action: ca.action, responsible: ca.responsible, dueDate: ca.dueDate, requiredEvidence: ca.requiredEvidence })) : undefined,
-      documentUpdates: formDocumentUpdates.length > 0 ? formDocumentUpdates.map(du => ({ document: du.document, requiredChange: du.requiredChange, changeControlRef: du.changeControlRef })) : undefined,
-      trainingRequired: formTrainingRequired.length > 0 ? formTrainingRequired.map(tr => ({ scope: tr.scope, targetPersonnel: tr.targetPersonnel, plannedDate: tr.plannedDate })) : undefined,
-      openingMeetingDate: formOpeningMeetingDate || undefined,
-      closingMeetingDate: formClosingMeetingDate || undefined,
-      attendees: formAttendees || undefined,
-      generalObservations: formGeneralObservations || undefined,
-      executiveSummary: formExecutiveSummary || undefined,
-      complianceRating: formComplianceRating ? complianceRatingMap[formComplianceRating] : undefined,
-      riskAssessment: formRiskAssessment || undefined,
-      managementReviewRequired: formManagementReviewRequired || undefined,
-      followUpDate: formFollowUpDate || undefined,
-      nextAuditDate: formNextAuditDate || undefined,
-      previousAuditRef: formPreviousAuditRef || undefined,
-      criteria: formCriteria.length > 0 ? formCriteria : undefined,
-      objectives: formObjectives.trim() ? formObjectives.split('\n').map(o => o.trim()).filter(Boolean) : undefined,
-      endDate: formEndDate || undefined,
       organizationId: 'org-001',
-      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -583,6 +559,30 @@ export function AuditView() {
           </SelectContent>
         </Select>
       </div>
+
+      {/* Template Selection (Layer 2 — Template Reference) */}
+      <div className="grid gap-2">
+        <Label className="flex items-center gap-1.5">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          Template
+        </Label>
+        <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+          <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">No template</SelectItem>
+            {approvedTemplates.map(t => (
+              <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {approvedTemplates.length === 0 && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            No approved templates available. Create one in the Forms module first.
+          </p>
+        )}
+      </div>
+
       <div className="grid gap-2">
         <Label>Audit Scope</Label>
         <Textarea
@@ -1208,22 +1208,6 @@ export function AuditView() {
         />
         <span>Management Review Required</span>
       </label>
-
-      <div className="grid gap-2">
-        <Label>Template associé (§4.2.4)</Label>
-        <Select value={formTemplateId} onValueChange={setFormTemplateId}>
-          <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Aucun</SelectItem>
-            {store.formTemplates
-              .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'AUDIT' || !t.associatedModule || t.associatedModule === 'GENERAL'))
-              .map(t => (
-                <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-              ))
-            }
-          </SelectContent>
-        </Select>
-      </div>
     </div>
   );
 
@@ -1251,7 +1235,7 @@ export function AuditView() {
             <ClipboardCheck className="h-6 w-6 text-primary" />
             Audits
           </h1>
-          <p className="text-muted-foreground mt-1">Plan, conduct and track quality audits (ISO 13485 §8.2.4) <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
+          <p className="text-muted-foreground mt-1">Plan, conduct and track quality audits (ISO 13485 §8.2.4)</p>
         </div>
         {hasPermission('audit.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -1259,6 +1243,16 @@ export function AuditView() {
           </Button>
         )}
       </div>
+
+      {/* Layer 1 Gate Warning */}
+      {!hasApprovedTemplate(MODULE_TYPE) && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            No approved template found for {moduleTypeLabels[MODULE_TYPE]} records. Please create and approve a template in the Forms module first.
+          </p>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1326,6 +1320,7 @@ export function AuditView() {
                   <TableHead className="w-[140px]">Lead Auditor</TableHead>
                   <TableHead className="w-[120px]">Scheduled</TableHead>
                   <TableHead className="w-[120px]">Status</TableHead>
+                  <TableHead className="w-[120px]">Template</TableHead>
                   <TableHead className="w-[80px]">Findings</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1347,6 +1342,19 @@ export function AuditView() {
                     <TableCell>
                       <Badge className={cn('text-xs', statusColors[audit.status])} variant="secondary">{audit.status}</Badge>
                     </TableCell>
+                    <TableCell>
+                      {audit.templateId ? (() => {
+                        const tmpl = formTemplates.find(t => t.id === audit.templateId);
+                        return tmpl ? (
+                          <Badge variant="outline" className="text-[10px] font-normal gap-1">
+                            <FileText className="h-2.5 w-2.5" />
+                            {tmpl.title}
+                          </Badge>
+                        ) : null;
+                      })() : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm">
                       {audit.findings && audit.findings.length > 0 ? (
                         <Badge variant="outline" className="text-xs">{audit.findings.length}</Badge>
@@ -1358,7 +1366,7 @@ export function AuditView() {
                 ))}
                 {filteredAudits.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No audits found matching filters</TableCell>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No audits found matching filters</TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -1470,6 +1478,21 @@ export function AuditView() {
                     <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" variant="secondary">Major Findings</Badge>
                   )}
                 </div>
+
+                {/* Template Reference (Layer 2) */}
+                {selectedAudit.templateId && (() => {
+                  const tmpl = formTemplates.find(t => t.id === selectedAudit.templateId);
+                  return tmpl ? (
+                    <div className="bg-primary/5 border border-primary/20 rounded-md p-3 flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">Template: </span>
+                        <span className="font-medium">{tmpl.title}</span>
+                        <span className="text-muted-foreground ml-2">(v{selectedAudit.templateVersion || tmpl.version})</span>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* Status Flow */}
                 <div className="flex items-center gap-1 p-3 bg-muted/50 rounded-lg overflow-x-auto">
@@ -1633,40 +1656,19 @@ export function AuditView() {
                               )}
                             </div>
                             <p className="text-sm mt-1">{f.description}</p>
-                            {f.capaId && linkedCapa ? (
+                            {f.capaId && (
                               <div className="flex items-center gap-2 mt-2">
-                                <Link2 className="h-3 w-3 text-green-600" />
+                                <Link2 className="h-3 w-3 text-muted-foreground" />
                                 <span className="text-xs text-muted-foreground">Linked CAPA:</span>
-                                <Badge variant="outline" className="font-mono text-xs border-green-300 text-green-700 dark:border-green-700 dark:text-green-400">
-                                  {linkedCapa.capaNumber}
-                                </Badge>
-                              </div>
-                            ) : f.correctiveActionRequired && !f.capaId ? (
-                              <div className="mt-2">
-                                {hasPermission('capa.create') ? (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-xs h-7"
-                                    onClick={() => {
-                                      setPendingFindingForCapa({ findingId: f.id, findingDesc: f.description });
-                                      setCapaFromFindingTitle(`CAPA - ${f.description}`);
-                                      setCapaFromFindingPriority(f.severity === 'Critical' ? 'Critical' : f.severity === 'Major' ? 'High' : 'Medium');
-                                      setCapaFromFindingAssignedTo('');
-                                      setCapaFromFindingDueDate('');
-                                      setShowCreateCapaFromFinding(true);
-                                    }}
-                                  >
-                                    <ShieldCheck className="h-3 w-3 mr-1" />
-                                    Create CAPA
-                                  </Button>
-                                ) : (
-                                  <Badge variant="outline" className="text-xs border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400">
-                                    CAR Required — No CAPA
+                                {linkedCapa ? (
+                                  <Badge variant="outline" className="font-mono text-xs">
+                                    {linkedCapa.capaNumber}
                                   </Badge>
+                                ) : (
+                                  <span className="text-xs font-mono text-muted-foreground">{f.capaId}</span>
                                 )}
                               </div>
-                            ) : null}
+                            )}
                           </div>
                         );
                       })}
@@ -1710,224 +1712,6 @@ export function AuditView() {
                   </div>
                 )}
 
-                {/* Extended Audit Data Sections */}
-                {(selectedAudit.teamMembers && selectedAudit.teamMembers.length > 0) ||
-                 (selectedAudit.checklistItems && selectedAudit.checklistItems.length > 0) ||
-                 (selectedAudit.documentsReviewed && selectedAudit.documentsReviewed.length > 0) ||
-                 (selectedAudit.correctiveActions && selectedAudit.correctiveActions.length > 0) ||
-                 selectedAudit.executiveSummary ||
-                 selectedAudit.criteria ||
-                 selectedAudit.objectives ||
-                 selectedAudit.endDate ||
-                 selectedAudit.openingMeetingDate ||
-                 selectedAudit.closingMeetingDate ||
-                 selectedAudit.attendees ||
-                 selectedAudit.generalObservations ||
-                 selectedAudit.riskAssessment ||
-                 selectedAudit.managementReviewRequired ||
-                 selectedAudit.followUpDate ||
-                 selectedAudit.nextAuditDate ||
-                 selectedAudit.previousAuditRef ||
-                 selectedAudit.complianceRating ? (
-                  <>
-                    <Separator />
-
-                    {/* Schedule & Meetings */}
-                    {(selectedAudit.endDate || selectedAudit.openingMeetingDate || selectedAudit.closingMeetingDate || selectedAudit.attendees) && (
-                      <div className="bg-muted/30 rounded-lg p-4 space-y-2">
-                        <h4 className="font-semibold text-sm flex items-center gap-2">
-                          <Calendar className="h-4 w-4" />Schedule & Meetings
-                        </h4>
-                        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                          {selectedAudit.endDate && (
-                            <div>
-                              <span className="text-muted-foreground">End Date:</span>{' '}
-                              <span className="font-medium">{formatDate(selectedAudit.endDate)}</span>
-                            </div>
-                          )}
-                          {selectedAudit.openingMeetingDate && (
-                            <div>
-                              <span className="text-muted-foreground">Opening Meeting:</span>{' '}
-                              <span className="font-medium">{formatDate(selectedAudit.openingMeetingDate)}</span>
-                            </div>
-                          )}
-                          {selectedAudit.closingMeetingDate && (
-                            <div>
-                              <span className="text-muted-foreground">Closing Meeting:</span>{' '}
-                              <span className="font-medium">{formatDate(selectedAudit.closingMeetingDate)}</span>
-                            </div>
-                          )}
-                          {selectedAudit.attendees && (
-                            <div className="col-span-2">
-                              <span className="text-muted-foreground">Attendees:</span>{' '}
-                              <span className="font-medium">{selectedAudit.attendees}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Criteria & Objectives */}
-                    {(selectedAudit.criteria || selectedAudit.objectives || selectedAudit.previousAuditRef) && (
-                      <div className="bg-muted/30 rounded-lg p-4 space-y-2">
-                        <h4 className="font-semibold text-sm flex items-center gap-2">
-                          <ClipboardList className="h-4 w-4" />Planning Details
-                        </h4>
-                        <div className="text-sm space-y-2">
-                          {selectedAudit.criteria && selectedAudit.criteria.length > 0 && (
-                            <div>
-                              <span className="text-muted-foreground">Criteria:</span>{' '}
-                              <span className="flex flex-wrap gap-1 mt-0.5">
-                                {selectedAudit.criteria.map(c => (
-                                  <Badge key={c} variant="secondary" className="text-xs">{c}</Badge>
-                                ))}
-                              </span>
-                            </div>
-                          )}
-                          {selectedAudit.objectives && selectedAudit.objectives.length > 0 && (
-                            <div>
-                              <span className="text-muted-foreground">Objectives:</span>
-                              <ul className="list-disc list-inside mt-0.5 space-y-0.5">
-                                {selectedAudit.objectives.map((o, i) => (
-                                  <li key={i} className="text-muted-foreground">{o}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {selectedAudit.previousAuditRef && (
-                            <div>
-                              <span className="text-muted-foreground">Previous Audit Ref:</span>{' '}
-                              <span className="font-mono font-medium">{selectedAudit.previousAuditRef}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Team Members */}
-                    {selectedAudit.teamMembers && selectedAudit.teamMembers.length > 0 && (
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-semibold">Team Members</h4>
-                        <div className="text-sm space-y-0.5">
-                          {selectedAudit.teamMembers.map((tm, i) => (
-                            <div key={i} className="flex gap-2">
-                              <span className="font-medium">{tm.member}</span>
-                              <span className="text-muted-foreground">— {tm.role}</span>
-                              {tm.assignedScope && <span className="text-muted-foreground text-xs">({tm.assignedScope})</span>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Checklist Items */}
-                    {selectedAudit.checklistItems && selectedAudit.checklistItems.length > 0 && (
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-semibold">Checklist</h4>
-                        <div className="text-sm space-y-0.5">
-                          {selectedAudit.checklistItems.map((ci, i) => (
-                            <div key={i} className="flex gap-2">
-                              <Badge variant="outline" className="text-xs font-mono">{ci.clauseRef}</Badge>
-                              <span>{ci.requirement}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Documents Reviewed */}
-                    {selectedAudit.documentsReviewed && selectedAudit.documentsReviewed.length > 0 && (
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-semibold">Documents Reviewed</h4>
-                        <div className="text-sm space-y-0.5">
-                          {selectedAudit.documentsReviewed.map((dr, i) => (
-                            <div key={i} className="flex gap-2">
-                              <span className="font-mono">{dr.docNumber}</span>
-                              <span className="text-muted-foreground">Rev. {dr.revision}</span>
-                              <Badge variant="outline" className={cn('text-xs', complianceColors[dr.compliance] || '')}>{dr.compliance}</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Corrective Actions */}
-                    {selectedAudit.correctiveActions && selectedAudit.correctiveActions.length > 0 && (
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-semibold">Corrective Actions</h4>
-                        <div className="text-sm space-y-0.5">
-                          {selectedAudit.correctiveActions.map((ca, i) => (
-                            <div key={i} className="flex gap-2">
-                              <span>{ca.action}</span>
-                              <span className="text-muted-foreground">— {ca.responsible}</span>
-                              {ca.dueDate && <span className="text-xs text-muted-foreground">Due: {ca.dueDate}</span>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* General Observations */}
-                    {selectedAudit.generalObservations && (
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-semibold">General Observations</h4>
-                        <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedAudit.generalObservations}</p>
-                      </div>
-                    )}
-
-                    {/* Executive Summary */}
-                    {selectedAudit.executiveSummary && (
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-semibold">Executive Summary</h4>
-                        <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedAudit.executiveSummary}</p>
-                      </div>
-                    )}
-
-                    {/* Compliance & Risk */}
-                    {(selectedAudit.complianceRating || selectedAudit.riskAssessment || selectedAudit.managementReviewRequired || selectedAudit.followUpDate || selectedAudit.nextAuditDate) && (
-                      <div className="bg-muted/30 rounded-lg p-4 space-y-2">
-                        <h4 className="font-semibold text-sm flex items-center gap-2">
-                          <ShieldCheck className="h-4 w-4" />Closure & Compliance
-                        </h4>
-                        <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                          {selectedAudit.complianceRating && (
-                            <div>
-                              <span className="text-muted-foreground">Compliance Rating:</span>{' '}
-                              <Badge className={cn('text-xs', ratingColors[complianceRatingOptions[selectedAudit.complianceRating - 1] || ''] || '')} variant="secondary">
-                                {complianceRatingOptions[selectedAudit.complianceRating - 1] || `${selectedAudit.complianceRating}/5`}
-                              </Badge>
-                            </div>
-                          )}
-                          {selectedAudit.managementReviewRequired && (
-                            <div>
-                              <span className="text-muted-foreground">Management Review:</span>{' '}
-                              <Badge variant="outline" className="text-xs">Required</Badge>
-                            </div>
-                          )}
-                          {selectedAudit.followUpDate && (
-                            <div>
-                              <span className="text-muted-foreground">Follow-Up Date:</span>{' '}
-                              <span className="font-medium">{formatDate(selectedAudit.followUpDate)}</span>
-                            </div>
-                          )}
-                          {selectedAudit.nextAuditDate && (
-                            <div>
-                              <span className="text-muted-foreground">Next Audit Date:</span>{' '}
-                              <span className="font-medium">{formatDate(selectedAudit.nextAuditDate)}</span>
-                            </div>
-                          )}
-                          {selectedAudit.riskAssessment && (
-                            <div className="col-span-2">
-                              <span className="text-muted-foreground">Risk Assessment:</span>
-                              <p className="text-sm text-muted-foreground mt-0.5">{selectedAudit.riskAssessment}</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                ) : null}
-
                 {/* Electronic Signature Section for Completed Audits */}
                 {selectedAudit.status === 'Completed' && (
                   <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md p-3 flex items-start gap-2">
@@ -1941,28 +1725,6 @@ export function AuditView() {
                     </div>
                   </div>
                 )}
-
-                {/* Hybrid Supervision: Template associé (§4.2.4) */}
-                {selectedAudit.templateId && (() => {
-                  const tmpl = store.formTemplates.find(t => t.id === selectedAudit.templateId);
-                  return tmpl ? (
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-semibold flex items-center gap-2">
-                        <FileSpreadsheet className="h-4 w-4 text-primary" />
-                        Template associé (§4.2.4)
-                      </h4>
-                      <div className="border rounded-md p-2 text-sm flex items-center justify-between">
-                        <div>
-                          <span className="font-medium">{tmpl.title}</span>
-                          <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
-                        </div>
-                        <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
-                          {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
-                        </Badge>
-                      </div>
-                    </div>
-                  ) : null;
-                })()}
 
                 {/* Advance Status Button */}
                 {hasPermission('audit.update') && selectedAudit.status !== 'Completed' && (() => {
@@ -1987,113 +1749,6 @@ export function AuditView() {
                 })()}
               </div>
             </>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* P2-4: Create CAPA from Finding Dialog */}
-      <Dialog open={showCreateCapaFromFinding} onOpenChange={(open) => { setShowCreateCapaFromFinding(open); if (!open) setPendingFindingForCapa(null); }}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              Create CAPA from Finding
-            </DialogTitle>
-          </DialogHeader>
-          {pendingFindingForCapa && selectedAudit && (
-            <div className="space-y-4">
-              {/* Finding context */}
-              <div className="bg-muted/30 p-3 rounded-md space-y-2 text-sm">
-                <p><span className="font-medium">Audit:</span> <span className="font-mono">{selectedAudit.auditNumber}</span></p>
-                <p><span className="font-medium">Finding:</span> {pendingFindingForCapa.findingDesc}</p>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                A new CAPA will be created and bidirectionally linked to this audit finding.
-              </p>
-
-              {/* Title */}
-              <div className="grid gap-2">
-                <Label>CAPA Title</Label>
-                <Input
-                  value={capaFromFindingTitle}
-                  onChange={(e) => setCapaFromFindingTitle(e.target.value)}
-                  placeholder="CAPA title"
-                />
-              </div>
-
-              {/* Priority */}
-              <div className="grid gap-2">
-                <Label>Priority</Label>
-                <Select value={capaFromFindingPriority} onValueChange={(v) => setCapaFromFindingPriority(v as CapaPriority)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Critical">Critical</SelectItem>
-                    <SelectItem value="High">High</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="Low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Assigned To */}
-              <div className="grid gap-2">
-                <Label>Assigned To</Label>
-                <Select value={capaFromFindingAssignedTo} onValueChange={setCapaFromFindingAssignedTo}>
-                  <SelectTrigger><SelectValue placeholder="Select person" /></SelectTrigger>
-                  <SelectContent>
-                    {profiles.map(p => (
-                      <SelectItem key={p.id} value={p.fullName || p.email}>{p.fullName || p.email}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Due Date */}
-              <div className="grid gap-2">
-                <Label>Due Date</Label>
-                <Input
-                  type="date"
-                  value={capaFromFindingDueDate}
-                  onChange={(e) => setCapaFromFindingDueDate(e.target.value)}
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center justify-end gap-2">
-                <Button variant="outline" onClick={() => { setShowCreateCapaFromFinding(false); setPendingFindingForCapa(null); }}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    if (!selectedAudit || !pendingFindingForCapa) return;
-                    const newCapa = store.createCapaFromAuditFinding(
-                      selectedAudit.id,
-                      pendingFindingForCapa.findingId,
-                      {
-                        title: capaFromFindingTitle,
-                        description: pendingFindingForCapa.findingDesc,
-                        priority: capaFromFindingPriority,
-                        assignedTo: capaFromFindingAssignedTo || currentUser?.id || 'user-001',
-                        dueDate: capaFromFindingDueDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-                      }
-                    );
-                    if (newCapa) {
-                      // Refresh selectedAudit with updated findings
-                      const updatedAudit = store.audits.find(a => a.id === selectedAudit.id);
-                      if (updatedAudit) {
-                        setSelectedAudit(updatedAudit);
-                      }
-                    }
-                    setShowCreateCapaFromFinding(false);
-                    setPendingFindingForCapa(null);
-                  }}
-                  disabled={!capaFromFindingTitle.trim() || !capaFromFindingAssignedTo}
-                >
-                  <ShieldCheck className="h-4 w-4 mr-2" />
-                  Create CAPA
-                </Button>
-              </div>
-            </div>
           )}
         </DialogContent>
       </Dialog>

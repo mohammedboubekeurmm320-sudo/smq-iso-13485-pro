@@ -1,6 +1,6 @@
 // Demo Store - Zustand store for managing QMS data in memory (demo mode)
 import { create } from 'zustand';
-import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation } from '@/types/qms';
+import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, FormTemplateStatus, FormTemplateModule, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation } from '@/types/qms';
 import { mockProfiles, mockOrganizations, mockOrgMembers, mockDocuments, mockCapas, mockNCRs, mockBatchRecords, mockSuppliers, mockFormTemplates, mockFormInstances, mockAudits, mockTraining, mockRisks, mockAuditTrails, mockPrerequisites, mockChangeControls, mockDeviations } from './mock-data';
 
 interface QMSStore {
@@ -47,7 +47,10 @@ interface QMSStore {
   updateRisk: (id: string, updates: Partial<Risk>) => void;
   addFormTemplate: (template: FormTemplate) => void;
   updateFormTemplate: (id: string, updates: Partial<FormTemplate>) => void;
-  deactivateTemplatesByDocument: (documentId: string, reason: string) => void;
+  /** Transition a FormTemplate through its Layer 1 lifecycle */
+  transitionFormTemplate: (id: string, targetStatus: FormTemplateStatus, options?: { reason?: string; signatureHash?: string; userId?: string }) => { success: boolean; error?: string };
+  /** Get approved templates for a given module type (Layer 1 guard) */
+  getApprovedTemplatesForModule: (moduleType: FormTemplateModule) => FormTemplate[];
   addFormInstance: (instance: FormInstance) => void;
   updateFormInstance: (id: string, updates: Partial<FormInstance>) => void;
   addChangeControl: (cc: ChangeControl) => void;
@@ -68,27 +71,6 @@ interface QMSStore {
 
   // Signature generation
   generateSignatureHash: (signerId: string, documentId: string, type: string) => string;
-
-  // P1: Template-Record integration helpers
-  /** Create a FormInstance linked to a template when a record is created with templateId */
-  createFormInstanceForRecord: (templateId: string, recordId: string, moduleName: string, fieldValues?: Record<string, unknown>) => FormInstance | null;
-  /** Sync template version when parent document version changes */
-  syncTemplateVersionsByDocument: (documentId: string, newVersion: string) => void;
-  /** Link a CAPA to NCR(s) and Audit(s) bidirectionally */
-  linkCapaToRecords: (capaId: string, ncrIds: string[], auditIds: string[]) => void;
-  /** Link NCR to CAPA(s) bidirectionally */
-  linkNcrToCapas: (ncrId: string, capaIds: string[]) => void;
-
-  // P2: Medium-priority integration helpers
-  /** Create a CAPA from an Audit Finding and bidirectionally link them (P2-4) */
-  createCapaFromAuditFinding: (auditId: string, findingId: string, capaData: { title: string; description: string; priority: Capa['priority']; assignedTo: string; dueDate: string }) => Capa | null;
-  /** Link documents to a Supplier (P2-5) */
-  linkDocumentsToSupplier: (supplierId: string, documentIds: string[]) => void;
-
-  // P3: Low-priority integration helpers
-  /** Trigger supplier re-qualification (P3-2: ISO 13485 §7.4).
-   *  Resets status to 'Under Evaluation', clears qualification date, sets nextReviewDate. */
-  triggerSupplierRequalification: (supplierId: string, requalMethod?: QualificationMethod) => void;
 }
 
 export const useQMSStore = create<QMSStore>((set, get) => ({
@@ -132,7 +114,7 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
     const missing: DocumentPrerequisite[] = [];
     for (const prereq of prereqs) {
       const hasDoc = state.documents.some(
-        d => d.type === prereq.requiredDocType && (d.status === 'Approved' || d.status === 'Effective') &&
+        d => d.type === prereq.requiredDocType && d.status === 'Approved' &&
         (!prereq.requiredDocRef || d.documentNumber === prereq.requiredDocRef)
       );
       if (!hasDoc) {
@@ -232,30 +214,71 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
   }),
 
   addFormTemplate: (template) => set(state => {
-    state.logAudit('CREATE', 'FormTemplate', template.id, undefined, { title: template.title, version: template.version, isActive: template.isActive });
+    state.logAudit('CREATE', 'FormTemplate', template.id, undefined, { title: template.title, version: template.version, status: template.status, moduleType: template.moduleType });
     return { formTemplates: [...state.formTemplates, template] };
   }),
 
   updateFormTemplate: (id, updates) => set(state => {
     const old = state.formTemplates.find(t => t.id === id);
-    state.logAudit('UPDATE', 'FormTemplate', id, old ? { isActive: old.isActive, templateStatus: old.templateStatus } : undefined, updates);
-    return { formTemplates: state.formTemplates.map(t => t.id === id ? { ...t, ...updates } : t) };
+    state.logAudit('UPDATE', 'FormTemplate', id, old ? { status: old.status } : undefined, updates);
+    return { formTemplates: state.formTemplates.map(t => t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t) };
   }),
 
-  deactivateTemplatesByDocument: (documentId, reason) => set(state => {
-    const linkedTemplates = state.formTemplates.filter(t => t.documentId === documentId && t.isActive);
-    if (linkedTemplates.length === 0) return state;
-    linkedTemplates.forEach(t => {
-      state.logAudit('UPDATE', 'FormTemplate', t.id, { isActive: true, templateStatus: t.templateStatus }, { isActive: false, templateStatus: 'Obsolete' });
-    });
-    return {
-      formTemplates: state.formTemplates.map(t =>
-        t.documentId === documentId && t.isActive
-          ? { ...t, isActive: false, templateStatus: 'Obsolete' as const }
-          : t
-      ),
+  transitionFormTemplate: (id, targetStatus, options) => {
+    const state = get();
+    const template = state.formTemplates.find(t => t.id === id);
+    if (!template) return { success: false, error: 'Template not found' };
+
+    const currentStatus = template.status || (template.isActive ? 'Approved' : 'Draft');
+    const validTransitions: Record<string, FormTemplateStatus[]> = {
+      'Draft': ['Under_Review'],
+      'Under_Review': ['Approved', 'Rejected', 'Draft'],
+      'Approved': ['Obsolete'],
+      'Rejected': ['Draft', 'Under_Review'],
+      'Obsolete': [],
     };
-  }),
+
+    const allowed = validTransitions[currentStatus] || [];
+    if (!allowed.includes(targetStatus)) {
+      return { success: false, error: `Transition from ${currentStatus} to ${targetStatus} is not allowed` };
+    }
+
+    const now = new Date().toISOString();
+    const updates: Partial<FormTemplate> = {
+      status: targetStatus,
+      isActive: targetStatus === 'Approved',
+      updatedAt: now,
+    };
+
+    if (targetStatus === 'Under_Review') {
+      updates.submittedForReviewById = options?.userId;
+      updates.submittedForReviewAt = now;
+    } else if (targetStatus === 'Approved') {
+      updates.approvedById = options?.userId;
+      updates.approvedAt = now;
+      updates.approvalSignatureHash = options?.signatureHash;
+      updates.rejectionReason = undefined;
+    } else if (targetStatus === 'Rejected') {
+      updates.rejectionReason = options?.reason;
+      updates.reviewedById = options?.userId;
+      updates.reviewedAt = now;
+    } else if (targetStatus === 'Obsolete') {
+      updates.obsolescenceReason = options?.reason;
+    } else if (targetStatus === 'Draft' && currentStatus === 'Rejected') {
+      updates.rejectionReason = undefined;
+    }
+
+    set(state => {
+      state.logAudit('UPDATE', 'FormTemplate', id, { status: currentStatus }, { status: targetStatus, ...updates });
+      return { formTemplates: state.formTemplates.map(t => t.id === id ? { ...t, ...updates } : t) };
+    });
+
+    return { success: true };
+  },
+
+  getApprovedTemplatesForModule: (moduleType) => {
+    return get().formTemplates.filter(t => t.status === 'Approved' && t.moduleType === moduleType);
+  },
 
   addFormInstance: (instance) => set(state => {
     state.logAudit('CREATE', 'FormInstance', instance.id, undefined, { referenceNumber: instance.referenceNumber, status: instance.status });
@@ -348,260 +371,5 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
       hash |= 0;
     }
     return `SIG-${Math.abs(hash).toString(16).toUpperCase()}-${timestamp.toString(36).toUpperCase()}`;
-  },
-
-  // ─── P1: Template-Record Integration Helpers ──────────────────────────────────
-
-  /** Create a FormInstance when a record is created with a templateId.
-   *  Returns the created FormInstance or null if template not found. */
-  createFormInstanceForRecord: (templateId, recordId, moduleName, fieldValues) => {
-    const state = get();
-    const template = state.formTemplates.find(t => t.id === templateId);
-    if (!template) return null;
-
-    // Build default values from template fields
-    const defaultValues: Record<string, unknown> = {};
-    for (const field of template.fields) {
-      defaultValues[field.id] = fieldValues?.[field.id] ?? field.defaultValue ?? '';
-    }
-
-    const instance: FormInstance = {
-      id: `fi-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      templateId,
-      templateVersion: template.version,
-      referenceNumber: `FI-${moduleName}-${Date.now().toString(36).toUpperCase()}`,
-      values: { ...defaultValues, ...fieldValues },
-      status: 'Draft',
-      isLocked: false,
-      parentDocumentId: template.documentId,
-      organizationId: 'org-001',
-      createdById: 'user-001',
-      createdAt: new Date().toISOString(),
-    };
-
-    set({ formInstances: [...state.formInstances, instance] });
-    state.logAudit('CREATE', 'FormInstance', instance.id, undefined, {
-      referenceNumber: instance.referenceNumber,
-      templateId,
-      recordId,
-      moduleName,
-    });
-    return instance;
-  },
-
-  /** Sync template versions when the parent document version changes (P1-3).
-   *  When a document is revised, linked templates should reflect the new version. */
-  syncTemplateVersionsByDocument: (documentId, newVersion) => {
-    const state = get();
-    const linkedTemplates = state.formTemplates.filter(t => t.documentId === documentId);
-    if (linkedTemplates.length === 0) return;
-
-    // Increment template version to align with document
-    const templateVersionSuffix = `.${newVersion}`;
-    linkedTemplates.forEach(t => {
-      state.logAudit('UPDATE', 'FormTemplate', t.id,
-        { version: t.version },
-        { version: t.version + templateVersionSuffix, syncReason: 'Document version updated' }
-      );
-    });
-
-    set({
-      formTemplates: state.formTemplates.map(t =>
-        t.documentId === documentId
-          ? { ...t, version: t.version + templateVersionSuffix }
-          : t
-      ),
-    });
-  },
-
-  /** Link a CAPA to NCR(s) and Audit(s) bidirectionally (P1-4).
-   *  Updates both the CAPA record and the referenced NCRs/Audits. */
-  linkCapaToRecords: (capaId, ncrIds, auditIds) => {
-    const state = get();
-
-    // Update CAPA with linked NCR/Audit IDs
-    const capa = state.capas.find(c => c.id === capaId);
-    if (capa) {
-      const existingNcrIds = capa.linkedNcrIds || [];
-      const existingAuditIds = capa.linkedAuditIds || [];
-      const mergedNcrIds = [...new Set([...existingNcrIds, ...ncrIds])];
-      const mergedAuditIds = [...new Set([...existingAuditIds, ...auditIds])];
-
-      // Also update deprecated singular fields for backward compat
-      set({
-        capas: state.capas.map(c =>
-          c.id === capaId
-            ? { ...c, linkedNcrIds: mergedNcrIds, linkedAuditIds: mergedAuditIds, linkedNcrId: mergedNcrIds[0], linkedAuditId: mergedAuditIds[0] }
-            : c
-        ),
-      });
-    }
-
-    // Update each NCR with the linked CAPA ID
-    if (ncrIds.length > 0) {
-      set({
-        ncrs: state.ncrs.map(n => {
-          if (!ncrIds.includes(n.id)) return n;
-          const existingCapaIds = n.linkedCapaIds || [];
-          const mergedCapaIds = [...new Set([...existingCapaIds, capaId])];
-          return { ...n, linkedCapaIds: mergedCapaIds, linkedCapaId: mergedCapaIds[0] };
-        }),
-      });
-    }
-
-    // Update each Audit with the linked CAPA ID
-    if (auditIds.length > 0) {
-      const updatedState = get();
-      set({
-        audits: updatedState.audits.map(a => {
-          if (!auditIds.includes(a.id)) return a;
-          const existingCapaIds = a.linkedCapaIds || [];
-          const mergedCapaIds = [...new Set([...existingCapaIds, capaId])];
-          return { ...a, linkedCapaIds: mergedCapaIds };
-        }),
-      });
-    }
-
-    state.logAudit('UPDATE', 'Capa', capaId, { linkedNcrIds: capa?.linkedNcrIds, linkedAuditIds: capa?.linkedAuditIds }, { linkedNcrIds: ncrIds, linkedAuditIds: auditIds });
-  },
-
-  /** Link NCR to CAPA(s) bidirectionally (P1-5).
-   *  Used when creating a CAPA from an NCR detail view. */
-  linkNcrToCapas: (ncrId, capaIds) => {
-    const state = get();
-
-    // Update NCR with linked CAPA IDs
-    const ncr = state.ncrs.find(n => n.id === ncrId);
-    if (ncr) {
-      const existingCapaIds = ncr.linkedCapaIds || [];
-      const mergedCapaIds = [...new Set([...existingCapaIds, ...capaIds])];
-
-      set({
-        ncrs: state.ncrs.map(n =>
-          n.id === ncrId
-            ? { ...n, linkedCapaIds: mergedCapaIds, linkedCapaId: mergedCapaIds[0] }
-            : n
-        ),
-      });
-    }
-
-    // Update each CAPA with the linked NCR ID
-    if (capaIds.length > 0) {
-      const updatedState = get();
-      set({
-        capas: updatedState.capas.map(c => {
-          if (!capaIds.includes(c.id)) return c;
-          const existingNcrIds = c.linkedNcrIds || [];
-          const mergedNcrIds = [...new Set([...existingNcrIds, ncrId])];
-          return { ...c, linkedNcrIds: mergedNcrIds, linkedNcrId: mergedNcrIds[0] };
-        }),
-      });
-    }
-
-    state.logAudit('UPDATE', 'NonConformance', ncrId, { linkedCapaIds: ncr?.linkedCapaIds }, { linkedCapaIds: capaIds });
-  },
-
-  // ─── P2: Medium-Priority Integration Helpers ──────────────────────────────────
-
-  /** Create a CAPA from an Audit Finding and bidirectionally link them (P2-4).
-   *  When an audit finding requires corrective action, this creates a new CAPA
-   *  and links it both to the finding (via capaId) and to the audit (via linkedCapaIds). */
-  createCapaFromAuditFinding: (auditId, findingId, capaData) => {
-    const state = get();
-    const audit = state.audits.find(a => a.id === auditId);
-    if (!audit) return null;
-
-    const newCapaId = `capa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const newCapa: Capa = {
-      id: newCapaId,
-      capaNumber: `CAPA-2024-${String(state.capas.length + 1).padStart(3, '0')}`,
-      title: capaData.title,
-      type: 'Corrective',
-      status: 'Open',
-      priority: capaData.priority || 'Medium',
-      source: 'Audit Finding',
-      sourceReferenceId: findingId,
-      description: capaData.description,
-      linkedAuditIds: [auditId],
-      assignedTo: capaData.assignedTo,
-      dueDate: capaData.dueDate,
-      createdDate: new Date().toISOString(),
-      createdById: 'user-001',
-      organizationId: 'org-001',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    set({ capas: [...state.capas, newCapa] });
-    state.logAudit('CREATE', 'Capa', newCapaId, undefined, { capaNumber: newCapa.capaNumber, title: newCapa.title, source: 'Audit Finding' });
-
-    // Update the finding's capaId
-    const updatedFindings = (audit.findings || []).map(f =>
-      f.id === findingId ? { ...f, capaId: newCapaId } : f
-    );
-    // Update the audit's linkedCapaIds
-    const existingCapaIds = audit.linkedCapaIds || [];
-    const mergedCapaIds = [...new Set([...existingCapaIds, newCapaId])];
-
-    set({
-      audits: state.audits.map(a =>
-        a.id === auditId
-          ? { ...a, findings: updatedFindings, linkedCapaIds: mergedCapaIds }
-          : a
-      ),
-    });
-    state.logAudit('UPDATE', 'Audit', auditId, { findingCapaId: undefined }, { findingCapaId: newCapaId, linkedCapaIds: mergedCapaIds });
-
-    return newCapa;
-  },
-
-  /** Link documents to a Supplier (P2-5).
-   *  Adds document references to the supplier record for qualification certificates,
-   *  audit reports, and other relevant documents. */
-  linkDocumentsToSupplier: (supplierId, documentIds) => {
-    const state = get();
-    const supplier = state.suppliers.find(s => s.id === supplierId);
-    if (!supplier) return;
-
-    const existingDocIds = supplier.linkedDocumentIds || [];
-    const mergedDocIds = [...new Set([...existingDocIds, ...documentIds])];
-
-    set({
-      suppliers: state.suppliers.map(s =>
-        s.id === supplierId
-          ? { ...s, linkedDocumentIds: mergedDocIds }
-          : s
-      ),
-    });
-    state.logAudit('UPDATE', 'Supplier', supplierId, { linkedDocumentIds: existingDocIds }, { linkedDocumentIds: mergedDocIds });
-  },
-
-  // ─── P3: Low-Priority Integration Helpers ──────────────────────────────────
-
-  /** Trigger supplier re-qualification (P3-2: ISO 13485 §7.4).
-   *  Resets status to 'Under Evaluation', clears qualification date, sets nextReviewDate. */
-  triggerSupplierRequalification: (supplierId, requalMethod) => {
-    const state = get();
-    const supplier = state.suppliers.find(s => s.id === supplierId);
-    if (!supplier) return;
-
-    const nextReviewDate = new Date();
-    nextReviewDate.setDate(nextReviewDate.getDate() + 90);
-
-    const updates: Partial<Supplier> = {
-      status: 'Under Evaluation',
-      qualificationDate: undefined,
-      nextReviewDate: nextReviewDate.toISOString(),
-      ...(requalMethod ? { qualificationMethod: requalMethod } : {}),
-    };
-
-    set({
-      suppliers: state.suppliers.map(s =>
-        s.id === supplierId ? { ...s, ...updates } : s
-      ),
-    });
-    state.logAudit('UPDATE', 'Supplier', supplierId,
-      { status: supplier.status, qualificationDate: supplier.qualificationDate, nextReviewDate: supplier.nextReviewDate },
-      { status: 'Under Evaluation', qualificationDate: undefined, nextReviewDate: nextReviewDate.toISOString(), action: 'Re-qualification triggered' }
-    );
   },
 }));

@@ -8,7 +8,7 @@ export async function GET() {
 
     const totalDocuments = store.documents.length;
     const approvedDocuments = store.documents.filter(d => d.status === 'Approved').length;
-    const draftDocuments = store.documents.filter(d => d.status === 'Draft' || d.status === 'In Review').length;
+    const draftDocuments = store.documents.filter(d => d.status === 'Draft' || d.status === 'Under Review').length;
 
     const openCapas = store.capas.filter(c => c.status !== 'Closed').length;
     const closedCapas = store.capas.filter(c => c.status === 'Closed').length;

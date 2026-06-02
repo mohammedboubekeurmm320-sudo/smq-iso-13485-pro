@@ -318,6 +318,10 @@ export interface Capa {
   title: string;
   type: CapaType;
   status: CapaStatus;
+  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  templateId?: string;
+  /** Version of the template at time of record creation */
+  templateVersion?: string;
   priority?: CapaPriority;
   source?: CapaSource;
   sourceReferenceId?: string;
@@ -332,18 +336,8 @@ export interface Capa {
   effectivenessCriteria?: string;
   effectivenessResult?: 'Effective' | 'Not Effective' | 'Pending Review';
   linkedDocumentId?: string;
-  /** @deprecated Use linkedNcrIds instead */
   linkedNcrId?: string;
-  /** @deprecated Use linkedAuditIds instead */
   linkedAuditId?: string;
-  /** Linked NCR IDs (P1: bidirectional cross-reference) */
-  linkedNcrIds?: string[];
-  /** Linked Audit IDs (P1: bidirectional cross-reference) */
-  linkedAuditIds?: string[];
-  /** Associated form template ID (§4.2.4) */
-  templateId?: string;
-  /** Associated form instance ID (§4.2.4 execution) */
-  formInstanceId?: string;
   assignedTo: string;
   dueDate: string;
   createdDate: string;
@@ -369,22 +363,19 @@ export interface NonConformance {
   title: string;
   type: NcrType;
   status: NcrStatus;
+  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  templateId?: string;
+  /** Version of the template at time of record creation */
+  templateVersion?: string;
   severity?: NcrSeverity;
   source?: string;
   description: string;
   lotNumber?: string;
   quantityAffected?: number;
   disposition?: NcrDisposition;
-  /** @deprecated Use linkedCapaIds instead */
   linkedCapaId?: string;
-  /** Linked CAPA IDs (P1: bidirectional cross-reference) */
-  linkedCapaIds?: string[];
   linkedProcedureRef?: string;
   supplierId?: string;
-  /** Associated form template ID (§4.2.4) */
-  templateId?: string;
-  /** Associated form instance ID (§4.2.4 execution) */
-  formInstanceId?: string;
   isOosOot: boolean;
   analyticalMethod?: string;
   measuredValue?: number;
@@ -451,13 +442,13 @@ export interface BatchRecord {
   manufacturingDate: string;
   expiryDate?: string;
   status: BatchStatus;
+  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  templateId?: string;
+  /** Version of the template at time of record creation */
+  templateVersion?: string;
   isLocked: boolean;
   qaReleaseDate?: string;
   qaReleasedById?: string;
-  /** Associated form template ID (§4.2.4) */
-  templateId?: string;
-  /** Associated form instance ID (§4.2.4 execution) */
-  formInstanceId?: string;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
@@ -479,6 +470,10 @@ export interface Supplier {
   name: string;
   category?: SupplierCategory;
   status: SupplierStatus;
+  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  templateId?: string;
+  /** Version of the template at time of record creation */
+  templateVersion?: string;
   qualificationDate?: string;
   nextReviewDate?: string;
   certifications?: string[];
@@ -497,21 +492,25 @@ export interface Supplier {
   emergencyContactPhone?: string;
   qualificationMethod?: QualificationMethod;
   qualificationDocRef?: string;
-  /** Associated form template ID (§4.2.4) */
-  templateId?: string;
-  /** Associated form instance ID (§4.2.4 execution) */
-  formInstanceId?: string;
-  // --- P2: Supplier → Document link (ISO 13485 §7.4) ---
-  /** Linked document IDs (qualification certificates, audit reports, etc.) */
-  linkedDocumentIds?: string[];
   organizationId?: string;
   createdById?: string;
   createdAt: string;
 }
 
 // ============================================================================
-// Form Template & Instance
+// Form Template & Instance — Hybrid 2-Layer Supervision
+// Layer 1: Template Approval (§4.2.3 Sovereign)
+// Layer 2: Record Execution (§4.2.4 Execution)
 // ============================================================================
+
+/** FormTemplate lifecycle states — Layer 1 of Hybrid Supervision */
+export type FormTemplateStatus = 'Draft' | 'Under_Review' | 'Approved' | 'Rejected' | 'Obsolete';
+
+/** Maps each record module to its FormTemplate target */
+export type FormTemplateModule =
+  | 'CAPA' | 'NCR' | 'DEVIATION' | 'CHANGE_CONTROL' | 'AUDIT'
+  | 'RISK' | 'TRAINING' | 'SUPPLIER' | 'BATCH_RECORD' | 'OOS_OOT'
+  | 'GENERAL';
 
 export interface FormFieldDefinition {
   id: string;
@@ -542,8 +541,6 @@ export interface FormTemplateCompliance {
   cfrPart11Compliance: boolean;
 }
 
-export type FormTemplateStatus = 'Draft' | 'Pending Approval' | 'Approved' | 'Inactive' | 'Obsolete';
-
 export interface FormTemplate {
   id: string;
   documentId: string;
@@ -551,20 +548,36 @@ export interface FormTemplate {
   version: string;
   description?: string;
   fields: FormFieldDefinition[];
+  /** @deprecated Use `status` instead — isActive is kept for backward compatibility */
   isActive: boolean;
-  /** Template lifecycle status */
-  templateStatus?: FormTemplateStatus;
+  /** Layer 1 lifecycle status — replaces boolean isActive */
+  status: FormTemplateStatus;
+  /** Which record module this template serves */
+  moduleType: FormTemplateModule;
+  /** Who submitted the template for review */
+  submittedForReviewById?: string;
+  /** When the template was submitted for review */
+  submittedForReviewAt?: string;
+  /** Who reviewed/approved the template */
+  reviewedById?: string;
+  /** When the template was reviewed */
+  reviewedAt?: string;
+  /** Who approved the template (final Layer 1 approval) */
+  approvedById?: string;
   /** When the template was approved */
   approvedAt?: string;
-  /** Who approved the template */
-  approvedById?: string;
-  /** Associated module for template filtering (e.g. 'CAPA', 'NCR', 'AUDIT', 'GENERAL') */
-  associatedModule?: string;
+  /** Rejection reason if status is Rejected */
+  rejectionReason?: string;
+  /** Obsolescence reason if status is Obsolete */
+  obsolescenceReason?: string;
+  /** Signature hash from approval e-signature */
+  approvalSignatureHash?: string;
   workflow?: FormTemplateWorkflow;
   compliance?: FormTemplateCompliance;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
+  updatedAt?: string;
   instances?: FormInstance[];
 }
 
@@ -688,61 +701,16 @@ export interface Audit {
   title: string;
   type: AuditType;
   status: AuditStatus;
+  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  templateId?: string;
+  /** Version of the template at time of record creation */
+  templateVersion?: string;
   scope?: string;
   scheduledDate: string;
   completedDate?: string;
   leadAuditor: string;
   auditees?: string[];
   findings?: AuditFinding[];
-  /** Linked CAPA IDs from audit findings (P1: bidirectional cross-reference) */
-  linkedCapaIds?: string[];
-  /** Associated form template ID (§4.2.4) */
-  templateId?: string;
-  /** Associated form instance ID (§4.2.4 execution) */
-  formInstanceId?: string;
-  // --- Extended audit data (previously lost in wizard) ---
-  /** Audit team members */
-  teamMembers?: { member: string; role: string; assignedScope: string }[];
-  /** Audit checklist items */
-  checklistItems?: { clauseRef: string; requirement: string; evidenceExpected: string }[];
-  /** Documents reviewed during audit */
-  documentsReviewed?: { docNumber: string; revision: string; compliance: string }[];
-  /** Interviews conducted during audit */
-  interviews?: { person: string; topics: string; keyPoints: string }[];
-  /** Corrective actions identified */
-  correctiveActions?: { action: string; responsible: string; dueDate: string; requiredEvidence: string }[];
-  /** Document updates required */
-  documentUpdates?: { document: string; requiredChange: string; changeControlRef: string }[];
-  /** Training required as a result */
-  trainingRequired?: { scope: string; targetPersonnel: string; plannedDate: string }[];
-  /** Opening meeting date */
-  openingMeetingDate?: string;
-  /** Closing meeting date */
-  closingMeetingDate?: string;
-  /** Meeting attendees */
-  attendees?: string;
-  /** General observations */
-  generalObservations?: string;
-  /** Executive summary */
-  executiveSummary?: string;
-  /** Compliance rating (1-5) */
-  complianceRating?: number;
-  /** Risk assessment */
-  riskAssessment?: string;
-  /** Whether management review is required */
-  managementReviewRequired?: boolean;
-  /** Follow-up date */
-  followUpDate?: string;
-  /** Next scheduled audit date */
-  nextAuditDate?: string;
-  /** Previous audit reference */
-  previousAuditRef?: string;
-  /** Audit criteria */
-  criteria?: string[];
-  /** Audit objectives */
-  objectives?: string[];
-  /** End date */
-  endDate?: string;
   organizationId?: string;
   createdAt: string;
   updatedAt: string;
@@ -761,56 +729,14 @@ export interface Training {
   description?: string;
   type: TrainingType;
   status: TrainingStatus;
+  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  templateId?: string;
+  /** Version of the template at time of record creation */
+  templateVersion?: string;
   assignedTo: string;
   dueDate: string;
   completedDate?: string;
   documentId?: string;
-  // --- Extended training data (previously lost in local state) ---
-  /** Regulatory reference */
-  regulatoryReference?: string;
-  /** Training materials description */
-  materialsDescription?: string;
-  /** Duration of training */
-  duration?: string;
-  /** Delivery method */
-  deliveryMethod?: 'Classroom' | 'Online' | 'On-the-Job Training' | 'Webinar' | 'Blended';
-  /** Trainer name */
-  trainer?: string;
-  /** Priority level */
-  priority?: 'Low' | 'Medium' | 'High' | 'Critical';
-  /** Whether competency assessment is required */
-  assessmentRequired?: boolean;
-  /** Assessment method */
-  assessmentMethod?: 'Written Exam' | 'Practical Demonstration' | 'Oral' | 'Observation' | 'Combined';
-  /** Passing score for assessment */
-  passingScore?: number;
-  /** Retraining interval */
-  retrainingInterval?: 'None' | '6 Months' | '12 Months' | '24 Months' | '36 Months';
-  /** Whether certification is required */
-  certificationRequired?: boolean;
-  /** Certification validity period */
-  certificationValidity?: 'Indefinite' | '1 Year' | '2 Years' | '3 Years' | '5 Years';
-  /** Applicable standards */
-  applicableStandards?: string;
-  /** Training category */
-  trainingCategory?: 'GMP' | 'GLP' | 'GCP' | 'Safety' | 'Quality' | 'Other';
-  /** Associated form template ID (§4.2.4) */
-  templateId?: string;
-  /** Associated form instance ID (§4.2.4 execution) */
-  formInstanceId?: string;
-  // --- P2: Training effectiveness evaluation (ISO 13485 §6.2) ---
-  /** Whether effectiveness evaluation is required after completion */
-  effectivenessEvaluationRequired?: boolean;
-  /** Effectiveness evaluation method */
-  effectivenessMethod?: 'Supervisor Observation' | 'Knowledge Test' | 'Skill Demonstration' | 'On-the-Job Performance Review' | 'Peer Assessment' | 'Other';
-  /** Effectiveness evaluation date */
-  effectivenessEvaluationDate?: string;
-  /** Effectiveness evaluation result */
-  effectivenessResult?: 'Competent' | 'Needs Improvement' | 'Not Competent' | 'Pending';
-  /** Effectiveness evaluation notes */
-  effectivenessNotes?: string;
-  /** Effectiveness evaluated by */
-  effectivenessEvaluatedBy?: string;
   organizationId?: string;
   createdAt: string;
   updatedAt: string;
@@ -834,40 +760,13 @@ export interface Risk {
   detectability: number; // 1-5
   rpn: number; // probability * impact * detectability
   riskLevel: RiskLevel;
+  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  templateId?: string;
+  /** Version of the template at time of record creation */
+  templateVersion?: string;
   mitigation?: string;
   residualRisk?: string;
   status: RiskStatus;
-  // --- Extended risk data (previously lost in wizard) ---
-  /** Hazard description */
-  hazardDescription?: string;
-  /** Risk acceptability level */
-  riskAcceptability?: 'Acceptable' | 'ALARP' | 'Unacceptable';
-  /** Regulatory reference */
-  regulatoryReference?: string;
-  /** Control type from hierarchy of controls */
-  controlType?: string;
-  /** Verification method for mitigation */
-  verificationMethod?: string;
-  /** Residual probability (1-5) */
-  residualProbability?: number;
-  /** Residual impact (1-5) */
-  residualImpact?: number;
-  /** Residual detectability (1-5) */
-  residualDetectability?: number;
-  /** Risk owner */
-  riskOwner?: string;
-  /** Priority notes */
-  priorityNotes?: string;
-  /** Linked document ID */
-  linkedDocumentId?: string;
-  /** @deprecated Use linkedCapaIds instead */
-  linkedCapaId?: string;
-  /** Linked CAPA IDs (P1: bidirectional cross-reference) */
-  linkedCapaIds?: string[];
-  /** Associated form template ID (§4.2.4) */
-  templateId?: string;
-  /** Associated form instance ID (§4.2.4 execution) */
-  formInstanceId?: string;
   organizationId?: string;
   createdAt: string;
   updatedAt: string;
@@ -891,7 +790,7 @@ export interface NavItem {
 // ============================================================================
 
 export type ChangeControlType = 'Planned' | 'Unplanned' | 'Emergency';
-export type ChangeControlStatus = 'Requested' | 'Under Review' | 'Approved' | 'In Implementation' | 'Completed' | 'Post-Implementation Review' | 'Closed' | 'Rejected';
+export type ChangeControlStatus = 'Requested' | 'Under Review' | 'Approved' | 'In Implementation' | 'Completed' | 'Rejected';
 export type ChangeControlPriority = 'Critical' | 'High' | 'Medium' | 'Low';
 export type ChangeControlCategory = 'Process' | 'Equipment' | 'Facility' | 'Document' | 'Material' | 'Computer System' | 'Organizational' | 'Manufacturing' | 'Regulatory' | 'Supply Chain' | 'Warehouse' | 'Other';
 
@@ -901,6 +800,10 @@ export interface ChangeControl {
   title: string;
   type: ChangeControlType;
   status: ChangeControlStatus;
+  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  templateId?: string;
+  /** Version of the template at time of record creation */
+  templateVersion?: string;
   priority: ChangeControlPriority;
   category: ChangeControlCategory;
   description: string;
@@ -921,28 +824,11 @@ export interface ChangeControl {
   linkedDocumentId?: string;
   linkedCapaId?: string;
   additionalReferences?: string;
-  /** Associated form template ID (§4.2.4) */
-  templateId?: string;
-  /** Associated form instance ID (§4.2.4 execution) */
-  formInstanceId?: string;
   assignedTo: string;
   requestedBy: string;
   approvedBy?: string;
   approver?: string;
   dueDate: string;
-  // --- P2: Post-Implementation Review fields (ISO 13485 §7.1 / §8.5.1) ---
-  /** Whether post-implementation review is required */
-  postImplReviewRequired?: boolean;
-  /** Post-implementation review date */
-  postImplReviewDate?: string;
-  /** Post-implementation review outcome */
-  postImplReviewOutcome?: 'Successful' | 'Partially Successful' | 'Unsuccessful' | 'Pending';
-  /** Post-implementation review findings */
-  postImplReviewFindings?: string;
-  /** Post-implementation review verified by */
-  postImplReviewVerifiedBy?: string;
-  /** Date when CC was fully closed after post-impl review */
-  closedDate?: string;
   createdById?: string;
   organizationId?: string;
   createdAt: string;
@@ -966,6 +852,10 @@ export interface Deviation {
   title: string;
   type: DeviationType;
   status: DeviationStatus;
+  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  templateId?: string;
+  /** Version of the template at time of record creation */
+  templateVersion?: string;
   severity: DeviationSeverity;
   category: DeviationCategory;
   description: string;
@@ -989,10 +879,6 @@ export interface Deviation {
   quantityAffected?: number;
   linkedCapaId?: string;
   linkedDocumentId?: string;
-  /** Associated form template ID (§4.2.4) */
-  templateId?: string;
-  /** Associated form instance ID (§4.2.4 execution) */
-  formInstanceId?: string;
   assignedTo: string;
   dueDate: string;
   closedDate?: string;

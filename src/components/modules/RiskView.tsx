@@ -3,8 +3,9 @@
 import React, { useState, useMemo } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import { cn, formatDate } from '@/lib/utils';
-import type { Risk, RiskCategory, RiskLevel, RiskStatus, SignatureType } from '@/types/qms';
+import type { Risk, RiskCategory, RiskLevel, RiskStatus, SignatureType, FormTemplateModule } from '@/types/qms';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import {
   BarChart3, Plus, Search, Eye, AlertTriangle, Shield, ShieldCheck,
@@ -312,10 +313,15 @@ function RiskMatrixVisualization({
 export function RiskView() {
   const { currentUser, hasPermission } = useAuth();
   const store = useQMSStore();
+  const { getApprovedTemplates, hasApprovedTemplate, moduleTypeLabels } = useRecordWorkflow();
   const risks = store.risks;
   const profiles = store.profiles;
   const documents = store.documents;
   const capas = store.capas;
+  const formTemplates = store.formTemplates;
+
+  const MODULE_TYPE: FormTemplateModule = 'RISK';
+  const approvedTemplates = getApprovedTemplates(MODULE_TYPE);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -331,6 +337,9 @@ export function RiskView() {
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1);
   const [wizardForm, setWizardForm] = useState<WizardFormState>({ ...initialWizardForm });
+
+  // Template selection
+  const [formTemplateId, setFormTemplateId] = useState('');
 
   // Electronic signature state
   const [showEsigModal, setShowEsigModal] = useState(false);
@@ -383,6 +392,7 @@ export function RiskView() {
   const resetWizard = () => {
     setWizardStep(1);
     setWizardForm({ ...initialWizardForm });
+    setFormTemplateId('');
   };
 
   const canAdvanceStep = (step: number): boolean => {
@@ -399,11 +409,16 @@ export function RiskView() {
 
   const handleCreateFromWizard = () => {
     if (!wizardForm.title.trim()) return;
+    // Resolve template reference
+    const selectedTemplate = formTemplateId ? approvedTemplates.find(t => t.id === formTemplateId) : undefined;
+
     const newRisk: Risk = {
       id: `risk-${Date.now()}`,
       riskNumber: `RISK-2024-${String(risks.length + 1).padStart(3, '0')}`,
       title: wizardForm.title.trim(),
       category: mapToRiskCategory(wizardForm.category),
+      templateId: selectedTemplate?.id,
+      templateVersion: selectedTemplate?.version,
       probability: wizardForm.probability,
       impact: wizardForm.impact,
       detectability: wizardForm.detectability,
@@ -485,6 +500,16 @@ export function RiskView() {
           </Button>
         )}
       </div>
+
+      {/* Layer 1 Gate Warning */}
+      {!hasApprovedTemplate(MODULE_TYPE) && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            No approved template found for {moduleTypeLabels[MODULE_TYPE]} records. Please create and approve a template in the Forms module first.
+          </p>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -583,6 +608,7 @@ export function RiskView() {
                       <TableHead className="w-[70px]">RPN</TableHead>
                       <TableHead className="w-[100px]">Risk Level</TableHead>
                       <TableHead className="w-[100px]">Status</TableHead>
+                      <TableHead className="w-[120px]">Template</TableHead>
                       <TableHead className="w-[80px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -603,6 +629,19 @@ export function RiskView() {
                           <Badge className={cn('text-xs', riskStatusColors[risk.status])} variant="secondary">{risk.status}</Badge>
                         </TableCell>
                         <TableCell>
+                          {risk.templateId ? (() => {
+                            const tmpl = formTemplates.find(t => t.id === risk.templateId);
+                            return tmpl ? (
+                              <Badge variant="outline" className="text-[10px] font-normal gap-1">
+                                <FileText className="h-2.5 w-2.5" />
+                                {tmpl.title}
+                              </Badge>
+                            ) : null;
+                          })() : (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openDetail(risk); }}>
                             <Eye className="h-4 w-4" />
                           </Button>
@@ -611,7 +650,7 @@ export function RiskView() {
                     ))}
                     {filteredRisks.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                           No risks found matching filters
                         </TableCell>
                       </TableRow>
@@ -783,6 +822,29 @@ export function RiskView() {
                           {wizardCategories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    {/* Template Selection (Layer 2 — Template Reference) */}
+                    <div className="grid gap-2">
+                      <Label className="flex items-center gap-1">
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        Template
+                      </Label>
+                      <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+                        <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No template</SelectItem>
+                          {approvedTemplates.map(t => (
+                            <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {approvedTemplates.length === 0 && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" />
+                          No approved templates available. Create one in the Forms module first.
+                        </p>
+                      )}
                     </div>
 
                     <div className="grid gap-2">
@@ -1460,6 +1522,21 @@ export function RiskView() {
                     </>
                   )}
                 </div>
+
+                {/* Template Reference (Layer 2) */}
+                {selectedRisk.templateId && (() => {
+                  const tmpl = formTemplates.find(t => t.id === selectedRisk.templateId);
+                  return tmpl ? (
+                    <div className="bg-primary/5 border border-primary/20 rounded-md p-3 flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">Template: </span>
+                        <span className="font-medium">{tmpl.title}</span>
+                        <span className="text-muted-foreground ml-2">(v{selectedRisk.templateVersion || tmpl.version})</span>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
 
                 {/* RPN Breakdown */}
                 <div className="grid grid-cols-4 gap-3">

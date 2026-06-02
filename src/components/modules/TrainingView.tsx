@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
 import type { Training, TrainingType, TrainingStatus, SignatureType } from '@/types/qms';
+import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import {
   GraduationCap, Plus, Search, CheckCircle2, Clock, AlertTriangle,
   Eye, ArrowRight, FileText, BookOpen, Play, AlertCircle,
@@ -72,7 +73,6 @@ const assessmentMethods = ['Written Exam', 'Practical Demonstration', 'Oral', 'O
 const retrainingIntervals = ['None', '6 Months', '12 Months', '24 Months', '36 Months'] as const;
 const certificationValidities = ['Indefinite', '1 Year', '2 Years', '3 Years', '5 Years'] as const;
 const complianceCategories = ['GMP', 'GLP', 'GCP', 'Safety', 'Quality', 'Other'] as const;
-const effectivenessMethods = ['Supervisor Observation', 'Knowledge Test', 'Skill Demonstration', 'On-the-Job Performance Review', 'Peer Assessment', 'Other'] as const;
 
 const WIZARD_STEPS = [
   { label: 'Training Details', icon: ClipboardCheck },
@@ -102,6 +102,9 @@ export function TrainingView() {
   const trainings = store.training;
   const profiles = store.profiles;
   const documents = store.documents;
+  const { getApprovedTemplates, hasApprovedTemplate, moduleTypeLabels } = useRecordWorkflow();
+  const approvedTrainingTemplates = getApprovedTemplates('TRAINING');
+  const trainingHasApprovedTemplate = hasApprovedTemplate('TRAINING');
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -118,6 +121,10 @@ export function TrainingView() {
 
   // Wizard step
   const [wizardStep, setWizardStep] = useState(0);
+
+  // Template selection
+  const [formTemplateId, setFormTemplateId] = useState('');
+  const [formTemplateVersion, setFormTemplateVersion] = useState('');
 
   // ── Step 1: Training Details ──
   const [formTitle, setFormTitle] = useState('');
@@ -142,20 +149,12 @@ export function TrainingView() {
   const [formAssessmentMethod, setFormAssessmentMethod] = useState<TrainingExtendedMeta['assessmentMethod']>('');
   const [formPassingScore, setFormPassingScore] = useState<number>(70);
   const [formRetrainingInterval, setFormRetrainingInterval] = useState<TrainingExtendedMeta['retrainingInterval']>('');
-  const [formEffectivenessRequired, setFormEffectivenessRequired] = useState(false);
-  const [formEffectivenessMethod, setFormEffectivenessMethod] = useState<Training['effectivenessMethod']>('');
 
   // ── Step 5: Compliance & Certification ──
   const [formCertificationRequired, setFormCertificationRequired] = useState(false);
   const [formCertificationValidity, setFormCertificationValidity] = useState<TrainingExtendedMeta['certificationValidity']>('');
   const [formApplicableStandards, setFormApplicableStandards] = useState('');
   const [formCategory, setFormCategory] = useState<TrainingExtendedMeta['category']>('');
-
-  // ── Detail dialog: Effectiveness Evaluation ──
-  const [effEvalDate, setEffEvalDate] = useState('');
-  const [effEvalResult, setEffEvalResult] = useState<Training['effectivenessResult']>('Pending');
-  const [effEvalNotes, setEffEvalNotes] = useState('');
-  const [effEvaluatedBy, setEffEvaluatedBy] = useState('');
 
   // Extended metadata store (keyed by training ID)
   const [extendedMeta, setExtendedMeta] = useState<Record<string, TrainingExtendedMeta>>({});
@@ -221,8 +220,8 @@ export function TrainingView() {
     setFormCertificationValidity('');
     setFormApplicableStandards('');
     setFormCategory('');
-    setFormEffectivenessRequired(false);
-    setFormEffectivenessMethod('');
+    setFormTemplateId('');
+    setFormTemplateVersion('');
   };
 
   // ── Step validation ──
@@ -231,7 +230,7 @@ export function TrainingView() {
       case 0: return !!formTitle.trim();
       case 1: return true; // optional fields
       case 2: return !!formAssignedTo && !!formDueDate;
-      case 3: return (!formAssessmentRequired || !!formAssessmentMethod) && (!formEffectivenessRequired || !!formEffectivenessMethod);
+      case 3: return !formAssessmentRequired || !!formAssessmentMethod;
       case 4: return !formCertificationRequired || !!formCertificationValidity;
       case 5: return true;
       default: return false;
@@ -246,7 +245,22 @@ export function TrainingView() {
   const handleCreate = () => {
     if (!formTitle.trim() || !formAssignedTo || !formDueDate) return;
     const id = `train-${Date.now()}`;
-    // Build extended meta object from form state
+    const newTraining: Training = {
+      id,
+      title: formTitle.trim(),
+      description: formDescription.trim() || undefined,
+      type: formType,
+      status: 'Planned',
+      assignedTo: formAssignedTo,
+      dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
+      documentId: formDocumentId && formDocumentId !== 'none' ? formDocumentId : undefined,
+      templateId: formTemplateId || undefined,
+      templateVersion: formTemplateVersion || undefined,
+      organizationId: 'org-001',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    // Store extended metadata locally
     const meta: TrainingExtendedMeta = {
       regulatoryReference: formRegulatoryReference.trim() || undefined,
       materialsDescription: formMaterialsDescription.trim() || undefined,
@@ -263,37 +277,6 @@ export function TrainingView() {
       applicableStandards: formApplicableStandards.trim() || undefined,
       category: formCategory || undefined,
     };
-    const newTraining: Training = {
-      id,
-      title: formTitle.trim(),
-      description: formDescription.trim() || undefined,
-      type: formType,
-      status: 'Planned',
-      assignedTo: formAssignedTo,
-      dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
-      documentId: formDocumentId && formDocumentId !== 'none' ? formDocumentId : undefined,
-      // --- P0-3: Persist extended metadata directly in Training record (previously lost in local state) ---
-      regulatoryReference: meta.regulatoryReference || undefined,
-      materialsDescription: meta.materialsDescription || undefined,
-      duration: meta.duration || undefined,
-      deliveryMethod: meta.deliveryMethod || undefined,
-      trainer: meta.trainer || undefined,
-      priority: meta.priority || undefined,
-      assessmentRequired: meta.assessmentRequired,
-      assessmentMethod: meta.assessmentMethod || undefined,
-      passingScore: meta.passingScore || undefined,
-      retrainingInterval: meta.retrainingInterval || undefined,
-      certificationRequired: meta.certificationRequired,
-      certificationValidity: meta.certificationValidity || undefined,
-      applicableStandards: meta.applicableStandards || undefined,
-      trainingCategory: meta.category || undefined,
-      effectivenessEvaluationRequired: formEffectivenessRequired || undefined,
-      effectivenessMethod: formEffectivenessMethod || undefined,
-      organizationId: 'org-001',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    // Keep local state as backup / for legacy compatibility
     setExtendedMeta(prev => ({ ...prev, [id]: meta }));
     store.addTraining(newTraining);
     resetForm();
@@ -302,10 +285,6 @@ export function TrainingView() {
 
   const openDetail = (training: Training) => {
     setSelectedTraining(training);
-    setEffEvalDate(training.effectivenessEvaluationDate ? new Date(training.effectivenessEvaluationDate).toISOString().split('T')[0] : '');
-    setEffEvalResult(training.effectivenessResult || 'Pending');
-    setEffEvalNotes(training.effectivenessNotes || '');
-    setEffEvaluatedBy(training.effectivenessEvaluatedBy || '');
     setShowDetailDialog(true);
   };
 
@@ -350,20 +329,6 @@ export function TrainingView() {
     setShowSignatureModal(false);
   };
 
-  // ── Submit Effectiveness Evaluation ──
-  const handleSubmitEffectiveness = () => {
-    if (!selectedTraining || !effEvalDate || !effEvalResult || !effEvaluatedBy) return;
-    const updates: Partial<Training> = {
-      effectivenessEvaluationDate: new Date(effEvalDate).toISOString(),
-      effectivenessResult: effEvalResult,
-      effectivenessNotes: effEvalNotes.trim() || undefined,
-      effectivenessEvaluatedBy: effEvaluatedBy,
-      updatedAt: new Date().toISOString(),
-    };
-    store.updateTraining(selectedTraining.id, updates);
-    setSelectedTraining({ ...selectedTraining, ...updates });
-  };
-
   // Linked document lookup
   const getLinkedDocument = (docId?: string) => {
     if (!docId) return null;
@@ -406,6 +371,28 @@ export function TrainingView() {
             </div>
             <p className="text-sm text-muted-foreground">Provide the core information for this training record.</p>
             <div className="grid gap-4">
+              {/* Template Selector */}
+              <div className="grid gap-2">
+                <Label htmlFor="train-template">Template</Label>
+                <Select value={formTemplateId || 'none'} onValueChange={(v) => {
+                  if (v === 'none') {
+                    setFormTemplateId('');
+                    setFormTemplateVersion('');
+                  } else {
+                    setFormTemplateId(v);
+                    const tpl = approvedTrainingTemplates.find(t => t.id === v);
+                    setFormTemplateVersion(tpl?.version || '');
+                  }
+                }}>
+                  <SelectTrigger id="train-template"><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No template</SelectItem>
+                    {approvedTrainingTemplates.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid gap-2">
                 <Label htmlFor="train-title">Title *</Label>
                 <Input id="train-title" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="e.g. ISO 13485 Awareness Training" />
@@ -599,40 +586,6 @@ export function TrainingView() {
                   </SelectContent>
                 </Select>
               </div>
-
-              {/* ─── Effectiveness Evaluation ─── */}
-              <div className="flex items-center justify-between rounded-md border p-4">
-                <div className="space-y-0.5">
-                  <Label htmlFor="train-effectiveness-required" className="font-medium">Effectiveness Evaluation Required</Label>
-                  <p className="text-sm text-muted-foreground">Evaluate training effectiveness after completion</p>
-                </div>
-                <Switch
-                  id="train-effectiveness-required"
-                  checked={formEffectivenessRequired}
-                  onCheckedChange={setFormEffectivenessRequired}
-                />
-              </div>
-
-              {formEffectivenessRequired && (
-                <div className="space-y-4 pl-4 border-l-2 border-primary/30">
-                  <div className="grid gap-2">
-                    <Label htmlFor="train-effectiveness-method">Effectiveness Method *</Label>
-                    <Select value={formEffectivenessMethod || 'none'} onValueChange={(v) => setFormEffectivenessMethod(v === 'none' ? '' : v as Training['effectivenessMethod'])}>
-                      <SelectTrigger id="train-effectiveness-method"><SelectValue placeholder="Select method" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Not specified</SelectItem>
-                        {effectivenessMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="bg-primary/5 border border-primary/20 rounded-md p-3 flex items-start gap-2">
-                    <Shield className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-muted-foreground">
-                      Effectiveness will be evaluated after training completion per ISO 13485 §6.2
-                    </p>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         );
@@ -753,21 +706,10 @@ export function TrainingView() {
                 {formAssessmentRequired && formAssessmentMethod && <div><span className="text-muted-foreground">Method:</span> <span className="font-medium">{formAssessmentMethod}</span></div>}
                 {formAssessmentRequired && <div><span className="text-muted-foreground">Passing Score:</span> <span className="font-medium">{formPassingScore}%</span></div>}
                 {formRetrainingInterval && <div><span className="text-muted-foreground">Retraining:</span> <span className="font-medium">{formRetrainingInterval}</span></div>}
-                {!formAssessmentRequired && !formRetrainingInterval && !formEffectivenessRequired && (
+                {!formAssessmentRequired && !formRetrainingInterval && (
                   <div className="col-span-2 text-muted-foreground italic">No assessment configured</div>
                 )}
               </div>
-              {formEffectivenessRequired && (
-                <div className="mt-2 pt-2 border-t">
-                  <h5 className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                    <Shield className="h-3 w-3" /> Effectiveness Evaluation
-                  </h5>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                    <div><span className="text-muted-foreground">Required:</span> <span className="font-medium">Yes</span></div>
-                    {formEffectivenessMethod && <div><span className="text-muted-foreground">Method:</span> <span className="font-medium">{formEffectivenessMethod}</span></div>}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Compliance & Certification Summary */}
@@ -807,6 +749,17 @@ export function TrainingView() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+      {/* Layer 1 Gate Warning */}
+      {!trainingHasApprovedTemplate && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-amber-700 dark:text-amber-400">
+            <p className="font-medium">No approved template found for Training records</p>
+            <p className="mt-0.5">Please create and approve a template in the Forms module first.</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -936,6 +889,7 @@ export function TrainingView() {
                   <TableHead className="w-[120px]">Status</TableHead>
                   <TableHead className="w-[110px]">Completed</TableHead>
                   <TableHead className="w-[100px]">Document</TableHead>
+                  <TableHead className="w-[110px]">Template</TableHead>
                   <TableHead className="w-[80px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -991,6 +945,18 @@ export function TrainingView() {
                         )}
                       </TableCell>
                       <TableCell>
+                        {training.templateId ? (() => {
+                          const tpl = store.formTemplates.find(t => t.id === training.templateId);
+                          return tpl ? (
+                            <Badge variant="outline" className="text-xs">{tpl.title}</Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          );
+                        })() : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openDetail(training); }}>
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -1000,7 +966,7 @@ export function TrainingView() {
                 })}
                 {filteredTrainings.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       No training records found
                     </TableCell>
                   </TableRow>
@@ -1120,13 +1086,13 @@ export function TrainingView() {
                       {effectiveStatus}
                     </Badge>
                     <Badge variant="outline">{selectedTraining.type}</Badge>
-                    {(selectedTraining.priority || meta?.priority) && (
-                      <Badge className={cn(getPriorityColor(selectedTraining.priority || meta?.priority))} variant="secondary">
-                        {selectedTraining.priority || meta?.priority}
+                    {meta?.priority && (
+                      <Badge className={cn(getPriorityColor(meta.priority))} variant="secondary">
+                        {meta.priority}
                       </Badge>
                     )}
-                    {(selectedTraining.trainingCategory || meta?.category) && (
-                      <Badge variant="outline" className="text-xs">{selectedTraining.trainingCategory || meta?.category}</Badge>
+                    {meta?.category && (
+                      <Badge variant="outline" className="text-xs">{meta.category}</Badge>
                     )}
                   </div>
 
@@ -1175,6 +1141,15 @@ export function TrainingView() {
 
                   {/* Training metadata */}
                   <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                    {selectedTraining.templateId && (() => {
+                      const tpl = store.formTemplates.find(t => t.id === selectedTraining.templateId);
+                      return tpl ? (
+                        <div className="col-span-2">
+                          <span className="text-muted-foreground">Template:</span>{' '}
+                          <Badge variant="outline" className="text-xs">{tpl.title} (v{selectedTraining.templateVersion || tpl.version})</Badge>
+                        </div>
+                      ) : null;
+                    })()}
                     <div>
                       <span className="text-muted-foreground">Assigned To:</span>{' '}
                       <span className="font-medium">{getUserName(selectedTraining.assignedTo)}</span>
@@ -1183,10 +1158,10 @@ export function TrainingView() {
                       <span className="text-muted-foreground">Type:</span>{' '}
                       <span className="font-medium">{selectedTraining.type}</span>
                     </div>
-                    {(selectedTraining.trainer || meta?.trainer) && (
+                    {meta?.trainer && (
                       <div>
                         <span className="text-muted-foreground">Trainer:</span>{' '}
-                        <span className="font-medium">{getUserName(selectedTraining.trainer || meta?.trainer || '')}</span>
+                        <span className="font-medium">{getUserName(meta.trainer)}</span>
                       </div>
                     )}
                     <div>
@@ -1209,22 +1184,22 @@ export function TrainingView() {
                       <span className="text-muted-foreground">Updated:</span>{' '}
                       <span className="font-medium">{formatDate(selectedTraining.updatedAt)}</span>
                     </div>
-                    {(selectedTraining.duration || meta?.duration) && (
+                    {meta?.duration && (
                       <div>
                         <span className="text-muted-foreground">Duration:</span>{' '}
-                        <span className="font-medium">{selectedTraining.duration || meta?.duration}</span>
+                        <span className="font-medium">{meta.duration}</span>
                       </div>
                     )}
-                    {(selectedTraining.deliveryMethod || meta?.deliveryMethod) && (
+                    {meta?.deliveryMethod && (
                       <div>
                         <span className="text-muted-foreground">Delivery:</span>{' '}
-                        <span className="font-medium">{selectedTraining.deliveryMethod || meta?.deliveryMethod}</span>
+                        <span className="font-medium">{meta.deliveryMethod}</span>
                       </div>
                     )}
-                    {(selectedTraining.regulatoryReference || meta?.regulatoryReference) && (
+                    {meta?.regulatoryReference && (
                       <div className="col-span-2">
                         <span className="text-muted-foreground">Regulatory Reference:</span>{' '}
-                        <span className="font-medium font-mono text-xs">{selectedTraining.regulatoryReference || meta?.regulatoryReference}</span>
+                        <span className="font-medium font-mono text-xs">{meta.regulatoryReference}</span>
                       </div>
                     )}
                   </div>
@@ -1238,13 +1213,13 @@ export function TrainingView() {
                   )}
 
                   {/* Materials Description */}
-                  {(selectedTraining.materialsDescription || meta?.materialsDescription) && (
+                  {meta?.materialsDescription && (
                     <div>
                       <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
                         <FileCheck className="h-4 w-4" />
                         Training Materials
                       </h4>
-                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedTraining.materialsDescription || meta?.materialsDescription}</p>
+                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{meta.materialsDescription}</p>
                     </div>
                   )}
 
@@ -1267,7 +1242,7 @@ export function TrainingView() {
                   )}
 
                   {/* ─── Competency Assessment Details ─── */}
-                  {(selectedTraining.assessmentRequired || meta?.assessmentRequired || selectedTraining.retrainingInterval || meta?.retrainingInterval) && (
+                  {(meta?.assessmentRequired || meta?.retrainingInterval) && (
                     <div className="rounded-md border p-4 space-y-2">
                       <h4 className="font-medium text-sm flex items-center gap-1">
                         <Target className="h-4 w-4 text-primary" />
@@ -1276,24 +1251,24 @@ export function TrainingView() {
                       <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
                         <div>
                           <span className="text-muted-foreground">Assessment Required:</span>{' '}
-                          <span className="font-medium">{(selectedTraining.assessmentRequired ?? meta?.assessmentRequired) ? 'Yes' : 'No'}</span>
+                          <span className="font-medium">{meta.assessmentRequired ? 'Yes' : 'No'}</span>
                         </div>
-                        {(selectedTraining.assessmentRequired ?? meta?.assessmentRequired) && (selectedTraining.assessmentMethod || meta?.assessmentMethod) && (
+                        {meta.assessmentRequired && meta.assessmentMethod && (
                           <div>
                             <span className="text-muted-foreground">Method:</span>{' '}
-                            <span className="font-medium">{selectedTraining.assessmentMethod || meta?.assessmentMethod}</span>
+                            <span className="font-medium">{meta.assessmentMethod}</span>
                           </div>
                         )}
-                        {(selectedTraining.assessmentRequired ?? meta?.assessmentRequired) && ((selectedTraining.passingScore ?? meta?.passingScore) !== undefined) && (
+                        {meta.assessmentRequired && meta.passingScore !== undefined && (
                           <div>
                             <span className="text-muted-foreground">Passing Score:</span>{' '}
-                            <span className="font-medium">{selectedTraining.passingScore ?? meta?.passingScore}%</span>
+                            <span className="font-medium">{meta.passingScore}%</span>
                           </div>
                         )}
-                        {(selectedTraining.retrainingInterval || meta?.retrainingInterval) && (selectedTraining.retrainingInterval !== 'None' || meta?.retrainingInterval !== 'None') && (
+                        {meta.retrainingInterval && meta.retrainingInterval !== 'None' && (
                           <div>
                             <span className="text-muted-foreground">Retraining Interval:</span>{' '}
-                            <span className="font-medium">{selectedTraining.retrainingInterval || meta?.retrainingInterval}</span>
+                            <span className="font-medium">{meta.retrainingInterval}</span>
                           </div>
                         )}
                       </div>
@@ -1301,145 +1276,40 @@ export function TrainingView() {
                   )}
 
                   {/* ─── Compliance & Certification Info ─── */}
-                  {(selectedTraining.certificationRequired || meta?.certificationRequired || selectedTraining.applicableStandards || meta?.applicableStandards || selectedTraining.trainingCategory || meta?.category) && (
+                  {(meta?.certificationRequired || meta?.applicableStandards || meta?.category) && (
                     <div className="rounded-md border p-4 space-y-2">
                       <h4 className="font-medium text-sm flex items-center gap-1">
                         <Award className="h-4 w-4 text-primary" />
                         Compliance &amp; Certification
                       </h4>
                       <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                        {(selectedTraining.certificationRequired ?? meta?.certificationRequired) && (
+                        {meta.certificationRequired && (
                           <>
                             <div>
                               <span className="text-muted-foreground">Certification Required:</span>{' '}
                               <span className="font-medium text-green-600">Yes</span>
                             </div>
-                            {(selectedTraining.certificationValidity || meta?.certificationValidity) && (
+                            {meta.certificationValidity && (
                               <div>
                                 <span className="text-muted-foreground">Validity:</span>{' '}
-                                <span className="font-medium">{selectedTraining.certificationValidity || meta?.certificationValidity}</span>
+                                <span className="font-medium">{meta.certificationValidity}</span>
                               </div>
                             )}
                           </>
                         )}
-                        {(selectedTraining.applicableStandards || meta?.applicableStandards) && (
+                        {meta.applicableStandards && (
                           <div className="col-span-2">
                             <span className="text-muted-foreground">Applicable Standards:</span>{' '}
-                            <span className="font-medium">{selectedTraining.applicableStandards || meta?.applicableStandards}</span>
+                            <span className="font-medium">{meta.applicableStandards}</span>
                           </div>
                         )}
-                        {(selectedTraining.trainingCategory || meta?.category) && (
+                        {meta.category && (
                           <div>
                             <span className="text-muted-foreground">Category:</span>{' '}
-                            <Badge variant="outline" className="text-xs">{selectedTraining.trainingCategory || meta?.category}</Badge>
+                            <Badge variant="outline" className="text-xs">{meta.category}</Badge>
                           </div>
                         )}
                       </div>
-                    </div>
-                  )}
-
-                  {/* ─── Effectiveness Evaluation ─── */}
-                  {selectedTraining.effectivenessEvaluationRequired && (
-                    <div className="rounded-md border p-4 space-y-3">
-                      <h4 className="font-medium text-sm flex items-center gap-1">
-                        <Monitor className="h-4 w-4 text-primary" />
-                        Effectiveness Evaluation
-                      </h4>
-
-                      {/* Evaluation method (read-only, set during creation) */}
-                      {selectedTraining.effectivenessMethod && (
-                        <div className="text-sm">
-                          <span className="text-muted-foreground">Evaluation Method:</span>{' '}
-                          <span className="font-medium">{selectedTraining.effectivenessMethod}</span>
-                        </div>
-                      )}
-
-                      {/* If evaluation has been completed, show results with color coding */}
-                      {selectedTraining.effectivenessResult && selectedTraining.effectivenessResult !== 'Pending' && selectedTraining.effectivenessEvaluationDate && (
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                            <div>
-                              <span className="text-muted-foreground">Evaluation Date:</span>{' '}
-                              <span className="font-medium">{formatDate(selectedTraining.effectivenessEvaluationDate)}</span>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Result:</span>{' '}
-                              <Badge className={cn('text-xs', selectedTraining.effectivenessResult === 'Competent' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : selectedTraining.effectivenessResult === 'Needs Improvement' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400')} variant="secondary">
-                                {selectedTraining.effectivenessResult}
-                              </Badge>
-                            </div>
-                            {selectedTraining.effectivenessEvaluatedBy && (
-                              <div>
-                                <span className="text-muted-foreground">Evaluated By:</span>{' '}
-                                <span className="font-medium">{getUserName(selectedTraining.effectivenessEvaluatedBy)}</span>
-                              </div>
-                            )}
-                          </div>
-                          {selectedTraining.effectivenessNotes && (
-                            <div className="text-sm">
-                              <span className="text-muted-foreground">Notes:</span>{' '}
-                              <span>{selectedTraining.effectivenessNotes}</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* If completed but evaluation not yet submitted, show form */}
-                      {effectiveStatus === 'Completed' && (!selectedTraining.effectivenessResult || selectedTraining.effectivenessResult === 'Pending' || !selectedTraining.effectivenessEvaluationDate) && (
-                        <div className="space-y-3 pt-2 border-t">
-                          <p className="text-sm text-muted-foreground italic">
-                            This training requires an effectiveness evaluation. Please complete the evaluation below.
-                          </p>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="grid gap-2">
-                              <Label htmlFor="eff-eval-date">Evaluation Date *</Label>
-                              <Input id="eff-eval-date" type="date" value={effEvalDate} onChange={(e) => setEffEvalDate(e.target.value)} />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label htmlFor="eff-eval-result">Evaluation Result *</Label>
-                              <Select value={effEvalResult || 'none'} onValueChange={(v) => setEffEvalResult(v === 'none' ? 'Pending' : v as Training['effectivenessResult'])}>
-                                <SelectTrigger id="eff-eval-result"><SelectValue placeholder="Select result" /></SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="Competent">Competent</SelectItem>
-                                  <SelectItem value="Needs Improvement">Needs Improvement</SelectItem>
-                                  <SelectItem value="Not Competent">Not Competent</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                          <div className="grid gap-2">
-                            <Label htmlFor="eff-eval-notes">Evaluation Notes</Label>
-                            <Textarea id="eff-eval-notes" value={effEvalNotes} onChange={(e) => setEffEvalNotes(e.target.value)} placeholder="Enter evaluation notes..." rows={3} />
-                          </div>
-                          <div className="grid gap-2">
-                            <Label htmlFor="eff-evaluated-by">Evaluated By *</Label>
-                            <Select value={effEvaluatedBy || 'none'} onValueChange={(v) => setEffEvaluatedBy(v === 'none' ? '' : v)}>
-                              <SelectTrigger id="eff-evaluated-by"><SelectValue placeholder="Select evaluator" /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">Not specified</SelectItem>
-                                {profiles.map(p => (
-                                  <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <Button
-                            className="w-full"
-                            onClick={handleSubmitEffectiveness}
-                            disabled={!effEvalDate || !effEvalResult || effEvalResult === 'Pending' || !effEvaluatedBy}
-                          >
-                            <CheckCircle2 className="h-4 w-4 mr-2" />
-                            Submit Evaluation
-                          </Button>
-                        </div>
-                      )}
-
-                      {/* If not yet completed, show note */}
-                      {effectiveStatus !== 'Completed' && (
-                        <p className="text-sm text-muted-foreground italic">
-                          Effectiveness evaluation will be available after training completion.
-                        </p>
-                      )}
                     </div>
                   )}
 

@@ -6,8 +6,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import type {
   Deviation, DeviationStatus, DeviationType,
   DeviationSeverity, DeviationCategory, DeviationProductStage,
-  SignatureType,
+  SignatureType, FormTemplateModule,
 } from '@/types/qms';
+import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
 import {
@@ -15,7 +16,7 @@ import {
   Clock, XCircle, ShieldCheck, FileText, Link2,
   ClipboardList, BarChart3, Wrench, Shield, UserCheck,
   ChevronLeft, ChevronRight, FlaskConical, PackageCheck,
-  AlertOctagon, Scale, Beaker, FileSpreadsheet,
+  AlertOctagon, Scale, Beaker,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -109,6 +110,7 @@ interface DeviationFormState {
   linkedDocumentId: string;
   assignedTo: string;
   dueDate: string;
+  templateId: string;
 }
 
 const emptyForm: DeviationFormState = {
@@ -138,6 +140,7 @@ const emptyForm: DeviationFormState = {
   linkedDocumentId: '',
   assignedTo: '',
   dueDate: '',
+  templateId: '',
 };
 
 // ──────────────────────────────────────────────
@@ -169,13 +172,17 @@ export function DeviationView() {
   // Wizard state
   const [wizardStep, setWizardStep] = useState(0);
   const [form, setForm] = useState<DeviationFormState>({ ...emptyForm });
-  const [formTemplateId, setFormTemplateId] = useState('');
 
   const updateForm = <K extends keyof DeviationFormState>(key: K, value: DeviationFormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
   };
 
   const approvedDocuments = documents.filter(d => d.status === 'Approved');
+
+  // ── Template workflow (Layer 1 & 2) ──
+  const { getApprovedTemplates, hasApprovedTemplate, moduleTypeLabels } = useRecordWorkflow();
+  const deviationModuleType: FormTemplateModule = 'DEVIATION';
+  const approvedDeviationTemplates = getApprovedTemplates(deviationModuleType);
 
   const filteredDeviations = deviations.filter(dev => {
     const matchesSearch = searchTerm === '' ||
@@ -214,7 +221,6 @@ export function DeviationView() {
   const resetForm = () => {
     setForm({ ...emptyForm });
     setWizardStep(0);
-    setFormTemplateId('');
   };
 
   const handleCreate = () => {
@@ -247,7 +253,8 @@ export function DeviationView() {
       quantityAffected: form.quantityAffected ? parseInt(form.quantityAffected) : undefined,
       linkedCapaId: form.linkedCapaId && form.linkedCapaId !== 'none' ? form.linkedCapaId : undefined,
       linkedDocumentId: form.linkedDocumentId && form.linkedDocumentId !== 'none' ? form.linkedDocumentId : undefined,
-      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
+      templateId: form.templateId || undefined,
+      templateVersion: form.templateId ? approvedDeviationTemplates.find(t => t.id === form.templateId)?.version : undefined,
       assignedTo: form.assignedTo,
       dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : new Date().toISOString(),
       createdById: currentUser?.id,
@@ -437,6 +444,7 @@ export function DeviationView() {
                 <TableHead className="w-[150px]">Status</TableHead>
                 <TableHead className="w-[140px]">Assigned To</TableHead>
                 <TableHead className="w-[110px]">Due Date</TableHead>
+                <TableHead className="w-[120px]">Template</TableHead>
                 <TableHead className="w-[80px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -476,6 +484,18 @@ export function DeviationView() {
                     {formatDate(dev.dueDate, true)}
                   </TableCell>
                   <TableCell>
+                    {dev.templateId ? (
+                      <Badge variant="outline" className="text-xs border-teal-300 text-teal-700 dark:border-teal-700 dark:text-teal-400">
+                        {(() => {
+                          const tpl = store.formTemplates.find(t => t.id === dev.templateId);
+                          return tpl ? `${tpl.title} v${dev.templateVersion || tpl.version}` : dev.templateId;
+                        })()}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openDetail(dev); }}>
                       <Eye className="h-4 w-4" />
                     </Button>
@@ -484,7 +504,7 @@ export function DeviationView() {
               ))}
               {filteredDeviations.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     No deviations found matching filters
                   </TableCell>
                 </TableRow>
@@ -624,6 +644,22 @@ export function DeviationView() {
       <div className="grid gap-2">
         <Label htmlFor="dev-description">Description *</Label>
         <Textarea id="dev-description" value={form.description} onChange={(e) => updateForm('description', e.target.value)} placeholder="Describe the deviation..." rows={4} />
+      </div>
+      {/* Template Selection (Layer 2) */}
+      <div className="grid gap-2">
+        <Label>Template</Label>
+        <Select value={form.templateId} onValueChange={(v) => updateForm('templateId', v)}>
+          <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">No template</SelectItem>
+            {approvedDeviationTemplates.map(t => (
+              <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {approvedDeviationTemplates.length === 0 && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">No approved Deviation templates found. Create one in the Forms module first.</p>
+        )}
       </div>
     </div>
   );
@@ -884,23 +920,6 @@ export function DeviationView() {
       </div>
 
       {/* Regulatory Compliance Note */}
-      <div className="grid gap-2">
-        <Label>Template associé (§4.2.4)</Label>
-        <Select value={formTemplateId} onValueChange={setFormTemplateId}>
-          <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Aucun</SelectItem>
-            {store.formTemplates
-              .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'DEVIATION' || !t.associatedModule || t.associatedModule === 'GENERAL'))
-              .map(t => (
-                <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-              ))
-            }
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Regulatory Compliance Note */}
       <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
         <div className="flex items-start gap-2">
           <Scale className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
@@ -1007,6 +1026,15 @@ export function DeviationView() {
                 {selectedDev.quarantine && (
                   <Badge variant="outline" className="border-red-300 text-red-700">Quarantined</Badge>
                 )}
+                {selectedDev.templateId && (() => {
+                  const tpl = store.formTemplates.find(t => t.id === selectedDev.templateId);
+                  return (
+                    <Badge variant="outline" className="border-teal-300 text-teal-700 dark:border-teal-700 dark:text-teal-400">
+                      <FileText className="h-3 w-3 mr-1" />
+                      Template: {tpl ? `${tpl.title} v${selectedDev.templateVersion || tpl.version}` : selectedDev.templateId}
+                    </Badge>
+                  );
+                })()}
               </div>
 
               {/* Status Flow Visualization */}
@@ -1062,6 +1090,16 @@ export function DeviationView() {
                     <span className="font-medium">{getUserName(selectedDev.createdById)}</span>
                   </div>
                 )}
+                {selectedDev.templateId && (() => {
+                  const tpl = store.formTemplates.find(t => t.id === selectedDev.templateId);
+                  return (
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground">Template:</span>{' '}
+                      <span className="font-medium">{tpl ? tpl.title : selectedDev.templateId}</span>
+                      {selectedDev.templateVersion && <span className="text-muted-foreground ml-1">(v{selectedDev.templateVersion})</span>}
+                    </div>
+                  );
+                })()}
               </div>
 
               <Separator />
@@ -1324,28 +1362,6 @@ export function DeviationView() {
                 </div>
               )}
 
-              {/* Hybrid Supervision: Template associé (§4.2.4) */}
-              {selectedDev.templateId && (() => {
-                const tmpl = store.formTemplates.find(t => t.id === selectedDev.templateId);
-                return tmpl ? (
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-semibold flex items-center gap-2">
-                      <FileSpreadsheet className="h-4 w-4 text-primary" />
-                      Template associé (§4.2.4)
-                    </h4>
-                    <div className="border rounded-md p-2 text-sm flex items-center justify-between">
-                      <div>
-                        <span className="font-medium">{tmpl.title}</span>
-                        <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
-                      </div>
-                      <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
-                        {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
-                      </Badge>
-                    </div>
-                  </div>
-                ) : null;
-              })()}
-
               {/* Action Buttons — BUG FIX: deviation.update instead of ncr.update */}
               {hasPermission('deviation.update') && selectedDev.status !== 'Closed' && (
                 <Button className="w-full" onClick={() => handleAdvanceStatus(selectedDev)}>
@@ -1382,7 +1398,7 @@ export function DeviationView() {
             <AlertTriangle className="h-6 w-6 text-primary" />
             Deviations
           </h1>
-          <p className="text-muted-foreground mt-1">Deviation recording, investigation, and management (ISO 13485 §8.3) <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
+          <p className="text-muted-foreground mt-1">Deviation recording, investigation, and management (ISO 13485 §8.3)</p>
         </div>
         {hasPermission('deviation.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -1391,6 +1407,16 @@ export function DeviationView() {
           </Button>
         )}
       </div>
+
+      {/* Layer 1 Gate Warning */}
+      {!hasApprovedTemplate(deviationModuleType) && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            No approved template found for Deviation records. Please create and approve a template in the Forms module first.
+          </p>
+        </div>
+      )}
 
       {/* Summary Cards */}
       {renderSummaryCards()}

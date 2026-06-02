@@ -568,7 +568,7 @@ export function ReportsView() {
   // Document data
   const docByStatus = useMemo(() => [
     { name: 'Draft', value: documents.filter(d => d.status === 'Draft').length, color: CHART_COLORS.amber },
-    { name: 'In Review', value: documents.filter(d => d.status === 'In Review').length, color: CHART_COLORS.blue },
+    { name: 'Under Review', value: documents.filter(d => d.status === 'Under Review').length, color: CHART_COLORS.blue },
     { name: 'Approved', value: documents.filter(d => d.status === 'Approved').length, color: CHART_COLORS.green },
     { name: 'Obsolete', value: documents.filter(d => d.status === 'Obsolete').length, color: CHART_COLORS.red },
   ].filter(d => d.value > 0), [documents]);

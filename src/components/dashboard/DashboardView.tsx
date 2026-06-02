@@ -117,7 +117,7 @@ export function DashboardView() {
   const openNcrs = ncrs.filter(n => n.status !== 'Closed').length;
   const approvedDocs = documents.filter(d => d.status === 'Approved').length;
   const draftDocs = documents.filter(d => d.status === 'Draft').length;
-  const inReviewDocs = documents.filter(d => d.status === 'In Review').length;
+  const inReviewDocs = documents.filter(d => d.status === 'Under Review').length;
   const overdueCapas = capas.filter(c => c.status !== 'Closed' && new Date(c.dueDate) < new Date()).length;
   const overdueTraining = trainingItems.filter(t => t.status === 'Overdue').length;
   const releasedBatches = batchRecords.filter(b => b.status === 'Released').length;

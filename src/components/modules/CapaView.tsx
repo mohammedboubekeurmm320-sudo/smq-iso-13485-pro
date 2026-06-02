@@ -3,14 +3,14 @@
 import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Capa, CapaStatus, CapaType, CapaPriority, CapaSource, RootCauseCategory, SignatureType } from '@/types/qms';
-import { DynamicFormFields, extractFormInstanceValues } from '@/components/shared/DynamicFormFields';
+import type { Capa, CapaStatus, CapaType, CapaPriority, CapaSource, RootCauseCategory, SignatureType, FormTemplateModule } from '@/types/qms';
+import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import {
   Shield, Plus, Search, Eye, ArrowRight, CheckCircle2, AlertTriangle,
   Clock, XCircle, ChevronDown, ChevronUp, AlertCircle, Link2,
   ChevronLeft, ChevronRight, FileText, ClipboardCheck, Wrench,
-  BarChart3, UserCheck, ListChecks, Zap, DollarSign, FileSpreadsheet,
+  BarChart3, UserCheck, ListChecks, Zap, DollarSign,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -141,26 +141,20 @@ export function CapaView() {
 
   // ── Step 6 - Linked Records ──
   const [formLinkedDocId, setFormLinkedDocId] = useState('');
-  const [formLinkedCapaId, setFormLinkedCapaId] = useState('');
+  const [formLinkedNcrId, setFormLinkedNcrId] = useState('');
   const [formAdditionalReferences, setFormAdditionalReferences] = useState('');
+
+  // ── Template selection (Layer 2) ──
   const [formTemplateId, setFormTemplateId] = useState('');
 
-  // ── P1: Linked NCR/Audit arrays ──
-  const [formLinkedNcrIds, setFormLinkedNcrIds] = useState<string[]>([]);
-  const [formLinkedAuditIds, setFormLinkedAuditIds] = useState<string[]>([]);
-
-  // ── P1-2: Dynamic template fields ──
-  const [templateFieldValues, setTemplateFieldValues] = useState<Record<string, unknown>>({});
+  // ── Template workflow (Layer 1 & 2) ──
+  const { getApprovedTemplates, hasApprovedTemplate, moduleTypeLabels } = useRecordWorkflow();
+  const capaModuleType: FormTemplateModule = 'CAPA';
+  const approvedCapaTemplates = getApprovedTemplates(capaModuleType);
 
   // ── Electronic Signature ──
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [pendingStatusChange, setPendingStatusChange] = useState<{ capa: Capa; nextStatus: CapaStatus } | null>(null);
-
-  // ── P2-2: Effectiveness Check ──
-  const [effVerificationMethod, setEffVerificationMethod] = useState('');
-  const [effCriteria, setEffCriteria] = useState('');
-  const [effResult, setEffResult] = useState<'Effective' | 'Not Effective' | 'Pending Review'>('Pending Review');
-  const [effNotEffectiveWarning, setEffNotEffectiveWarning] = useState(false);
 
   // ── Computed ──
   const filteredCapas = capas.filter(c => {
@@ -238,11 +232,8 @@ export function CapaView() {
     }
     setPrereqError(null);
 
-    const resolvedTemplateId = formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined;
-    const newCapaId = `capa-${Date.now()}`;
-
     const newCapa: Capa = {
-      id: newCapaId,
+      id: `capa-${Date.now()}`,
       capaNumber: `CAPA-2024-${String(capas.length + 1).padStart(3, '0')}`,
       title: formTitle,
       type: formType,
@@ -256,34 +247,15 @@ export function CapaView() {
       dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
       createdDate: new Date().toISOString(),
       linkedDocumentId: formLinkedDocId && formLinkedDocId !== 'none' ? formLinkedDocId : undefined,
-      linkedCapaId: formLinkedCapaId && formLinkedCapaId !== 'none' ? formLinkedCapaId : undefined,
-      linkedNcrIds: formLinkedNcrIds.length > 0 ? formLinkedNcrIds : undefined,
-      linkedAuditIds: formLinkedAuditIds.length > 0 ? formLinkedAuditIds : undefined,
-      templateId: resolvedTemplateId,
+      linkedNcrId: formLinkedNcrId && formLinkedNcrId !== 'none' ? formLinkedNcrId : undefined,
+      templateId: formTemplateId || undefined,
+      templateVersion: formTemplateId ? approvedCapaTemplates.find(t => t.id === formTemplateId)?.version : undefined,
       createdById: currentUser?.id,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     store.addCapa(newCapa);
-
-    // P1-1: Create FormInstance when templateId is set
-    if (resolvedTemplateId) {
-      const template = store.formTemplates.find(t => t.id === resolvedTemplateId);
-      if (template) {
-        const fieldValues = extractFormInstanceValues(template.fields, templateFieldValues);
-        const instance = store.createFormInstanceForRecord(resolvedTemplateId, newCapaId, 'CAPA', fieldValues);
-        if (instance) {
-          store.updateCapa(newCapaId, { formInstanceId: instance.id });
-        }
-      }
-    }
-
-    // P1-4: Link CAPA to NCR(s) and Audit(s) bidirectionally
-    if (formLinkedNcrIds.length > 0 || formLinkedAuditIds.length > 0) {
-      store.linkCapaToRecords(newCapaId, formLinkedNcrIds, formLinkedAuditIds);
-    }
-
     resetForm();
     setShowCreateDialog(false);
   };
@@ -315,12 +287,9 @@ export function CapaView() {
     setFormApprover('');
     setFormDueDate('');
     setFormLinkedDocId('');
-    setFormLinkedCapaId('');
+    setFormLinkedNcrId('');
     setFormAdditionalReferences('');
     setFormTemplateId('');
-    setFormLinkedNcrIds([]);
-    setFormLinkedAuditIds([]);
-    setTemplateFieldValues({});
     setPrereqError(null);
   };
 
@@ -346,55 +315,15 @@ export function CapaView() {
     setPendingStatusChange(null);
   };
 
-  // ── P2-2: Submit Effectiveness Check ──
-  const handleSubmitEffectiveness = () => {
-    if (!selectedCapa) return;
-    if (!effVerificationMethod.trim() || !effCriteria.trim()) return;
-
-    store.updateCapa(selectedCapa.id, {
-      effectivenessVerificationMethod: effVerificationMethod.trim(),
-      effectivenessCriteria: effCriteria.trim(),
-      effectivenessResult: effResult,
-    });
-
-    // Update the local selectedCapa so the UI reflects immediately
-    const updated = {
-      ...selectedCapa,
-      effectivenessVerificationMethod: effVerificationMethod.trim(),
-      effectivenessCriteria: effCriteria.trim(),
-      effectivenessResult: effResult,
-    };
-    setSelectedCapa(updated);
-
-    // If result is "Not Effective", show warning
-    if (effResult === 'Not Effective') {
-      setEffNotEffectiveWarning(true);
-    } else {
-      setEffNotEffectiveWarning(false);
-    }
-  };
-
-  // P2-2: Advance to Closed after effective result (with e-signature)
-  const handleEffectivenessAdvanceToClosed = () => {
-    if (!selectedCapa) return;
-    setPendingStatusChange({ capa: selectedCapa, nextStatus: 'Closed' });
-    setShowSignatureModal(true);
-  };
-
   const openDetail = (capa: Capa) => {
     setSelectedCapa(capa);
-    // P2-2: Pre-populate effectiveness fields from existing CAPA data
-    setEffVerificationMethod(capa.effectivenessVerificationMethod || '');
-    setEffCriteria(capa.effectivenessCriteria || '');
-    setEffResult(capa.effectivenessResult || 'Pending Review');
-    setEffNotEffectiveWarning(false);
     setShowDetailDialog(true);
   };
 
-  // ── Helper: get linked CAPA ──
-  const getLinkedCapa = (capaId?: string) => {
-    if (!capaId) return null;
-    return capas.find(c => c.id === capaId);
+  // ── Helper: get linked NCR ──
+  const getLinkedNcr = (ncrId?: string) => {
+    if (!ncrId) return null;
+    return store.ncrs.find(n => n.id === ncrId);
   };
 
   // ── Render: Wizard Step Content ──
@@ -470,6 +399,22 @@ export function CapaView() {
             <div className="grid gap-2">
               <Label htmlFor="regulatory-trigger">Regulatory Trigger Reference</Label>
               <Input id="regulatory-trigger" value={formRegulatoryTrigger} onChange={(e) => setFormRegulatoryTrigger(e.target.value)} placeholder="e.g., ISO 13485 §8.5.2, 21 CFR 820.100" />
+            </div>
+            {/* Template Selection (Layer 2) */}
+            <div className="grid gap-2">
+              <Label>Template</Label>
+              <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+                <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No template</SelectItem>
+                  {approvedCapaTemplates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {approvedCapaTemplates.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">No approved CAPA templates found. Create one in the Forms module first.</p>
+              )}
             </div>
           </div>
         );
@@ -709,13 +654,13 @@ export function CapaView() {
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label>Linked CAPA</Label>
-                <Select value={formLinkedCapaId} onValueChange={setFormLinkedCapaId}>
-                  <SelectTrigger><SelectValue placeholder="Select linked CAPA" /></SelectTrigger>
+                <Label>Linked NCR</Label>
+                <Select value={formLinkedNcrId} onValueChange={setFormLinkedNcrId}>
+                  <SelectTrigger><SelectValue placeholder="Select linked NCR" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
-                    {capas.map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.capaNumber} - {c.title}</SelectItem>
+                    {store.ncrs.map(n => (
+                      <SelectItem key={n.id} value={n.id}>{n.ncrNumber} - {n.title}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -725,90 +670,6 @@ export function CapaView() {
               <Label htmlFor="additional-references">Additional References</Label>
               <Textarea id="additional-references" value={formAdditionalReferences} onChange={(e) => setFormAdditionalReferences(e.target.value)} placeholder="Any additional references, documents, or links..." rows={2} />
             </div>
-            {/* P1-4: Linked NCRs */}
-            <div className="grid gap-2">
-              <Label>Non-Conformances liées</Label>
-              <div className="space-y-1 max-h-32 overflow-y-auto border rounded-md p-2">
-                {store.ncrs.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">Aucune NCR disponible</p>
-                ) : store.ncrs.map(ncr => (
-                  <label key={ncr.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <Checkbox
-                      checked={formLinkedNcrIds.includes(ncr.id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setFormLinkedNcrIds([...formLinkedNcrIds, ncr.id]);
-                        } else {
-                          setFormLinkedNcrIds(formLinkedNcrIds.filter(id => id !== ncr.id));
-                        }
-                      }}
-                    />
-                    <span className="font-mono text-xs">{ncr.ncrNumber}</span>
-                    <span className="text-muted-foreground">{ncr.title}</span>
-                  </label>
-                ))}
-              </div>
-              {formLinkedNcrIds.length > 0 && (
-                <p className="text-xs text-primary">{formLinkedNcrIds.length} NCR(s) sélectionnée(s)</p>
-              )}
-            </div>
-
-            {/* P1-4: Linked Audits */}
-            <div className="grid gap-2">
-              <Label>Audits liés</Label>
-              <div className="space-y-1 max-h-32 overflow-y-auto border rounded-md p-2">
-                {store.audits.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">Aucun audit disponible</p>
-                ) : store.audits.map(audit => (
-                  <label key={audit.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <Checkbox
-                      checked={formLinkedAuditIds.includes(audit.id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setFormLinkedAuditIds([...formLinkedAuditIds, audit.id]);
-                        } else {
-                          setFormLinkedAuditIds(formLinkedAuditIds.filter(id => id !== audit.id));
-                        }
-                      }}
-                    />
-                    <span className="font-mono text-xs">{audit.auditNumber}</span>
-                    <span className="text-muted-foreground">{audit.title}</span>
-                  </label>
-                ))}
-              </div>
-              {formLinkedAuditIds.length > 0 && (
-                <p className="text-xs text-primary">{formLinkedAuditIds.length} audit(s) sélectionné(s)</p>
-              )}
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Template associé (§4.2.4)</Label>
-              <Select value={formTemplateId} onValueChange={(v) => { setFormTemplateId(v); setTemplateFieldValues({}); }}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Aucun</SelectItem>
-                  {store.formTemplates
-                    .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'CAPA' || !t.associatedModule || t.associatedModule === 'GENERAL'))
-                    .map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-                    ))
-                  }
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* P1-2: Dynamic template fields */}
-            {formTemplateId && formTemplateId !== 'none' && (() => {
-              const tmpl = store.formTemplates.find(t => t.id === formTemplateId);
-              if (!tmpl || tmpl.fields.length === 0) return null;
-              return (
-                <DynamicFormFields
-                  fields={tmpl.fields}
-                  values={templateFieldValues}
-                  onChange={(fieldId, value) => setTemplateFieldValues(prev => ({ ...prev, [fieldId]: value }))}
-                />
-              );
-            })()}
 
             <Separator />
 
@@ -880,9 +741,9 @@ export function CapaView() {
                     : 'None'}
                 </p>
                 <p className="text-sm">
-                  <span className="font-medium">Linked CAPA:</span>{' '}
-                  {formLinkedCapaId && formLinkedCapaId !== 'none'
-                    ? capas.find(c => c.id === formLinkedCapaId)?.capaNumber || formLinkedCapaId
+                  <span className="font-medium">Linked NCR:</span>{' '}
+                  {formLinkedNcrId && formLinkedNcrId !== 'none'
+                    ? store.ncrs.find(n => n.id === formLinkedNcrId)?.ncrNumber || formLinkedNcrId
                     : 'None'}
                 </p>
                 {formAdditionalReferences && (
@@ -909,7 +770,7 @@ export function CapaView() {
             <Shield className="h-6 w-6 text-primary" />
             CAPA Management
           </h1>
-          <p className="text-muted-foreground mt-1">Corrective and Preventive Actions (ISO 13485 §8.5.2 / §8.5.3) <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
+          <p className="text-muted-foreground mt-1">Corrective and Preventive Actions (ISO 13485 §8.5.2 / §8.5.3)</p>
         </div>
         {hasPermission('capa.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -1015,6 +876,7 @@ export function CapaView() {
                   <TableHead className="w-[140px]">Status</TableHead>
                   <TableHead className="w-[140px]">Assigned To</TableHead>
                   <TableHead className="w-[110px]">Due Date</TableHead>
+                  <TableHead className="w-[120px]">Template</TableHead>
                   <TableHead className="w-[80px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1041,6 +903,18 @@ export function CapaView() {
                       {formatDate(capa.dueDate, true)}
                     </TableCell>
                     <TableCell>
+                      {capa.templateId ? (
+                        <Badge variant="outline" className="text-xs border-teal-300 text-teal-700 dark:border-teal-700 dark:text-teal-400">
+                          {(() => {
+                            const tpl = store.formTemplates.find(t => t.id === capa.templateId);
+                            return tpl ? `${tpl.title} v${capa.templateVersion || tpl.version}` : capa.templateId;
+                          })()}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openDetail(capa); }}>
                         <Eye className="h-4 w-4" />
                       </Button>
@@ -1049,7 +923,7 @@ export function CapaView() {
                 ))}
                 {filteredCapas.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       No CAPAs found matching filters
                     </TableCell>
                   </TableRow>
@@ -1059,6 +933,16 @@ export function CapaView() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Layer 1 Gate Warning */}
+      {!hasApprovedTemplate(capaModuleType) && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            No approved template found for CAPA records. Please create and approve a template in the Forms module first.
+          </p>
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
           CREATE CAPA DIALOG — 6-STEP WIZARD
@@ -1175,6 +1059,15 @@ export function CapaView() {
                       Linked Non-Conformance
                     </Badge>
                   )}
+                  {selectedCapa.templateId && (() => {
+                    const tpl = store.formTemplates.find(t => t.id === selectedCapa.templateId);
+                    return (
+                      <Badge variant="outline" className="border-teal-300 text-teal-700 dark:border-teal-700 dark:text-teal-400">
+                        <FileText className="h-3 w-3 mr-1" />
+                        Template: {tpl ? `${tpl.title} v${selectedCapa.templateVersion || tpl.version}` : selectedCapa.templateId}
+                      </Badge>
+                    );
+                  })()}
                 </div>
 
                 {/* Status Flow */}
@@ -1188,25 +1081,11 @@ export function CapaView() {
                         'bg-muted text-muted-foreground'
                       )}>
                         {s}
-                        {/* P2-2: Show requirement indicator on Effectiveness Check step when in that status */}
-                        {s === 'Effectiveness Check' && selectedCapa.status === 'Effectiveness Check' && !selectedCapa.effectivenessResult && (
-                          <span className="ml-1 inline-flex items-center justify-center w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                        )}
-                        {s === 'Effectiveness Check' && selectedCapa.status === 'Effectiveness Check' && selectedCapa.effectivenessResult === 'Effective' && (
-                          <CheckCircle2 className="h-3 w-3 ml-1 inline text-green-500" />
-                        )}
                       </div>
                       {i < statusFlow.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
                     </React.Fragment>
                   ))}
                 </div>
-                {/* P2-2: Effectiveness verification required banner */}
-                {selectedCapa.status === 'Effectiveness Check' && !selectedCapa.effectivenessResult && (
-                  <div className="flex items-center gap-2 p-2 bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800 rounded-md text-sm text-cyan-700 dark:text-cyan-400">
-                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                    <span>Effectiveness verification is required before this CAPA can be closed.</span>
-                  </div>
-                )}
 
                 {/* Details Grid */}
                 <div className="grid grid-cols-2 gap-4 text-sm">
@@ -1214,22 +1093,16 @@ export function CapaView() {
                   <div><span className="text-muted-foreground">Due Date:</span> <span className="font-medium ml-1">{formatDate(selectedCapa.dueDate)}</span></div>
                   <div><span className="text-muted-foreground">Created:</span> <span className="font-medium ml-1">{formatDate(selectedCapa.createdDate)}</span></div>
                   {selectedCapa.closedDate && <div><span className="text-muted-foreground">Closed:</span> <span className="font-medium ml-1">{formatDate(selectedCapa.closedDate)}</span></div>}
-                  {/* P2-2: Show effectiveness result in summary if set */}
-                  {selectedCapa.effectivenessResult && (
-                    <div className="col-span-2">
-                      <span className="text-muted-foreground">Effectiveness Result:</span>{' '}
-                      <Badge className={cn(
-                        'ml-1 text-xs',
-                        selectedCapa.effectivenessResult === 'Effective'
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                          : selectedCapa.effectivenessResult === 'Not Effective'
-                          ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                      )} variant="secondary">
-                        {selectedCapa.effectivenessResult}
-                      </Badge>
-                    </div>
-                  )}
+                  {selectedCapa.templateId && (() => {
+                    const tpl = store.formTemplates.find(t => t.id === selectedCapa.templateId);
+                    return (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Template:</span>{' '}
+                        <span className="font-medium ml-1">{tpl ? tpl.title : selectedCapa.templateId}</span>
+                        {selectedCapa.templateVersion && <span className="text-muted-foreground ml-1">(v{selectedCapa.templateVersion})</span>}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* ── Sections ── */}
@@ -1291,214 +1164,66 @@ export function CapaView() {
                   )}
 
                   {/* ── NEW: Proposed Change Section ── */}
-                  {(selectedCapa as Record<string, unknown>).proposedChange && (
+                  {Boolean((selectedCapa as unknown as Record<string, unknown>).proposedChange) && (
                     <div>
                       <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
                         <Wrench className="h-4 w-4 text-primary" />
                         Proposed Change
                       </h4>
                       <p className="text-sm text-muted-foreground bg-purple-50 dark:bg-purple-900/10 p-3 rounded-md border border-purple-200 dark:border-purple-800">
-                        {(selectedCapa as Record<string, unknown>).proposedChange as string}
+                        {String((selectedCapa as unknown as Record<string, unknown>).proposedChange)}
                       </p>
                     </div>
                   )}
 
                   {/* ── NEW: Risk & Impact Assessment Section (color-coded) ── */}
-                  {(selectedCapa as Record<string, unknown>).riskAssessment && (
+                  {Boolean((selectedCapa as unknown as Record<string, unknown>).riskAssessment) && (
                     <div>
                       <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
                         <BarChart3 className="h-4 w-4 text-primary" />
                         Risk & Impact Assessment
                       </h4>
                       <div className="bg-amber-50 dark:bg-amber-900/10 p-3 rounded-md border border-amber-200 dark:border-amber-800 space-y-2">
-                        <p className="text-sm text-muted-foreground">{(selectedCapa as Record<string, unknown>).riskAssessment as string}</p>
-                        {(selectedCapa as Record<string, unknown>).impactAnalysis && (
-                          <p className="text-sm"><span className="font-medium">Impact Analysis:</span> <span className="text-muted-foreground">{(selectedCapa as Record<string, unknown>).impactAnalysis as string}</span></p>
+                        <p className="text-sm text-muted-foreground">{String((selectedCapa as unknown as Record<string, unknown>).riskAssessment ?? '')}</p>
+                        {Boolean((selectedCapa as unknown as Record<string, unknown>).impactAnalysis) && (
+                          <p className="text-sm"><span className="font-medium">Impact Analysis:</span> <span className="text-muted-foreground">{String((selectedCapa as unknown as Record<string, unknown>).impactAnalysis)}</span></p>
                         )}
-                        {(selectedCapa as Record<string, unknown>).affectedAreas && (
-                          <p className="text-sm"><span className="font-medium">Affected Areas:</span> <span className="text-muted-foreground">{(selectedCapa as Record<string, unknown>).affectedAreas as string}</span></p>
+                        {Boolean((selectedCapa as unknown as Record<string, unknown>).affectedAreas) && (
+                          <p className="text-sm"><span className="font-medium">Affected Areas:</span> <span className="text-muted-foreground">{String((selectedCapa as unknown as Record<string, unknown>).affectedAreas)}</span></p>
                         )}
                       </div>
                     </div>
                   )}
 
-                  {/* P2-2: Effectiveness Verification Section */}
-                  {selectedCapa.status === 'Effectiveness Check' ? (
-                    <div className="border border-cyan-200 dark:border-cyan-800 rounded-lg p-4 bg-cyan-50/50 dark:bg-cyan-900/10 space-y-4">
-                      <h4 className="font-semibold text-sm flex items-center gap-2 text-cyan-700 dark:text-cyan-400">
-                        <ClipboardCheck className="h-4 w-4" />
-                        Effectiveness Verification
-                        {selectedCapa.effectivenessResult && (
-                          <Badge className={cn(
-                            'ml-2 text-xs',
-                            selectedCapa.effectivenessResult === 'Effective'
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : selectedCapa.effectivenessResult === 'Not Effective'
-                              ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                          )} variant="secondary">
-                            {selectedCapa.effectivenessResult}
-                          </Badge>
-                        )}
-                      </h4>
-
-                      <div className="grid gap-3">
-                        <div className="grid gap-2">
-                          <Label htmlFor="eff-verification-method">Verification Method *</Label>
-                          <Textarea
-                            id="eff-verification-method"
-                            value={effVerificationMethod}
-                            onChange={(e) => setEffVerificationMethod(e.target.value)}
-                            placeholder="Describe the method used to verify effectiveness of the corrective/preventive action..."
-                            rows={3}
-                            className="bg-white dark:bg-background"
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label htmlFor="eff-criteria">Effectiveness Criteria *</Label>
-                          <Textarea
-                            id="eff-criteria"
-                            value={effCriteria}
-                            onChange={(e) => setEffCriteria(e.target.value)}
-                            placeholder="Define the criteria that must be met to consider the action effective..."
-                            rows={3}
-                            className="bg-white dark:bg-background"
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Effectiveness Result *</Label>
-                          <Select value={effResult} onValueChange={(v) => setEffResult(v as 'Effective' | 'Not Effective' | 'Pending Review')}>
-                            <SelectTrigger className="bg-white dark:bg-background">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Effective">
-                                <span className="flex items-center gap-2">
-                                  <CheckCircle2 className="h-3 w-3 text-green-500" />
-                                  Effective
-                                </span>
-                              </SelectItem>
-                              <SelectItem value="Not Effective">
-                                <span className="flex items-center gap-2">
-                                  <XCircle className="h-3 w-3 text-red-500" />
-                                  Not Effective
-                                </span>
-                              </SelectItem>
-                              <SelectItem value="Pending Review">
-                                <span className="flex items-center gap-2">
-                                  <Clock className="h-3 w-3 text-amber-500" />
-                                  Pending Review
-                                </span>
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      {/* Not Effective Warning */}
-                      {effNotEffectiveWarning && selectedCapa.effectivenessResult === 'Not Effective' && (
-                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 flex items-start gap-2">
-                          <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
-                          <div className="text-sm text-red-700 dark:text-red-400">
-                            <p className="font-medium">Effectiveness check failed</p>
-                            <p className="mt-1">Further corrective action may be required. Consider reopening the investigation or creating a new CAPA to address the remaining non-conformity per ISO 13485 §8.5.2.</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Effective: allow advancing to Closed */}
-                      {selectedCapa.effectivenessResult === 'Effective' && !effNotEffectiveWarning && (
-                        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md p-3 flex items-start gap-2">
-                          <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                          <div className="text-sm text-green-700 dark:text-green-400 flex-1">
-                            <p className="font-medium">CAPA verified effective</p>
-                            <p className="mt-1">This CAPA can now be advanced to Closed status.</p>
-                          </div>
-                          {hasPermission('capa.update') && (
-                            <Button
-                              size="sm"
-                              onClick={handleEffectivenessAdvanceToClosed}
-                              className="ml-2 bg-green-600 hover:bg-green-700 text-white"
-                            >
-                              <Shield className="h-3 w-3 mr-1" />
-                              Close CAPA
-                            </Button>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Submit button */}
-                      {!selectedCapa.effectivenessResult && (
-                        <Button
-                          className="w-full"
-                          disabled={!effVerificationMethod.trim() || !effCriteria.trim()}
-                          onClick={handleSubmitEffectiveness}
-                        >
-                          <ClipboardCheck className="h-4 w-4 mr-2" />
-                          Submit Effectiveness Check
-                        </Button>
-                      )}
-
-                      {/* Allow re-submission if already submitted but wants to change */}
-                      {selectedCapa.effectivenessResult && (
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          disabled={!effVerificationMethod.trim() || !effCriteria.trim()}
-                          onClick={handleSubmitEffectiveness}
-                        >
-                          <ClipboardCheck className="h-4 w-4 mr-2" />
-                          Update Effectiveness Check
-                        </Button>
-                      )}
-                    </div>
-                  ) : selectedCapa.effectivenessVerificationMethod ? (
+                  {/* Effectiveness Verification */}
+                  {selectedCapa.effectivenessVerificationMethod && (
                     <div>
-                      <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
-                        <ClipboardCheck className="h-4 w-4 text-primary" />
-                        Effectiveness Verification
-                      </h4>
+                      <h4 className="font-medium text-sm mb-1">Effectiveness Verification</h4>
                       <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCapa.effectivenessVerificationMethod}</p>
                       {selectedCapa.effectivenessCriteria && (
                         <p className="text-sm text-muted-foreground mt-1"><span className="font-medium">Criteria:</span> {selectedCapa.effectivenessCriteria}</p>
                       )}
                       {selectedCapa.effectivenessResult && (
-                        <Badge className={cn(
-                          'mt-2 text-xs',
-                          selectedCapa.effectivenessResult === 'Effective'
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                            : selectedCapa.effectivenessResult === 'Not Effective'
-                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                        )} variant="secondary">
-                          Result: {selectedCapa.effectivenessResult}
-                        </Badge>
+                        <Badge variant="outline" className="mt-2 text-xs">Result: {selectedCapa.effectivenessResult}</Badge>
                       )}
                     </div>
-                  ) : null}
+                  )}
 
-                  {/* ── NEW: Linked CAPA Reference (clickable) ── */}
-                  {selectedCapa.linkedCapaId && (() => {
-                    const linkedCapa = getLinkedCapa(selectedCapa.linkedCapaId);
+                  {/* ── NEW: Linked NCR Reference (clickable) ── */}
+                  {selectedCapa.linkedNcrId && (() => {
+                    const linkedNcr = getLinkedNcr(selectedCapa.linkedNcrId);
                     return (
                       <div>
                         <h4 className="font-medium text-sm mb-1 flex items-center gap-2">
                           <Link2 className="h-4 w-4 text-primary" />
-                          Linked CAPA
+                          Linked NCR
                         </h4>
-                        {linkedCapa ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedCapa(linkedCapa);
-                            }}
-                            className="text-sm text-primary underline hover:text-primary/80 bg-primary/5 p-3 rounded-md border border-primary/20 w-full text-left transition-colors"
-                          >
-                            {linkedCapa.capaNumber} — {linkedCapa.title}
-                            <Badge className={cn('ml-2 text-xs', statusColors[linkedCapa.status])} variant="secondary">{linkedCapa.status}</Badge>
-                          </button>
+                        {linkedNcr ? (
+                          <div className="text-sm text-primary bg-primary/5 p-3 rounded-md border border-primary/20">
+                            {linkedNcr.ncrNumber} — {linkedNcr.title}
+                          </div>
                         ) : (
-                          <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCapa.linkedCapaId}</p>
+                          <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedCapa.linkedNcrId}</p>
                         )}
                       </div>
                     );
@@ -1519,136 +1244,15 @@ export function CapaView() {
                       </p>
                     </div>
                   )}
-
-                  {/* P1-4: Linked NCRs (bidirectional) */}
-                  {((selectedCapa.linkedNcrIds && selectedCapa.linkedNcrIds.length > 0) || selectedCapa.linkedNcrId) && (
-                    <div>
-                      <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
-                        <Link2 className="h-4 w-4 text-primary" />
-                        Non-Conformances liées
-                      </h4>
-                      <div className="space-y-1">
-                        {(selectedCapa.linkedNcrIds || (selectedCapa.linkedNcrId ? [selectedCapa.linkedNcrId] : [])).map(ncrId => {
-                          const ncr = store.ncrs.find(n => n.id === ncrId);
-                          return (
-                            <div key={ncrId} className="bg-muted/30 p-2 rounded-md text-sm flex items-center gap-2">
-                              <Badge variant="outline" className="font-mono text-xs">{ncr?.ncrNumber || ncrId}</Badge>
-                              {ncr && (
-                                <>
-                                  <span>{ncr.title}</span>
-                                  <Badge className={cn('text-xs ml-auto',
-                                    ncr.status === 'Closed' ? 'bg-green-100 text-green-700' :
-                                    ncr.status === 'Under Investigation' ? 'bg-amber-100 text-amber-700' :
-                                    'bg-blue-100 text-blue-700'
-                                  )} variant="secondary">{ncr.status}</Badge>
-                                </>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* P1-4: Linked Audits (bidirectional) */}
-                  {((selectedCapa.linkedAuditIds && selectedCapa.linkedAuditIds.length > 0) || selectedCapa.linkedAuditId) && (
-                    <div>
-                      <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
-                        <Link2 className="h-4 w-4 text-primary" />
-                        Audits liés
-                      </h4>
-                      <div className="space-y-1">
-                        {(selectedCapa.linkedAuditIds || (selectedCapa.linkedAuditId ? [selectedCapa.linkedAuditId] : [])).map(auditId => {
-                          const audit = store.audits.find(a => a.id === auditId);
-                          return (
-                            <div key={auditId} className="bg-muted/30 p-2 rounded-md text-sm flex items-center gap-2">
-                              <Badge variant="outline" className="font-mono text-xs">{audit?.auditNumber || auditId}</Badge>
-                              {audit && (
-                                <>
-                                  <span>{audit.title}</span>
-                                  <Badge className={cn('text-xs ml-auto',
-                                    audit.status === 'Completed' ? 'bg-green-100 text-green-700' :
-                                    audit.status === 'In Progress' ? 'bg-amber-100 text-amber-700' :
-                                    'bg-blue-100 text-blue-700'
-                                  )} variant="secondary">{audit.status}</Badge>
-                                </>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
-                {/* Hybrid Supervision: Template associé (§4.2.4) */}
-                {selectedCapa.templateId && (() => {
-                  const tmpl = store.formTemplates.find(t => t.id === selectedCapa.templateId);
-                  return tmpl ? (
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-semibold flex items-center gap-2">
-                        <FileSpreadsheet className="h-4 w-4 text-primary" />
-                        Template associé (§4.2.4)
-                      </h4>
-                      <div className="border rounded-md p-2 text-sm flex items-center justify-between">
-                        <div>
-                          <span className="font-medium">{tmpl.title}</span>
-                          <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
-                        </div>
-                        <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
-                          {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
-                        </Badge>
-                      </div>
-
-                      {/* P1-2: Show template field values from FormInstance */}
-                      {selectedCapa.formInstanceId && (() => {
-                        const instance = store.formInstances.find(fi => fi.id === selectedCapa.formInstanceId);
-                        if (!instance || !tmpl.fields || tmpl.fields.length === 0) return null;
-                        return (
-                          <DynamicFormFields
-                            fields={tmpl.fields}
-                            values={instance.values}
-                            onChange={() => {}}
-                            readonly
-                            compact
-                          />
-                        );
-                      })()}
-                    </div>
-                  ) : null;
-                })()}
-
-                {/* P2-2: Action Button — modified for Effectiveness Check status */}
+                {/* Action Button — requires electronic signature */}
                 {hasPermission('capa.update') && selectedCapa.status !== 'Closed' && (
-                  selectedCapa.status === 'Effectiveness Check' ? (
-                    // When in Effectiveness Check: require effectiveness result before advancing
-                    selectedCapa.effectivenessResult === 'Effective' ? (
-                      <Button className="w-full" onClick={handleEffectivenessAdvanceToClosed}>
-                        <Shield className="h-4 w-4 mr-2" />
-                        Advance to Closed
-                        <ArrowRight className="h-4 w-4 ml-2" />
-                      </Button>
-                    ) : (
-                      <div className="w-full space-y-2">
-                        <Button className="w-full" disabled>
-                          <Shield className="h-4 w-4 mr-2" />
-                          Advance to Closed
-                          <ArrowRight className="h-4 w-4 ml-2" />
-                        </Button>
-                        <p className="text-xs text-muted-foreground text-center">
-                          {selectedCapa.effectivenessResult === 'Not Effective'
-                            ? 'CAPA cannot be closed until effectiveness is verified. Further action required.'
-                            : 'Complete the effectiveness verification above before advancing to Closed.'}
-                        </p>
-                      </div>
-                    )
-                  ) : (
-                    <Button className="w-full" onClick={() => handleAdvanceStatus(selectedCapa)}>
-                      <Shield className="h-4 w-4 mr-2" />
-                      Advance to {getNextStatus(selectedCapa.status)}
-                      <ArrowRight className="h-4 w-4 ml-2" />
-                    </Button>
-                  )
+                  <Button className="w-full" onClick={() => handleAdvanceStatus(selectedCapa)}>
+                    <Shield className="h-4 w-4 mr-2" />
+                    Advance to {getNextStatus(selectedCapa.status)}
+                    <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
                 )}
               </div>
             </>

@@ -53,7 +53,7 @@ const levelLabels: Record<number, string> = {
 
 const statusColors: Record<string, string> = {
   'Draft': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  'In Review': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  'Under Review': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   'Approved': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   'Obsolete': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 };
@@ -315,7 +315,7 @@ export function DocumentHierarchyView() {
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
             <SelectItem value="Draft">Draft</SelectItem>
-            <SelectItem value="In Review">In Review</SelectItem>
+            <SelectItem value="Under Review">Under Review</SelectItem>
             <SelectItem value="Approved">Approved</SelectItem>
             <SelectItem value="Obsolete">Obsolete</SelectItem>
           </SelectContent>

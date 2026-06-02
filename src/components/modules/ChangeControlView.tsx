@@ -3,9 +3,11 @@
 import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import type {
   ChangeControl, ChangeControlStatus, ChangeControlType,
   ChangeControlPriority, ChangeControlCategory, SignatureType,
+  FormTemplateModule,
 } from '@/types/qms';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
@@ -14,7 +16,7 @@ import {
   AlertTriangle, Clock, XCircle, ShieldCheck, FileText, Link2,
   ClipboardList, AlertOctagon, BarChart3, Wrench, User,
   ChevronLeft, ChevronRight, Zap, ShieldAlert, DollarSign,
-  MapPin, MonitorCheck, BookOpen, Flag, FileSpreadsheet,
+  MapPin, MonitorCheck, BookOpen, Flag,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -44,8 +46,6 @@ const statusColors: Record<ChangeControlStatus, string> = {
   'Approved': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
   'In Implementation': 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
   'Completed': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  'Post-Implementation Review': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
-  'Closed': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
   'Rejected': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 };
 
@@ -57,17 +57,13 @@ const priorityColors: Record<ChangeControlPriority, string> = {
 };
 
 const statusFlow: ChangeControlStatus[] = [
-  'Requested', 'Under Review', 'Approved', 'In Implementation', 'Completed', 'Post-Implementation Review', 'Closed',
+  'Requested', 'Under Review', 'Approved', 'In Implementation', 'Completed',
 ];
 
-function getNextStatus(current: ChangeControlStatus, postImplReviewRequired?: boolean): ChangeControlStatus | null {
-  if (current === 'Rejected' || current === 'Closed') return null;
-  if (current === 'Completed') {
-    return postImplReviewRequired ? 'Post-Implementation Review' : 'Closed';
-  }
-  if (current === 'Post-Implementation Review') return 'Closed';
+function getNextStatus(current: ChangeControlStatus): ChangeControlStatus | null {
+  if (current === 'Rejected') return null;
   const idx = statusFlow.indexOf(current);
-  return idx >= 0 && idx < statusFlow.length - 1 ? statusFlow[idx + 1] : null;
+  return idx < statusFlow.length - 1 ? statusFlow[idx + 1] : null;
 }
 
 const allCategories: ChangeControlCategory[] = [
@@ -96,10 +92,15 @@ const WIZARD_STEPS = [
 export function ChangeControlView() {
   const { currentUser, hasPermission } = useAuth();
   const store = useQMSStore();
+  const { getApprovedTemplates, hasApprovedTemplate, moduleTypeLabels } = useRecordWorkflow();
   const changeControls = store.changeControls;
   const profiles = store.profiles;
   const documents = store.documents;
   const capas = store.capas;
+  const formTemplates = store.formTemplates;
+
+  const MODULE_TYPE: FormTemplateModule = 'CHANGE_CONTROL';
+  const approvedTemplates = getApprovedTemplates(MODULE_TYPE);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -132,7 +133,6 @@ export function ChangeControlView() {
   const [formDescription, setFormDescription] = useState('');
   const [formJustification, setFormJustification] = useState('');
   const [formRegulatoryTrigger, setFormRegulatoryTrigger] = useState('');
-  const [formPostImplReviewRequired, setFormPostImplReviewRequired] = useState(false);
 
   // Step 2
   const [formDetailedChangeDescription, setFormDetailedChangeDescription] = useState('');
@@ -159,15 +159,9 @@ export function ChangeControlView() {
   const [formLinkedDocId, setFormLinkedDocId] = useState('');
   const [formLinkedCapaId, setFormLinkedCapaId] = useState('');
   const [formAdditionalReferences, setFormAdditionalReferences] = useState('');
-  const [formTemplateId, setFormTemplateId] = useState('');
 
-  // Post-Implementation Review form state
-  const [postImplReviewDate, setPostImplReviewDate] = useState('');
-  const [postImplReviewOutcome, setPostImplReviewOutcome] = useState<'Successful' | 'Partially Successful' | 'Unsuccessful'>('Successful');
-  const [postImplReviewFindings, setPostImplReviewFindings] = useState('');
-  const [postImplReviewVerifiedBy, setPostImplReviewVerifiedBy] = useState('');
-  const [showPostImplReviewSignature, setShowPostImplReviewSignature] = useState(false);
-  const [pendingPostImplReviewCC, setPendingPostImplReviewCC] = useState<ChangeControl | null>(null);
+  // Template selection
+  const [formTemplateId, setFormTemplateId] = useState('');
 
   // ---------------------------------------------------------------------------
   // Derived data
@@ -190,8 +184,6 @@ export function ChangeControlView() {
     approved: changeControls.filter(c => c.status === 'Approved').length,
     inImplementation: changeControls.filter(c => c.status === 'In Implementation').length,
     completed: changeControls.filter(c => c.status === 'Completed').length,
-    postImplReview: changeControls.filter(c => c.status === 'Post-Implementation Review').length,
-    closed: changeControls.filter(c => c.status === 'Closed').length,
     rejected: changeControls.filter(c => c.status === 'Rejected').length,
   };
 
@@ -226,7 +218,6 @@ export function ChangeControlView() {
     setFormDescription('');
     setFormJustification('');
     setFormRegulatoryTrigger('');
-    setFormPostImplReviewRequired(false);
     setFormDetailedChangeDescription('');
     setFormBusinessComplianceJustification('');
     setFormProposedChange('');
@@ -244,10 +235,6 @@ export function ChangeControlView() {
     setFormLinkedCapaId('');
     setFormAdditionalReferences('');
     setFormTemplateId('');
-    setPostImplReviewDate('');
-    setPostImplReviewOutcome('Successful');
-    setPostImplReviewFindings('');
-    setPostImplReviewVerifiedBy('');
     setPrereqError(null);
   };
 
@@ -283,12 +270,17 @@ export function ChangeControlView() {
     }
     setPrereqError(null);
 
+    // Resolve template reference
+    const selectedTemplate = formTemplateId ? approvedTemplates.find(t => t.id === formTemplateId) : undefined;
+
     const newCC: ChangeControl = {
       id: `cc-${Date.now()}`,
       ccNumber: `CC-2024-${String(changeControls.length + 1).padStart(3, '0')}`,
       title: formTitle,
       type: formType,
       status: 'Requested',
+      templateId: selectedTemplate?.id,
+      templateVersion: selectedTemplate?.version,
       priority: formPriority,
       category: formCategory,
       description: formDescription,
@@ -304,12 +296,10 @@ export function ChangeControlView() {
       implementationDate: formImplementationDate ? new Date(formImplementationDate).toISOString() : undefined,
       estimatedCostImpact: formEstimatedCostImpact || undefined,
       regulatoryTrigger: formRegulatoryTrigger || undefined,
-      postImplReviewRequired: formPostImplReviewRequired || undefined,
       emergencyFlag: formEmergencyFlag || undefined,
       linkedDocumentId: formLinkedDocId && formLinkedDocId !== 'none' ? formLinkedDocId : undefined,
       linkedCapaId: formLinkedCapaId && formLinkedCapaId !== 'none' ? formLinkedCapaId : undefined,
       additionalReferences: formAdditionalReferences || undefined,
-      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       assignedTo: formAssignedTo,
       requestedBy: currentUser?.id || '',
       approver: formApprover || undefined,
@@ -334,7 +324,7 @@ export function ChangeControlView() {
   };
 
   const handleAdvanceStatus = (cc: ChangeControl) => {
-    const next = getNextStatus(cc.status, cc.postImplReviewRequired);
+    const next = getNextStatus(cc.status);
     if (!next) return;
 
     if (next === 'Approved') {
@@ -349,12 +339,6 @@ export function ChangeControlView() {
     }
     if (next === 'Completed') {
       updates.completionDate = new Date().toISOString();
-    }
-    if (next === 'Post-Implementation Review') {
-      updates.postImplReviewDate = new Date().toISOString();
-    }
-    if (next === 'Closed') {
-      updates.closedDate = new Date().toISOString();
     }
     store.updateChangeControl(cc.id, updates);
     if (selectedCC?.id === cc.id) {
@@ -405,39 +389,6 @@ export function ChangeControlView() {
     setShowRejectSignature(false);
   };
 
-  // Post-Implementation Review with e-signature
-  const handlePostImplReviewSubmit = (cc: ChangeControl) => {
-    setPendingPostImplReviewCC(cc);
-    setShowPostImplReviewSignature(true);
-  };
-
-  const handlePostImplReviewSignatureConfirm = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
-    void signatureData;
-    if (!pendingPostImplReviewCC) return;
-    const cc = pendingPostImplReviewCC;
-    const updates: Partial<ChangeControl> = {
-      postImplReviewDate: postImplReviewDate ? new Date(postImplReviewDate).toISOString() : new Date().toISOString(),
-      postImplReviewOutcome,
-      postImplReviewFindings: postImplReviewFindings || undefined,
-      postImplReviewVerifiedBy: postImplReviewVerifiedBy || currentUser?.id,
-    };
-    store.updateChangeControl(cc.id, updates);
-    if (selectedCC?.id === cc.id) {
-      setSelectedCC({ ...cc, ...updates });
-    }
-    setPendingPostImplReviewCC(null);
-    setShowPostImplReviewSignature(false);
-    setPostImplReviewDate('');
-    setPostImplReviewOutcome('Successful');
-    setPostImplReviewFindings('');
-    setPostImplReviewVerifiedBy('');
-  };
-
-  const handlePostImplReviewSignatureCancel = () => {
-    setPendingPostImplReviewCC(null);
-    setShowPostImplReviewSignature(false);
-  };
-
   // ---------------------------------------------------------------------------
   // Risk color helper
   // ---------------------------------------------------------------------------
@@ -466,6 +417,30 @@ export function ChangeControlView() {
               <Label htmlFor="cc-title">Title *</Label>
               <Input id="cc-title" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="Change Control title" />
             </div>
+
+            {/* Template Selection (Layer 2 — Template Reference) */}
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-1.5">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                Template
+              </Label>
+              <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+                <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No template</SelectItem>
+                  {approvedTemplates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {approvedTemplates.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  No approved templates available. Create one in the Forms module first.
+                </p>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="grid gap-2">
                 <Label>Type *</Label>
@@ -531,20 +506,6 @@ export function ChangeControlView() {
             <div className="grid gap-2">
               <Label htmlFor="cc-reg-trigger">Regulatory Trigger</Label>
               <Input id="cc-reg-trigger" value={formRegulatoryTrigger} onChange={(e) => setFormRegulatoryTrigger(e.target.value)} placeholder="e.g. FDA 21 CFR 820, ISO 13485 §7.1" />
-            </div>
-            <div className="flex items-center space-x-2 p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-md">
-              <Checkbox
-                id="cc-post-impl-review"
-                checked={formPostImplReviewRequired}
-                onCheckedChange={(checked) => setFormPostImplReviewRequired(checked === true)}
-              />
-              <div className="grid gap-0.5 leading-none">
-                <Label htmlFor="cc-post-impl-review" className="flex items-center gap-1.5 font-medium text-indigo-700 dark:text-indigo-400">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Post-Implementation Review Required
-                </Label>
-                <p className="text-xs text-muted-foreground">Require a post-implementation review before closing this change control (ISO 13485 §7.1)</p>
-              </div>
             </div>
           </div>
         );
@@ -719,21 +680,6 @@ export function ChangeControlView() {
               </div>
             </div>
             <div className="grid gap-2">
-              <Label>Template associé (§4.2.4)</Label>
-              <Select value={formTemplateId} onValueChange={setFormTemplateId}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Aucun</SelectItem>
-                  {store.formTemplates
-                    .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'CHANGE_CONTROL' || !t.associatedModule || t.associatedModule === 'GENERAL'))
-                    .map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-                    ))
-                  }
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
               <Label htmlFor="cc-addl-refs">Additional References</Label>
               <Textarea id="cc-addl-refs" value={formAdditionalReferences} onChange={(e) => setFormAdditionalReferences(e.target.value)} placeholder="Any additional references, document numbers, or URLs..." rows={2} />
             </div>
@@ -822,9 +768,6 @@ export function ChangeControlView() {
           {selectedCC.emergencyFlag && (
             <Badge variant="destructive" className="text-xs"><Zap className="h-3 w-3 mr-1" />Emergency</Badge>
           )}
-          {selectedCC.postImplReviewRequired && (
-            <Badge className="text-xs bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400" variant="secondary"><CheckCircle2 className="h-3 w-3 mr-1" />Post-Impl Review Required</Badge>
-          )}
         </div>
 
         {/* Status Flow Visualization */}
@@ -861,6 +804,21 @@ export function ChangeControlView() {
             </>
           )}
         </div>
+
+        {/* Template Reference (Layer 2) */}
+        {selectedCC.templateId && (() => {
+          const tmpl = formTemplates.find(t => t.id === selectedCC.templateId);
+          return tmpl ? (
+            <div className="bg-primary/5 border border-primary/20 rounded-md p-3 flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary flex-shrink-0" />
+              <div className="text-sm">
+                <span className="text-muted-foreground">Template: </span>
+                <span className="font-medium">{tmpl.title}</span>
+                <span className="text-muted-foreground ml-2">(v{selectedCC.templateVersion || tmpl.version})</span>
+              </div>
+            </div>
+          ) : null;
+        })()}
 
         {/* Full Metadata Grid */}
         <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
@@ -924,44 +882,6 @@ export function ChangeControlView() {
             <div className="col-span-2">
               <span className="text-muted-foreground">Regulatory Trigger:</span>{' '}
               <span className="font-medium">{selectedCC.regulatoryTrigger}</span>
-            </div>
-          )}
-          {selectedCC.postImplReviewRequired && (
-            <div>
-              <span className="text-muted-foreground">Post-Impl Review Required:</span>{' '}
-              <span className="font-medium flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3 text-indigo-500" />
-                Yes
-              </span>
-            </div>
-          )}
-          {selectedCC.postImplReviewDate && (
-            <div>
-              <span className="text-muted-foreground">Post-Impl Review Date:</span>{' '}
-              <span className="font-medium">{formatDate(selectedCC.postImplReviewDate)}</span>
-            </div>
-          )}
-          {selectedCC.postImplReviewOutcome && (
-            <div>
-              <span className="text-muted-foreground">Review Outcome:</span>{' '}
-              <Badge className={cn('text-xs',
-                selectedCC.postImplReviewOutcome === 'Successful' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                selectedCC.postImplReviewOutcome === 'Partially Successful' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                selectedCC.postImplReviewOutcome === 'Unsuccessful' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
-              )} variant="secondary">{selectedCC.postImplReviewOutcome}</Badge>
-            </div>
-          )}
-          {selectedCC.postImplReviewVerifiedBy && (
-            <div>
-              <span className="text-muted-foreground">Verified By:</span>{' '}
-              <span className="font-medium">{getUserName(selectedCC.postImplReviewVerifiedBy)}</span>
-            </div>
-          )}
-          {selectedCC.closedDate && (
-            <div>
-              <span className="text-muted-foreground">Closed Date:</span>{' '}
-              <span className="font-medium">{formatDate(selectedCC.closedDate)}</span>
             </div>
           )}
         </div>
@@ -1129,106 +1049,19 @@ export function ChangeControlView() {
           </div>
         )}
 
-        {/* Hybrid Supervision: Template associé (§4.2.4) */}
-        {selectedCC.templateId && (() => {
-          const tmpl = store.formTemplates.find(t => t.id === selectedCC.templateId);
-          return tmpl ? (
-            <div className="space-y-1">
-              <h4 className="text-sm font-semibold flex items-center gap-2">
-                <FileSpreadsheet className="h-4 w-4 text-primary" />
-                Template associé (§4.2.4)
-              </h4>
-              <div className="border rounded-md p-2 text-sm flex items-center justify-between">
-                <div>
-                  <span className="font-medium">{tmpl.title}</span>
-                  <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
-                </div>
-                <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
-                  {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
-                </Badge>
-              </div>
-            </div>
-          ) : null;
-        })()}
-
-        {/* Post-Implementation Review Findings (display if already submitted) */}
-        {selectedCC.postImplReviewFindings && (
-          <div>
-            <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
-              <CheckCircle2 className="h-4 w-4 text-indigo-500" />
-              Post-Implementation Review Findings
-            </h4>
-            <p className="text-sm text-muted-foreground bg-indigo-50 dark:bg-indigo-900/10 p-3 rounded-md border border-indigo-200 dark:border-indigo-800">{selectedCC.postImplReviewFindings}</p>
-          </div>
-        )}
-
-        {/* Post-Implementation Review Form (when CC is in Post-Implementation Review status and no outcome yet) */}
-        {selectedCC.status === 'Post-Implementation Review' && !selectedCC.postImplReviewOutcome && (
-          <>
-            <Separator />
-            <div className="space-y-4 border border-indigo-200 dark:border-indigo-800 rounded-lg p-4 bg-indigo-50/50 dark:bg-indigo-900/10">
-              <h4 className="font-semibold text-sm flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-indigo-500" />
-                Post-Implementation Review
-                <Badge variant="outline" className="text-xs ml-1">ISO 13485 §7.1 / §8.5.1</Badge>
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="pir-date">Review Date</Label>
-                  <Input id="pir-date" type="date" value={postImplReviewDate} onChange={(e) => setPostImplReviewDate(e.target.value)} />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="pir-outcome">Review Outcome</Label>
-                  <Select value={postImplReviewOutcome} onValueChange={(v) => setPostImplReviewOutcome(v as 'Successful' | 'Partially Successful' | 'Unsuccessful')}>
-                    <SelectTrigger id="pir-outcome"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Successful">Successful</SelectItem>
-                      <SelectItem value="Partially Successful">Partially Successful</SelectItem>
-                      <SelectItem value="Unsuccessful">Unsuccessful</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="pir-findings">Review Findings</Label>
-                <Textarea id="pir-findings" value={postImplReviewFindings} onChange={(e) => setPostImplReviewFindings(e.target.value)} placeholder="Document the post-implementation review findings, including verification of change effectiveness..." rows={4} />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="pir-verified-by">Verified By</Label>
-                <Select value={postImplReviewVerifiedBy} onValueChange={setPostImplReviewVerifiedBy}>
-                  <SelectTrigger id="pir-verified-by"><SelectValue placeholder="Select verifier" /></SelectTrigger>
-                  <SelectContent>
-                    {profiles.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                className="w-full"
-                onClick={() => handlePostImplReviewSubmit(selectedCC)}
-                disabled={!postImplReviewOutcome || !postImplReviewVerifiedBy}
-              >
-                <ShieldCheck className="h-4 w-4 mr-2" />
-                Submit Review with Electronic Signature
-              </Button>
-            </div>
-          </>
-        )}
-
         {/* Action Buttons */}
-        {hasPermission('changecontrol.update') && selectedCC.status !== 'Completed' && selectedCC.status !== 'Rejected' && selectedCC.status !== 'Closed' && (
+        {hasPermission('changecontrol.update') && selectedCC.status !== 'Completed' && selectedCC.status !== 'Rejected' && (
           <div className="flex gap-3">
-            {getNextStatus(selectedCC.status, selectedCC.postImplReviewRequired) && (
+            {getNextStatus(selectedCC.status) && (
               <Button className="flex-1" onClick={() => handleAdvanceStatus(selectedCC)}>
-                {getNextStatus(selectedCC.status, selectedCC.postImplReviewRequired) === 'Approved' ? (
+                {getNextStatus(selectedCC.status) === 'Approved' ? (
                   <>
                     <ShieldCheck className="h-4 w-4 mr-2" />
                     Approve with Electronic Signature
                   </>
                 ) : (
                   <>
-                    Advance to {getNextStatus(selectedCC.status, selectedCC.postImplReviewRequired)}
+                    Advance to {getNextStatus(selectedCC.status)}
                     <ArrowRight className="h-4 w-4 ml-2" />
                   </>
                 )}
@@ -1259,7 +1092,7 @@ export function ChangeControlView() {
             <ArrowLeftRight className="h-6 w-6 text-primary" />
             Change Control
           </h1>
-          <p className="text-muted-foreground mt-1">Change management and approval workflow (ISO 13485 §7.1) <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
+          <p className="text-muted-foreground mt-1">Change management and approval workflow (ISO 13485 §7.1)</p>
         </div>
         {hasPermission('changecontrol.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -1269,8 +1102,18 @@ export function ChangeControlView() {
         )}
       </div>
 
+      {/* Layer 1 Gate Warning */}
+      {!hasApprovedTemplate(MODULE_TYPE) && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            No approved template found for {moduleTypeLabels[MODULE_TYPE]} records. Please create and approve a template in the Forms module first.
+          </p>
+        </div>
+      )}
+
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
@@ -1319,24 +1162,6 @@ export function ChangeControlView() {
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-indigo-500" />
-              <span className="text-sm text-muted-foreground">Post-Impl Review</span>
-            </div>
-            <span className="text-2xl font-bold">{summaryCounts.postImplReview}</span>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              <span className="text-sm text-muted-foreground">Closed</span>
-            </div>
-            <span className="text-2xl font-bold">{summaryCounts.closed}</span>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2">
               <XCircle className="h-4 w-4 text-red-500" />
               <span className="text-sm text-muted-foreground">Rejected</span>
             </div>
@@ -1355,7 +1180,7 @@ export function ChangeControlView() {
           <SelectTrigger className="w-[170px]"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
-            {(['Requested', 'Under Review', 'Approved', 'In Implementation', 'Completed', 'Post-Implementation Review', 'Closed', 'Rejected'] as ChangeControlStatus[]).map(s => (
+            {(['Requested', 'Under Review', 'Approved', 'In Implementation', 'Completed', 'Rejected'] as ChangeControlStatus[]).map(s => (
               <SelectItem key={s} value={s}>{s}</SelectItem>
             ))}
           </SelectContent>
@@ -1404,6 +1229,7 @@ export function ChangeControlView() {
                   <TableHead className="w-[140px]">Status</TableHead>
                   <TableHead className="w-[140px]">Assigned To</TableHead>
                   <TableHead className="w-[110px]">Due Date</TableHead>
+                  <TableHead className="w-[120px]">Template</TableHead>
                   <TableHead className="w-[80px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1440,6 +1266,19 @@ export function ChangeControlView() {
                       {formatDate(cc.dueDate, true)}
                     </TableCell>
                     <TableCell>
+                      {cc.templateId ? (() => {
+                        const tmpl = formTemplates.find(t => t.id === cc.templateId);
+                        return tmpl ? (
+                          <Badge variant="outline" className="text-[10px] font-normal gap-1">
+                            <FileText className="h-2.5 w-2.5" />
+                            {tmpl.title}
+                          </Badge>
+                        ) : null;
+                      })() : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openDetail(cc); }}>
                         <Eye className="h-4 w-4" />
                       </Button>
@@ -1448,7 +1287,7 @@ export function ChangeControlView() {
                 ))}
                 {filteredCCs.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                       No Change Controls found matching filters
                     </TableCell>
                   </TableRow>
@@ -1586,18 +1425,6 @@ export function ChangeControlView() {
         recordTitle={pendingRejectCC ? `${pendingRejectCC.ccNumber} — ${pendingRejectCC.title}` : ''}
         recordId={pendingRejectCC?.id || ''}
         signatureType="rejection"
-      />
-
-      {/* ================================================================== */}
-      {/* Electronic Signature Modal — Post-Implementation Review            */}
-      {/* ================================================================== */}
-      <ElectronicSignatureModal
-        open={showPostImplReviewSignature}
-        onClose={handlePostImplReviewSignatureCancel}
-        onSign={handlePostImplReviewSignatureConfirm}
-        recordTitle={pendingPostImplReviewCC ? `${pendingPostImplReviewCC.ccNumber} — ${pendingPostImplReviewCC.title}` : ''}
-        recordId={pendingPostImplReviewCC?.id || ''}
-        signatureType="approval"
       />
     </div>
   );

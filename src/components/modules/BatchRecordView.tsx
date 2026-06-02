@@ -6,12 +6,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import type { BatchRecord, BatchStep, BatchStatus, BatchStepStatus, SignatureType, RawMaterial, RawMaterialStatus, StepType } from '@/types/qms';
+import type { BatchRecord, BatchStep, BatchStatus, BatchStepStatus, SignatureType, RawMaterial, RawMaterialStatus, StepType, FormTemplateModule } from '@/types/qms';
+import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import {
   Package, Plus, Search, ArrowRight, CheckCircle2, Lock, AlertTriangle,
   ShieldCheck, Play, Clock, User, FileCheck, AlertCircle, Trash2,
   Beaker, ClipboardList, FlaskConical, ChevronLeft, ChevronRight,
-  CalendarClock, ListChecks, FileSpreadsheet,
+  CalendarClock, ListChecks,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -113,6 +114,9 @@ export function BatchRecordView() {
   const store = useQMSStore();
   const batchRecords = store.batchRecords;
   const profiles = store.profiles;
+  const { getApprovedTemplates, hasApprovedTemplate } = useRecordWorkflow();
+  const approvedBatchTemplates = getApprovedTemplates('BATCH_RECORD');
+  const batchHasApprovedTemplate = hasApprovedTemplate('BATCH_RECORD');
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -132,6 +136,10 @@ export function BatchRecordView() {
   // Wizard state
   const [wizardStep, setWizardStep] = useState(0);
 
+  // Template selection
+  const [formTemplateId, setFormTemplateId] = useState('');
+  const [formTemplateVersion, setFormTemplateVersion] = useState('');
+
   // Create form state
   const [formAutoLot, setFormAutoLot] = useState(true);
   const [formLotNumber, setFormLotNumber] = useState('');
@@ -149,7 +157,6 @@ export function BatchRecordView() {
 
   // Step templates in create form
   const [formStepTemplates, setFormStepTemplates] = useState<FormStepTemplate[]>([]);
-  const [formTemplateId, setFormTemplateId] = useState('');
 
   // Step editing
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
@@ -244,6 +251,7 @@ export function BatchRecordView() {
     setFormRawMaterials([]);
     setFormStepTemplates([]);
     setFormTemplateId('');
+    setFormTemplateVersion('');
   };
 
   // ── Step validation ──
@@ -325,8 +333,9 @@ export function BatchRecordView() {
       expiryDate: formExpiryDate ? new Date(formExpiryDate).toISOString() : undefined,
       status: 'In Progress',
       isLocked: false,
+      templateId: formTemplateId || undefined,
+      templateVersion: formTemplateVersion || undefined,
       organizationId: 'org-001',
-      templateId: formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined,
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
       steps,
@@ -478,6 +487,28 @@ export function BatchRecordView() {
       case 0:
         return (
           <div className="grid gap-4">
+            {/* Template Selector */}
+            <div className="grid gap-2">
+              <Label>Template</Label>
+              <Select value={formTemplateId || 'none'} onValueChange={(v) => {
+                if (v === 'none') {
+                  setFormTemplateId('');
+                  setFormTemplateVersion('');
+                } else {
+                  setFormTemplateId(v);
+                  const tpl = approvedBatchTemplates.find(t => t.id === v);
+                  setFormTemplateVersion(tpl?.version || '');
+                }
+              }}>
+                <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No template</SelectItem>
+                  {approvedBatchTemplates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-center gap-2">
               <Label htmlFor="autoLot" className="text-sm">Auto-generate lot number</Label>
               <input
@@ -800,21 +831,6 @@ export function BatchRecordView() {
                   <p className="text-xs text-muted-foreground">No step templates added</p>
                 )}
               </div>
-              <div className="grid gap-2">
-                <Label>Template associé (§4.2.4)</Label>
-                <Select value={formTemplateId} onValueChange={setFormTemplateId}>
-                  <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Aucun</SelectItem>
-                    {store.formTemplates
-                      .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'BATCH_RECORD' || !t.associatedModule || t.associatedModule === 'GENERAL'))
-                      .map(t => (
-                        <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-                      ))
-                    }
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
           </div>
         );
@@ -826,6 +842,17 @@ export function BatchRecordView() {
 
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+      {/* Layer 1 Gate Warning */}
+      {!batchHasApprovedTemplate && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-amber-700 dark:text-amber-400">
+            <p className="font-medium">No approved template found for Batch Record records</p>
+            <p className="mt-0.5">Please create and approve a template in the Forms module first.</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -833,7 +860,7 @@ export function BatchRecordView() {
             <Package className="h-6 w-6 text-primary" />
             Batch Records
           </h1>
-          <p className="text-muted-foreground mt-1">Batch record management and QA release <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §8.2.4</Badge> <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
+          <p className="text-muted-foreground mt-1">Batch record management and QA release <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §8.2.4</Badge></p>
         </div>
         {hasPermission('batch.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -935,6 +962,7 @@ export function BatchRecordView() {
                   <TableHead className="w-[100px]">Progress</TableHead>
                   <TableHead className="w-[80px]">Materials</TableHead>
                   <TableHead className="w-[100px]">Lock</TableHead>
+                  <TableHead className="w-[100px]">Template</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -976,12 +1004,24 @@ export function BatchRecordView() {
                           <Badge variant="outline" className="text-xs"><Lock className="h-3 w-3 mr-1" />Locked</Badge>
                         ) : <span className="text-muted-foreground text-xs">Unlocked</span>}
                       </TableCell>
+                      <TableCell>
+                        {batch.templateId ? (() => {
+                          const tpl = store.formTemplates.find(t => t.id === batch.templateId);
+                          return tpl ? (
+                            <Badge variant="outline" className="text-xs">{tpl.title}</Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          );
+                        })() : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
                 {filteredBatches.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No batch records found</TableCell>
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No batch records found</TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -1117,6 +1157,15 @@ export function BatchRecordView() {
 
                 {/* Batch Metadata */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2 text-sm">
+                  {selectedBatch.templateId && (() => {
+                    const tpl = store.formTemplates.find(t => t.id === selectedBatch.templateId);
+                    return tpl ? (
+                      <div className="col-span-2 sm:col-span-4">
+                        <span className="text-muted-foreground">Template:</span>{' '}
+                        <Badge variant="outline" className="text-xs">{tpl.title} (v{selectedBatch.templateVersion || tpl.version})</Badge>
+                      </div>
+                    ) : null;
+                  })()}
                   <div>
                     <span className="text-muted-foreground">Lot Number:</span>{' '}
                     <span className="font-mono font-medium">{selectedBatch.lotNumber}</span>
@@ -1451,28 +1500,6 @@ export function BatchRecordView() {
                 )}
 
                 {/* Advance Batch Status */}
-                {/* Hybrid Supervision: Template associé (§4.2.4) */}
-                {selectedBatch.templateId && (() => {
-                  const tmpl = store.formTemplates.find(t => t.id === selectedBatch.templateId);
-                  return tmpl ? (
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-semibold flex items-center gap-2">
-                        <FileSpreadsheet className="h-4 w-4 text-primary" />
-                        Template associé (§4.2.4)
-                      </h4>
-                      <div className="border rounded-md p-2 text-sm flex items-center justify-between">
-                        <div>
-                          <span className="font-medium">{tmpl.title}</span>
-                          <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
-                        </div>
-                        <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
-                          {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
-                        </Badge>
-                      </div>
-                    </div>
-                  ) : null;
-                })()}
-
                 {hasPermission('batch.update') && !selectedBatch.isLocked && selectedBatch.status === 'In Progress' && (() => {
                   const next = getNextBatchStatus(selectedBatch.status);
                   if (!next) return null;

@@ -5,13 +5,13 @@ import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
-import type { NonConformance, NcrStatus, NcrType, NcrSeverity, NcrDisposition, SignatureType, Capa } from '@/types/qms';
-import { DynamicFormFields, extractFormInstanceValues } from '@/components/shared/DynamicFormFields';
+import type { NonConformance, NcrStatus, NcrType, NcrSeverity, NcrDisposition, SignatureType, FormTemplateModule } from '@/types/qms';
+import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import {
   AlertTriangle, Plus, Search, ArrowRight, AlertCircle,
-  CheckCircle2, Clock, ShieldCheck, Link2, Beaker, Shield,
+  CheckCircle2, Clock, ShieldCheck, Link2, Beaker,
   ChevronLeft, ChevronRight, FileText, ClipboardList, FlaskConical,
-  Scale, ListChecks, FileSpreadsheet,
+  Scale, ListChecks,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -126,16 +126,17 @@ export function NcrView() {
   const [formImpactAssessment, setFormImpactAssessment] = useState('');
   const [formContainmentActions, setFormContainmentActions] = useState('');
   const [formAffectedProduct, setFormAffectedProduct] = useState('');
-  const [formTemplateId, setFormTemplateId] = useState('');
-
-  // ── P1-2: Dynamic template fields ──
-  const [templateFieldValues, setTemplateFieldValues] = useState<Record<string, unknown>>({});
-
-  // ── P1-5: Create CAPA from NCR ──
-  const [showCreateCapaFromNcr, setShowCreateCapaFromNcr] = useState(false);
 
   // Detail dialog disposition edit
   const [detailDisposition, setDetailDisposition] = useState<string>('');
+
+  // ── Template selection (Layer 2) ──
+  const [formTemplateId, setFormTemplateId] = useState('');
+
+  // ── Template workflow (Layer 1 & 2) ──
+  const { getApprovedTemplates, hasApprovedTemplate, moduleTypeLabels } = useRecordWorkflow();
+  const ncrModuleType: FormTemplateModule = 'NCR';
+  const approvedNcrTemplates = getApprovedTemplates(ncrModuleType);
 
   const filteredNcrs = ncrs.filter(n => {
     const matchesSearch = searchTerm === '' ||
@@ -215,15 +216,11 @@ export function NcrView() {
     setFormPreliminaryDisposition('Pending');
     setFormImpactAssessment(''); setFormContainmentActions(''); setFormAffectedProduct('');
     setFormTemplateId('');
-    setTemplateFieldValues({});
   };
 
   const handleCreate = () => {
-    const resolvedTemplateId = formTemplateId && formTemplateId !== 'none' ? formTemplateId : undefined;
-    const newNcrId = `ncr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-
     const newNcr: NonConformance = {
-      id: newNcrId,
+      id: `ncr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       ncrNumber: `NCR-2024-${String(ncrs.length + 1).padStart(3, '0')}`,
       title: formTitle,
       type: formType,
@@ -247,27 +244,15 @@ export function NcrView() {
       impactAssessment: formImpactAssessment || undefined,
       containmentActions: formContainmentActions || undefined,
       affectedProduct: formAffectedProduct || undefined,
-      templateId: resolvedTemplateId,
       createdDate: new Date().toISOString(),
+      templateId: formTemplateId || undefined,
+      templateVersion: formTemplateId ? approvedNcrTemplates.find(t => t.id === formTemplateId)?.version : undefined,
       createdById: currentUser?.id,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     store.addNCR(newNcr);
-
-    // P1-1: Create FormInstance when templateId is set
-    if (resolvedTemplateId) {
-      const template = store.formTemplates.find(t => t.id === resolvedTemplateId);
-      if (template) {
-        const fieldValues = extractFormInstanceValues(template.fields, templateFieldValues);
-        const instance = store.createFormInstanceForRecord(resolvedTemplateId, newNcrId, 'NCR', fieldValues);
-        if (instance) {
-          store.updateNCR(newNcrId, { formInstanceId: instance.id });
-        }
-      }
-    }
-
     resetForm();
     setShowCreateDialog(false);
   };
@@ -359,6 +344,22 @@ export function NcrView() {
             <div className="grid gap-2">
               <Label htmlFor="ncr-source">Source</Label>
               <Input id="ncr-source" value={formSource} onChange={(e) => setFormSource(e.target.value)} placeholder="e.g., Customer Complaint, Internal Audit..." />
+            </div>
+            {/* Template Selection (Layer 2) */}
+            <div className="grid gap-2">
+              <Label>Template</Label>
+              <Select value={formTemplateId} onValueChange={setFormTemplateId}>
+                <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No template</SelectItem>
+                  {approvedNcrTemplates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {approvedNcrTemplates.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">No approved NCR templates found. Create one in the Forms module first.</p>
+              )}
             </div>
             {formIsOosOot && (
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 flex items-start gap-2">
@@ -535,34 +536,6 @@ export function NcrView() {
                 {formContainmentActions && <p className="text-sm"><span className="font-medium">Containment Actions:</span> {formContainmentActions}</p>}
                 {formAffectedProduct && <p className="text-sm"><span className="font-medium">Affected Product/Process:</span> {formAffectedProduct}</p>}
               </div>
-              <div className="grid gap-2">
-                <Label>Template associé (§4.2.4)</Label>
-                <Select value={formTemplateId} onValueChange={(v) => { setFormTemplateId(v); setTemplateFieldValues({}); }}>
-                  <SelectTrigger><SelectValue placeholder="Sélectionner un template..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Aucun</SelectItem>
-                    {store.formTemplates
-                      .filter(t => (t.templateStatus === 'Approved' || (t.isActive && !t.templateStatus)) && (t.associatedModule === 'NCR' || !t.associatedModule || t.associatedModule === 'GENERAL'))
-                      .map(t => (
-                        <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-                      ))
-                    }
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* P1-2: Dynamic template fields */}
-              {formTemplateId && formTemplateId !== 'none' && (() => {
-                const tmpl = store.formTemplates.find(t => t.id === formTemplateId);
-                if (!tmpl || tmpl.fields.length === 0) return null;
-                return (
-                  <DynamicFormFields
-                    fields={tmpl.fields}
-                    values={templateFieldValues}
-                    onChange={(fieldId, value) => setTemplateFieldValues(prev => ({ ...prev, [fieldId]: value }))}
-                  />
-                );
-              })()}
             </div>
           </div>
         );
@@ -581,7 +554,7 @@ export function NcrView() {
             <AlertTriangle className="h-6 w-6 text-primary" />
             Non-Conformances
           </h1>
-          <p className="text-muted-foreground mt-1">Manage non-conformance reports and investigations <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §8.3</Badge> <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2.4</Badge></p>
+          <p className="text-muted-foreground mt-1">Manage non-conformance reports and investigations <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §8.3</Badge></p>
         </div>
         {hasPermission('ncr.create') && (
           <Button onClick={() => { resetForm(); setShowCreateDialog(true); }}>
@@ -589,6 +562,16 @@ export function NcrView() {
           </Button>
         )}
       </div>
+
+      {/* Layer 1 Gate Warning */}
+      {!hasApprovedTemplate(ncrModuleType) && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            No approved template found for NCR records. Please create and approve a template in the Forms module first.
+          </p>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -673,6 +656,7 @@ export function NcrView() {
                   <TableHead className="w-[150px]">Status</TableHead>
                   <TableHead className="w-[120px]">Disposition</TableHead>
                   <TableHead className="w-[130px]">Assigned To</TableHead>
+                  <TableHead className="w-[120px]">Template</TableHead>
                   <TableHead className="w-[100px]">Created</TableHead>
                 </TableRow>
               </TableHeader>
@@ -707,6 +691,18 @@ export function NcrView() {
                       )}
                     </TableCell>
                     <TableCell className="text-sm">{getUserName(ncr.assignedTo)}</TableCell>
+                    <TableCell>
+                      {ncr.templateId ? (
+                        <Badge variant="outline" className="text-xs border-teal-300 text-teal-700 dark:border-teal-700 dark:text-teal-400">
+                          {(() => {
+                            const tpl = store.formTemplates.find(t => t.id === ncr.templateId);
+                            return tpl ? `${tpl.title} v${ncr.templateVersion || tpl.version}` : ncr.templateId;
+                          })()}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDate(ncr.createdDate, true)}
                     </TableCell>
@@ -714,7 +710,7 @@ export function NcrView() {
                 ))}
                 {filteredNcrs.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No NCRs found matching filters</TableCell>
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No NCRs found matching filters</TableCell>
                   </TableRow>
                 )}
               </TableBody>
@@ -808,6 +804,15 @@ export function NcrView() {
                   {selectedNcr.disposition && selectedNcr.disposition !== 'Pending' && (
                     <Badge className={cn(dispositionColors[selectedNcr.disposition])} variant="secondary">Disposition: {selectedNcr.disposition}</Badge>
                   )}
+                  {selectedNcr.templateId && (() => {
+                    const tpl = store.formTemplates.find(t => t.id === selectedNcr.templateId);
+                    return (
+                      <Badge variant="outline" className="border-teal-300 text-teal-700 dark:border-teal-700 dark:text-teal-400">
+                        <FileText className="h-3 w-3 mr-1" />
+                        Template: {tpl ? `${tpl.title} v${selectedNcr.templateVersion || tpl.version}` : selectedNcr.templateId}
+                      </Badge>
+                    );
+                  })()}
                 </div>
 
                 {/* Status Flow */}
@@ -873,6 +878,16 @@ export function NcrView() {
                     <span className="text-muted-foreground">Updated:</span>{' '}
                     <span className="font-medium">{formatDate(selectedNcr.updatedAt)}</span>
                   </div>
+                  {selectedNcr.templateId && (() => {
+                    const tpl = store.formTemplates.find(t => t.id === selectedNcr.templateId);
+                    return (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Template:</span>{' '}
+                        <span className="font-medium">{tpl ? tpl.title : selectedNcr.templateId}</span>
+                        {selectedNcr.templateVersion && <span className="text-muted-foreground ml-1">(v{selectedNcr.templateVersion})</span>}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <Separator />
@@ -883,51 +898,31 @@ export function NcrView() {
                   <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedNcr.description}</p>
                 </div>
 
-                {/* Linked CAPAs */}
-                {((selectedNcr.linkedCapaIds && selectedNcr.linkedCapaIds.length > 0) || selectedNcr.linkedCapaId) && (
-                  <div>
-                    <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
-                      <Link2 className="h-4 w-4" />
-                      CAPAs liées
-                    </h4>
-                    <div className="space-y-1">
-                      {(selectedNcr.linkedCapaIds || (selectedNcr.linkedCapaId ? [selectedNcr.linkedCapaId] : [])).map(capaId => {
-                        const linkedCapa = capas.find(c => c.id === capaId);
-                        return (
-                          <div key={capaId} className="bg-muted/30 p-2 rounded-md flex items-center gap-3">
-                            <Badge variant="outline" className="font-mono text-xs">
-                              {linkedCapa?.capaNumber || capaId}
+                {/* Linked CAPA */}
+                {selectedNcr.linkedCapaId && (() => {
+                  const linkedCapa = getLinkedCapa(selectedNcr.linkedCapaId);
+                  return (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                        <Link2 className="h-4 w-4" />
+                        Linked CAPA
+                      </h4>
+                      <div className="bg-muted/30 p-3 rounded-md flex items-center gap-3">
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {linkedCapa?.capaNumber || selectedNcr.linkedCapaId}
+                        </Badge>
+                        {linkedCapa && (
+                          <>
+                            <span className="text-sm">{linkedCapa.title}</span>
+                            <Badge className={cn('text-xs', linkedCapa.status === 'Closed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700')} variant="secondary">
+                              {linkedCapa.status}
                             </Badge>
-                            {linkedCapa && (
-                              <>
-                                <span className="text-sm">{linkedCapa.title}</span>
-                                <Badge className={cn('text-xs ml-auto',
-                                  linkedCapa.status === 'Closed' ? 'bg-green-100 text-green-700' :
-                                  linkedCapa.status === 'Investigation' ? 'bg-amber-100 text-amber-700' :
-                                  'bg-blue-100 text-blue-700'
-                                )} variant="secondary">{linkedCapa.status}</Badge>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
-
-                {/* P1-5: Create CAPA from NCR button */}
-                {hasPermission('capa.create') && selectedNcr.status !== 'Closed' && (
-                  <div>
-                    <Button
-                      className="w-full"
-                      variant="outline"
-                      onClick={() => setShowCreateCapaFromNcr(true)}
-                    >
-                      <Shield className="h-4 w-4 mr-2" />
-                      Créer une CAPA depuis cette NCR
-                    </Button>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* OOS/OOT Section */}
                 {selectedNcr.isOosOot && (
@@ -1057,43 +1052,6 @@ export function NcrView() {
                   </div>
                 )}
 
-                {/* Hybrid Supervision: Template associé (§4.2.4) */}
-                {selectedNcr.templateId && (() => {
-                  const tmpl = store.formTemplates.find(t => t.id === selectedNcr.templateId);
-                  return tmpl ? (
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-semibold flex items-center gap-2">
-                        <FileSpreadsheet className="h-4 w-4 text-primary" />
-                        Template associé (§4.2.4)
-                      </h4>
-                      <div className="border rounded-md p-2 text-sm flex items-center justify-between">
-                        <div>
-                          <span className="font-medium">{tmpl.title}</span>
-                          <span className="text-muted-foreground ml-2">v{tmpl.version}</span>
-                        </div>
-                        <Badge className={tmpl.templateStatus === 'Approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : tmpl.templateStatus === 'Obsolete' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'} variant="secondary">
-                          {tmpl.templateStatus || (tmpl.isActive ? 'Approved' : 'Draft')}
-                        </Badge>
-                      </div>
-
-                      {/* P1-2: Show template field values from FormInstance */}
-                      {selectedNcr.formInstanceId && (() => {
-                        const instance = store.formInstances.find(fi => fi.id === selectedNcr.formInstanceId);
-                        if (!instance || !tmpl.fields || tmpl.fields.length === 0) return null;
-                        return (
-                          <DynamicFormFields
-                            fields={tmpl.fields}
-                            values={instance.values}
-                            onChange={() => {}}
-                            readonly
-                            compact
-                          />
-                        );
-                      })()}
-                    </div>
-                  ) : null;
-                })()}
-
                 {/* Advance Status Button */}
                 {hasPermission('ncr.update') && selectedNcr.status !== 'Closed' && (() => {
                   const nextStatus = getNextNcrStatus(selectedNcr.status);
@@ -1130,82 +1088,6 @@ export function NcrView() {
         recordId={pendingCloseNcr?.id || ''}
         signatureType="approval"
       />
-
-      {/* P1-5: Create CAPA from NCR Confirmation Dialog */}
-      <Dialog open={showCreateCapaFromNcr} onOpenChange={setShowCreateCapaFromNcr}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-primary" />
-              Créer une CAPA depuis la NCR
-            </DialogTitle>
-          </DialogHeader>
-          {selectedNcr && (
-            <div className="space-y-4">
-              <div className="bg-muted/30 p-3 rounded-md space-y-2 text-sm">
-                <p><span className="font-medium">NCR:</span> <span className="font-mono">{selectedNcr.ncrNumber}</span></p>
-                <p><span className="font-medium">Titre:</span> {selectedNcr.title}</p>
-                <p><span className="font-medium">Sévérité:</span> {selectedNcr.severity}</p>
-                <p><span className="font-medium">Description:</span> {selectedNcr.description}</p>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Une nouvelle CAPA sera créée automatiquement avec les données de cette NCR et liée bidirectionnellement.
-              </p>
-              <div className="flex items-center justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowCreateCapaFromNcr(false)}>
-                  Annuler
-                </Button>
-                <Button
-                  onClick={() => {
-                    // P1-5: Create CAPA pre-filled from NCR data
-                    const newCapaId = `capa-${Date.now()}`;
-                    const newCapa: Capa = {
-                      id: newCapaId,
-                      capaNumber: `CAPA-2024-${String(store.capas.length + 1).padStart(3, '0')}`,
-                      title: `[NCR ${selectedNcr.ncrNumber}] ${selectedNcr.title}`,
-                      type: 'Corrective',
-                      status: 'Open',
-                      priority: selectedNcr.severity === 'Critical' ? 'Critical' : selectedNcr.severity === 'Major' ? 'High' : 'Medium',
-                      source: 'Non-Conformance',
-                      sourceReferenceId: selectedNcr.id,
-                      description: selectedNcr.description,
-                      problemStatement: selectedNcr.description,
-                      investigationDetails: selectedNcr.impactAssessment,
-                      containmentActions: selectedNcr.containmentActions,
-                      linkedNcrIds: [selectedNcr.id],
-                      linkedNcrId: selectedNcr.id,
-                      assignedTo: selectedNcr.assignedTo || currentUser?.id || 'user-001',
-                      dueDate: selectedNcr.dueDate || new Date(Date.now() + 30 * 86400000).toISOString(),
-                      createdDate: new Date().toISOString(),
-                      createdById: currentUser?.id,
-                      organizationId: 'org-001',
-                      createdAt: new Date().toISOString(),
-                      updatedAt: new Date().toISOString(),
-                    };
-                    store.addCapa(newCapa);
-
-                    // Bidirectional link: NCR ↔ CAPA
-                    store.linkNcrToCapas(selectedNcr.id, [newCapaId]);
-
-                    // Update selectedNcr to reflect the new link
-                    setSelectedNcr({
-                      ...selectedNcr,
-                      linkedCapaIds: [...(selectedNcr.linkedCapaIds || []), newCapaId],
-                      linkedCapaId: newCapaId,
-                    });
-
-                    setShowCreateCapaFromNcr(false);
-                  }}
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                >
-                  <Shield className="h-4 w-4 mr-2" />
-                  Créer la CAPA
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

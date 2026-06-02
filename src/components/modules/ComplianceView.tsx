@@ -588,7 +588,7 @@ export function ComplianceView() {
     if (!activeChecklist) return [];
 
     const approvedDocs = documents.filter(d => d.status === 'Approved');
-    const inReviewDocs = documents.filter(d => d.status === 'In Review');
+    const inReviewDocs = documents.filter(d => d.status === 'Under Review');
     const closedCapas = capas.filter(c => c.status === 'Closed');
     const completedAudits = audits.filter(a => a.status === 'Completed');
     const completedTraining = trainingItems.filter(t => t.status === 'Completed');
@@ -675,7 +675,7 @@ export function ComplianceView() {
 
     // Document compliance gaps
     const draftDocs = documents.filter(d => d.status === 'Draft').length;
-    const inReviewDocs = documents.filter(d => d.status === 'In Review').length;
+    const inReviewDocs = documents.filter(d => d.status === 'Under Review').length;
     if (draftDocs > 0) {
       gaps.push({
         id: 'gap-draft-docs',
@@ -692,7 +692,7 @@ export function ComplianceView() {
         title: 'Documents Pending Review',
         severity: inReviewDocs > 3 ? 'Major' : 'Minor',
         clause: '4.2.3',
-        description: `${inReviewDocs} document(s) are In Review and awaiting approval.`,
+        description: `${inReviewDocs} document(s) are Under Review and awaiting approval.`,
         recommendedAction: 'Complete document reviews to maintain document control compliance.',
       });
     }
@@ -827,7 +827,7 @@ export function ComplianceView() {
       color: 'bg-green-100 dark:bg-green-900/30',
       details: [
         `${documents.filter(d => d.status === 'Approved').length} Approved`,
-        `${documents.filter(d => d.status === 'In Review').length} In Review`,
+        `${documents.filter(d => d.status === 'Under Review').length} Under Review`,
         `${documents.filter(d => d.status === 'Draft').length} Draft`,
         `${documents.filter(d => d.status === 'Obsolete').length} Obsolete`,
       ],
@@ -944,10 +944,10 @@ export function ComplianceView() {
   // -------------------------------------------------------------------------
 
   const pendingSignatures = useMemo(() => {
-    const docsAwaitingApproval = documents.filter(d => d.status === 'In Review').length;
+    const docsAwaitingApproval = documents.filter(d => d.status === 'Under Review').length;
     const openCapasCount = capas.filter(c => c.status !== 'Closed').length;
     // Pending signatures = documents in review + change controls pending approval
-    const pendingSigs = documents.filter(d => d.status === 'In Review').length +
+    const pendingSigs = documents.filter(d => d.status === 'Under Review').length +
       changeControls.filter(cc => cc.status === 'Under Review' || cc.status === 'Requested').length;
     return { docsAwaitingApproval, openCapasCount, pendingSigs };
   }, [documents, capas, changeControls]);
