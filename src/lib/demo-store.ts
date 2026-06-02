@@ -84,6 +84,11 @@ interface QMSStore {
   createCapaFromAuditFinding: (auditId: string, findingId: string, capaData: { title: string; description: string; priority: Capa['priority']; assignedTo: string; dueDate: string }) => Capa | null;
   /** Link documents to a Supplier (P2-5) */
   linkDocumentsToSupplier: (supplierId: string, documentIds: string[]) => void;
+
+  // P3: Low-priority integration helpers
+  /** Trigger supplier re-qualification (P3-2: ISO 13485 §7.4).
+   *  Resets status to 'Under Evaluation', clears qualification date, sets nextReviewDate. */
+  triggerSupplierRequalification: (supplierId: string, requalMethod?: QualificationMethod) => void;
 }
 
 export const useQMSStore = create<QMSStore>((set, get) => ({
@@ -568,5 +573,35 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
       ),
     });
     state.logAudit('UPDATE', 'Supplier', supplierId, { linkedDocumentIds: existingDocIds }, { linkedDocumentIds: mergedDocIds });
+  },
+
+  // ─── P3: Low-Priority Integration Helpers ──────────────────────────────────
+
+  /** Trigger supplier re-qualification (P3-2: ISO 13485 §7.4).
+   *  Resets status to 'Under Evaluation', clears qualification date, sets nextReviewDate. */
+  triggerSupplierRequalification: (supplierId, requalMethod) => {
+    const state = get();
+    const supplier = state.suppliers.find(s => s.id === supplierId);
+    if (!supplier) return;
+
+    const nextReviewDate = new Date();
+    nextReviewDate.setDate(nextReviewDate.getDate() + 90);
+
+    const updates: Partial<Supplier> = {
+      status: 'Under Evaluation',
+      qualificationDate: undefined,
+      nextReviewDate: nextReviewDate.toISOString(),
+      ...(requalMethod ? { qualificationMethod: requalMethod } : {}),
+    };
+
+    set({
+      suppliers: state.suppliers.map(s =>
+        s.id === supplierId ? { ...s, ...updates } : s
+      ),
+    });
+    state.logAudit('UPDATE', 'Supplier', supplierId,
+      { status: supplier.status, qualificationDate: supplier.qualificationDate, nextReviewDate: supplier.nextReviewDate },
+      { status: 'Under Evaluation', qualificationDate: undefined, nextReviewDate: nextReviewDate.toISOString(), action: 'Re-qualification triggered' }
+    );
   },
 }));

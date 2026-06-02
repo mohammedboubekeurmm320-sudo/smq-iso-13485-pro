@@ -381,6 +381,13 @@ export function OosOotView() {
       updatedAt: new Date().toISOString(),
     };
     store.addNCR(newNcr);
+    // P3-4: Create FormInstance when templateId is selected
+    if (newNcr.templateId) {
+      const fi = store.createFormInstanceForRecord(newNcr.templateId, newNcr.id, 'OOS_OOT', { title: newNcr.title, type: wizardData.type });
+      if (fi) {
+        store.updateNCR(newNcr.id, { formInstanceId: fi.id });
+      }
+    }
     resetCreateForm();
     setShowCreateDialog(false);
   };

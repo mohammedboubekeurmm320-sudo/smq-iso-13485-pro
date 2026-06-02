@@ -1532,13 +1532,115 @@ export function RiskView() {
                   )}
                 </div>
 
-                {/* Residual Risk Comparison */}
+                {/* Residual Risk Assessment (P3-3: ISO 14971 structured comparison) */}
                 <div>
                   <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
                     <ArrowRight className="h-4 w-4 text-primary" />
-                    Residual Risk
+                    Residual Risk Assessment
                   </h4>
-                  {selectedRisk.residualRisk ? (
+                  {selectedRisk.residualProbability !== undefined && selectedRisk.residualImpact !== undefined && selectedRisk.residualDetectability !== undefined ? (
+                    <div className="space-y-3">
+                      {/* Side-by-side comparison table */}
+                      <div className="rounded-md border overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-muted/50">
+                              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Parameter</th>
+                              <th className="px-3 py-2 text-center font-medium text-muted-foreground">Initial</th>
+                              <th className="px-3 py-2 text-center font-medium text-muted-foreground">→</th>
+                              <th className="px-3 py-2 text-center font-medium text-muted-foreground">Residual</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            <tr>
+                              <td className="px-3 py-2 font-medium">Probability (P)</td>
+                              <td className="px-3 py-2 text-center">{selectedRisk.probability}</td>
+                              <td className="px-3 py-2 text-center text-muted-foreground">→</td>
+                              <td className={cn('px-3 py-2 text-center font-medium', selectedRisk.residualProbability < selectedRisk.probability ? 'text-green-600' : selectedRisk.residualProbability > selectedRisk.probability ? 'text-red-600' : '')}>
+                                {selectedRisk.residualProbability}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="px-3 py-2 font-medium">Impact (I)</td>
+                              <td className="px-3 py-2 text-center">{selectedRisk.impact}</td>
+                              <td className="px-3 py-2 text-center text-muted-foreground">→</td>
+                              <td className={cn('px-3 py-2 text-center font-medium', selectedRisk.residualImpact < selectedRisk.impact ? 'text-green-600' : selectedRisk.residualImpact > selectedRisk.impact ? 'text-red-600' : '')}>
+                                {selectedRisk.residualImpact}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="px-3 py-2 font-medium">Detectability (D)</td>
+                              <td className="px-3 py-2 text-center">{selectedRisk.detectability}</td>
+                              <td className="px-3 py-2 text-center text-muted-foreground">→</td>
+                              <td className={cn('px-3 py-2 text-center font-medium', selectedRisk.residualDetectability < selectedRisk.detectability ? 'text-green-600' : selectedRisk.residualDetectability > selectedRisk.detectability ? 'text-red-600' : '')}>
+                                {selectedRisk.residualDetectability}
+                              </td>
+                            </tr>
+                            <tr className="bg-muted/30">
+                              <td className="px-3 py-2 font-bold">RPN</td>
+                              <td className="px-3 py-2 text-center font-bold">{selectedRisk.rpn}</td>
+                              <td className="px-3 py-2 text-center">
+                                <ArrowRight className="h-4 w-4 text-primary mx-auto" />
+                              </td>
+                              <td className="px-3 py-2 text-center font-bold">
+                                {(() => {
+                                  const residualRpn = selectedRisk.residualProbability * selectedRisk.residualImpact * selectedRisk.residualDetectability;
+                                  return (
+                                    <span className={cn(residualRpn < selectedRisk.rpn ? 'text-green-600' : residualRpn > selectedRisk.rpn ? 'text-red-600' : '')}>
+                                      {residualRpn}
+                                    </span>
+                                  );
+                                })()}
+                              </td>
+                            </tr>
+                            <tr className="bg-muted/30">
+                              <td className="px-3 py-2 font-bold">Risk Level</td>
+                              <td className="px-3 py-2 text-center">
+                                <Badge className={cn('text-xs', riskLevelColors[selectedRisk.riskLevel])} variant="secondary">{selectedRisk.riskLevel}</Badge>
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <ArrowRight className="h-4 w-4 text-primary mx-auto" />
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                {(() => {
+                                  const residualRpn = selectedRisk.residualProbability * selectedRisk.residualImpact * selectedRisk.residualDetectability;
+                                  const residualLevel = getRiskLevel(residualRpn);
+                                  return (
+                                    <Badge className={cn('text-xs', riskLevelColors[residualLevel])} variant="secondary">{residualLevel}</Badge>
+                                  );
+                                })()}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      {/* Visual RPN reduction indicator */}
+                      {(() => {
+                        const residualRpn = selectedRisk.residualProbability * selectedRisk.residualImpact * selectedRisk.residualDetectability;
+                        const reduction = selectedRisk.rpn - residualRpn;
+                        const reductionPct = Math.round((reduction / selectedRisk.rpn) * 100);
+                        return (
+                          <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-md border">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg font-bold">{selectedRisk.rpn}</span>
+                              <ArrowRight className="h-5 w-5 text-primary" />
+                              <span className="text-lg font-bold text-green-600">{residualRpn}</span>
+                            </div>
+                            <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" variant="secondary">
+                              {reductionPct > 0 ? `↓ ${reductionPct}% reduction` : reductionPct < 0 ? `↑ ${Math.abs(reductionPct)}% increase` : 'No change'}
+                            </Badge>
+                          </div>
+                        );
+                      })()}
+                      {/* Residual risk description */}
+                      {selectedRisk.residualRisk && (
+                        <div className="p-3 bg-muted/30 rounded-md text-sm">
+                          <span className="text-muted-foreground">Notes: </span>
+                          <span>{selectedRisk.residualRisk}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : selectedRisk.residualRisk ? (
                     <div className="space-y-2">
                       <div className="p-3 bg-muted/30 rounded-md text-sm">
                         <p>{selectedRisk.residualRisk}</p>

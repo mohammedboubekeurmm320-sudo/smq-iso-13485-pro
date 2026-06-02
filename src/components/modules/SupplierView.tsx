@@ -1489,6 +1489,80 @@ export function SupplierView() {
 
                 <Separator />
 
+                {/* Re-qualification Section (P3-2: ISO 13485 §7.4) */}
+                <div>
+                  <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                    <CalendarClock className="h-4 w-4 text-primary" />
+                    Re-qualification Status
+                  </h4>
+                  <div className="flex items-center justify-between mb-2">
+                    {(() => {
+                      const requalStatus = getRequalStatus(selectedSupplier.nextReviewDate);
+                      const requalBadgeColors: Record<string, string> = {
+                        'overdue': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                        'due-soon': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+                        'ok': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                        'none': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+                      };
+                      const requalLabels: Record<string, string> = {
+                        'overdue': 'Overdue',
+                        'due-soon': 'Due Soon',
+                        'ok': 'OK',
+                        'none': 'Not Set',
+                      };
+                      return (
+                        <Badge className={cn('text-xs', requalBadgeColors[requalStatus])} variant="secondary">
+                          {requalLabels[requalStatus]}
+                        </Badge>
+                      );
+                    })()}
+                    {selectedSupplier.nextReviewDate && (
+                      <span className="text-xs text-muted-foreground">
+                        Next review: {formatDate(selectedSupplier.nextReviewDate)}
+                        {getDaysUntilReview(selectedSupplier.nextReviewDate) !== null && (
+                          <span className={cn(
+                            'ml-1',
+                            isReviewOverdue(selectedSupplier.nextReviewDate) ? 'text-red-600 font-medium' :
+                            isReviewApproaching(selectedSupplier.nextReviewDate) ? 'text-amber-600' : ''
+                          )}>
+                            ({isReviewOverdue(selectedSupplier.nextReviewDate) ? `${Math.abs(getDaysUntilReview(selectedSupplier.nextReviewDate)!)} days overdue` :
+                            getDaysUntilReview(selectedSupplier.nextReviewDate)! <= 0 ? 'Due today' :
+                            `${getDaysUntilReview(selectedSupplier.nextReviewDate)} days remaining`})
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  {(getRequalStatus(selectedSupplier.nextReviewDate) === 'overdue' || getRequalStatus(selectedSupplier.nextReviewDate) === 'due-soon') && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs"
+                      onClick={() => {
+                        store.triggerSupplierRequalification(selectedSupplier.id);
+                        const nextReview = new Date();
+                        nextReview.setDate(nextReview.getDate() + 90);
+                        setSelectedSupplier({
+                          ...selectedSupplier,
+                          status: 'Under Evaluation',
+                          qualificationDate: undefined,
+                          nextReviewDate: nextReview.toISOString(),
+                        });
+                      }}
+                    >
+                      <CalendarClock className="h-3.5 w-3.5 mr-1" />
+                      Trigger Re-qualification
+                    </Button>
+                  )}
+                  {selectedSupplier.status === 'Under Evaluation' && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Re-qualification in progress — Last re-qualification triggered on {formatDate(new Date().toISOString())}
+                    </p>
+                  )}
+                </div>
+
+                <Separator />
+
                 {/* Re-qualification Warning */}
                 {selectedSupplier.nextReviewDate && (isReviewApproaching(selectedSupplier.nextReviewDate) || isReviewOverdue(selectedSupplier.nextReviewDate)) && selectedSupplier.status === 'Qualified' && (
                   <div className={cn(
