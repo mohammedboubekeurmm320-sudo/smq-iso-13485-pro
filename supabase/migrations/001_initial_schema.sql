@@ -12,6 +12,7 @@
 --                    Risk, Training, Supplier, Batch Record, OOS/OOT
 --
 -- Execution order: organizations → profiles → ... → circular FKs at end
+-- Idempotent: Uses CREATE TABLE IF NOT EXISTS / DROP IF EXISTS for enums
 -- ============================================================================
 
 BEGIN;
@@ -25,7 +26,55 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ============================================================================
 -- ENUM TYPES (for data integrity & ISO 13485 compliance)
+-- Drop existing then recreate to allow re-execution
 -- ============================================================================
+
+DROP TYPE IF EXISTS user_role CASCADE;
+DROP TYPE IF EXISTS subscription_status CASCADE;
+DROP TYPE IF EXISTS org_member_role CASCADE;
+DROP TYPE IF EXISTS org_member_status CASCADE;
+DROP TYPE IF EXISTS document_type CASCADE;
+DROP TYPE IF EXISTS document_status CASCADE;
+DROP TYPE IF EXISTS document_classification CASCADE;
+DROP TYPE IF EXISTS validation_phase CASCADE;
+DROP TYPE IF EXISTS signature_type CASCADE;
+DROP TYPE IF EXISTS capa_type CASCADE;
+DROP TYPE IF EXISTS capa_status CASCADE;
+DROP TYPE IF EXISTS capa_priority CASCADE;
+DROP TYPE IF EXISTS capa_source CASCADE;
+DROP TYPE IF EXISTS root_cause_category CASCADE;
+DROP TYPE IF EXISTS ncr_type CASCADE;
+DROP TYPE IF EXISTS ncr_status CASCADE;
+DROP TYPE IF EXISTS ncr_severity CASCADE;
+DROP TYPE IF EXISTS ncr_disposition CASCADE;
+DROP TYPE IF EXISTS deviation_type CASCADE;
+DROP TYPE IF EXISTS deviation_status CASCADE;
+DROP TYPE IF EXISTS deviation_severity CASCADE;
+DROP TYPE IF EXISTS deviation_category CASCADE;
+DROP TYPE IF EXISTS deviation_product_stage CASCADE;
+DROP TYPE IF EXISTS cc_type CASCADE;
+DROP TYPE IF EXISTS cc_status CASCADE;
+DROP TYPE IF EXISTS cc_priority CASCADE;
+DROP TYPE IF EXISTS cc_category CASCADE;
+DROP TYPE IF EXISTS audit_type CASCADE;
+DROP TYPE IF EXISTS audit_status CASCADE;
+DROP TYPE IF EXISTS training_type CASCADE;
+DROP TYPE IF EXISTS training_status CASCADE;
+DROP TYPE IF EXISTS risk_category CASCADE;
+DROP TYPE IF EXISTS risk_level CASCADE;
+DROP TYPE IF EXISTS risk_status CASCADE;
+DROP TYPE IF EXISTS batch_status CASCADE;
+DROP TYPE IF EXISTS batch_step_status CASCADE;
+DROP TYPE IF EXISTS step_type CASCADE;
+DROP TYPE IF EXISTS raw_material_status CASCADE;
+DROP TYPE IF EXISTS supplier_category CASCADE;
+DROP TYPE IF EXISTS supplier_status CASCADE;
+DROP TYPE IF EXISTS qualification_method CASCADE;
+DROP TYPE IF EXISTS form_template_status CASCADE;
+DROP TYPE IF EXISTS form_template_module_type CASCADE;
+DROP TYPE IF EXISTS form_instance_status CASCADE;
+DROP TYPE IF EXISTS audit_action CASCADE;
+DROP TYPE IF EXISTS prerequisite_record_type CASCADE;
 
 -- User roles & permissions
 CREATE TYPE user_role AS ENUM (
@@ -39,11 +88,9 @@ CREATE TYPE org_member_status AS ENUM ('active', 'inactive', 'pending');
 
 -- Document
 CREATE TYPE document_type AS ENUM (
-  -- Qwen-aligned (French taxonomy)
   'MANUEL', 'POLITIQUE', 'INDICATEUR', 'PROCESS_MAP', 'ORGANIGRAMME',
   'REGLEMENTAIRE', 'MAPPING',
   'PROCEDURE', 'INSTRUCTION', 'FORMULAIRE', 'REGISTRE', 'ENREGISTREMENT', 'MASTER_BATCH',
-  -- Legacy English types
   'SOP', 'WI', 'Form', 'Policy', 'Specification', 'Technical',
   'Risk Analysis', 'Validation Protocol', 'Record', 'Manual', 'Instruction',
   'Register', 'Master Batch', 'Procedure', 'Process Map', 'Organigram'
@@ -129,6 +176,38 @@ CREATE TYPE prerequisite_record_type AS ENUM ('CAPA', 'NCR', 'TRAINING', 'RISK',
 
 
 -- ============================================================================
+-- TABLES — Drop existing then recreate (idempotent)
+-- Order matters: drop in reverse dependency order
+-- ============================================================================
+
+DROP TABLE IF EXISTS audit_trails CASCADE;
+DROP TABLE IF EXISTS suppliers CASCADE;
+DROP TABLE IF EXISTS batch_records CASCADE;
+DROP TABLE IF EXISTS risks CASCADE;
+DROP TABLE IF EXISTS training CASCADE;
+DROP TABLE IF EXISTS audits CASCADE;
+DROP TABLE IF EXISTS change_controls CASCADE;
+DROP TABLE IF EXISTS deviations CASCADE;
+DROP TABLE IF EXISTS non_conformances CASCADE;
+DROP TABLE IF EXISTS capas CASCADE;
+DROP TABLE IF EXISTS form_instances CASCADE;
+DROP TABLE IF EXISTS form_templates CASCADE;
+DROP TABLE IF EXISTS document_prerequisites CASCADE;
+DROP TABLE IF EXISTS electronic_signatures CASCADE;
+DROP TABLE IF EXISTS documents CASCADE;
+DROP TABLE IF EXISTS organization_members CASCADE;
+DROP TABLE IF EXISTS profiles CASCADE;
+DROP TABLE IF EXISTS organizations CASCADE;
+DROP TABLE IF EXISTS departments CASCADE;
+DROP TABLE IF EXISTS document_triggers CASCADE;
+DROP TABLE IF EXISTS document_relationships CASCADE;
+DROP TABLE IF EXISTS document_code_sequences CASCADE;
+
+-- Drop views that depend on these tables
+DROP VIEW IF EXISTS document_hierarchy CASCADE;
+DROP VIEW IF EXISTS document_trigger_graph CASCADE;
+
+-- ============================================================================
 -- TABLE 1: organizations
 -- ============================================================================
 
@@ -193,7 +272,7 @@ CREATE TABLE documents (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   document_number       text NOT NULL,
   title                 text NOT NULL,
-  type                  document_type NOT NULL,
+  doc_type              document_type NOT NULL,
   version               text NOT NULL,
   status                document_status NOT NULL DEFAULT 'Draft',
   effective_date        timestamptz,
@@ -223,13 +302,15 @@ CREATE TABLE documents (
   triggers              jsonb DEFAULT '[]',
   child_codes           jsonb DEFAULT '[]',
   is_prerequisite       boolean DEFAULT false,
-  review_cycle_months   integer
+  review_cycle_months   integer,
+  department_code       text
 );
 
 COMMENT ON TABLE documents IS 'ISO 13485 §4.2.3 — Controlled documents with 4-level hierarchy (Strategique→Enregistrement)';
 COMMENT ON COLUMN documents.document_level IS '1=Strategique, 2=Transversal, 3=Metier/Technique, 4=Enregistrement/Formulaire';
 COMMENT ON COLUMN documents.code IS 'Qwen document code (e.g. MQ-001, PR-4.2.4, FORM-DOC-001)';
 COMMENT ON COLUMN documents.triggers IS 'JSON array of document codes that trigger/are triggered by this document';
+COMMENT ON COLUMN documents.doc_type IS 'Document type — renamed from "type" to avoid PostgreSQL reserved word';
 
 
 -- ============================================================================
@@ -348,7 +429,7 @@ CREATE TABLE capas (
   id                            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   capa_number                   text NOT NULL,
   title                         text NOT NULL,
-  type                          capa_type NOT NULL,
+  capa_type                     capa_type NOT NULL,
   status                        capa_status NOT NULL DEFAULT 'Open',
   template_id                   uuid REFERENCES form_templates(id),
   template_version              text,
@@ -366,8 +447,8 @@ CREATE TABLE capas (
   effectiveness_criteria        text,
   effectiveness_result          text CHECK (effectiveness_result IN ('Effective', 'Not Effective', 'Pending Review')),
   linked_document_id            uuid REFERENCES documents(id),
-  linked_ncr_id                 uuid,  -- FK added after non_conformances
-  linked_audit_id               uuid,  -- FK added after audits
+  linked_ncr_id                 uuid,
+  linked_audit_id               uuid,
   assigned_to                   text NOT NULL,
   due_date                      timestamptz NOT NULL,
   created_date                  timestamptz NOT NULL,
@@ -381,6 +462,7 @@ CREATE TABLE capas (
 COMMENT ON TABLE capas IS 'CAPA records — Corrective and Preventive Actions (ISO 13485 §8.5.2/§8.5.3)';
 COMMENT ON COLUMN capas.template_id IS 'FK to form_templates — Layer 1 connection. Only Approved templates can be used';
 COMMENT ON COLUMN capas.template_version IS 'Snapshot of template version at record creation time';
+COMMENT ON COLUMN capas.capa_type IS 'CAPA type — renamed from "type" to avoid PostgreSQL reserved word';
 
 
 -- ============================================================================
@@ -391,7 +473,7 @@ CREATE TABLE non_conformances (
   id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   ncr_number              text NOT NULL,
   title                   text NOT NULL,
-  type                    ncr_type NOT NULL,
+  ncr_type                ncr_type NOT NULL,
   status                  ncr_status NOT NULL DEFAULT 'Open',
   template_id             uuid REFERENCES form_templates(id),
   template_version        text,
@@ -403,7 +485,7 @@ CREATE TABLE non_conformances (
   disposition             ncr_disposition,
   linked_capa_id          uuid REFERENCES capas(id),
   linked_procedure_ref    text,
-  supplier_id             uuid,  -- FK added after suppliers
+  supplier_id             uuid,
   is_oos_oot              boolean NOT NULL DEFAULT false,
   analytical_method       text,
   measured_value          numeric,
@@ -426,8 +508,7 @@ CREATE TABLE non_conformances (
 );
 
 COMMENT ON TABLE non_conformances IS 'Non-Conformance Reports including OOS/OOT (ISO 13485 §8.3)';
-COMMENT ON COLUMN non_conformances.is_oos_oot IS 'Whether this NCR is an Out-of-Specification or Out-of-Trend result';
-COMMENT ON COLUMN non_conformances.supplier_id IS 'FK to suppliers table — added after suppliers table creation';
+COMMENT ON COLUMN non_conformances.ncr_type IS 'NCR type — renamed from "type" to avoid PostgreSQL reserved word';
 
 
 -- ============================================================================
@@ -438,7 +519,7 @@ CREATE TABLE deviations (
   id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   dev_number                  text NOT NULL,
   title                       text NOT NULL,
-  type                        deviation_type NOT NULL,
+  deviation_type              deviation_type NOT NULL,
   status                      deviation_status NOT NULL DEFAULT 'Open',
   template_id                 uuid REFERENCES form_templates(id),
   template_version            text,
@@ -485,7 +566,7 @@ CREATE TABLE change_controls (
   id                              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   cc_number                       text NOT NULL,
   title                           text NOT NULL,
-  type                            cc_type NOT NULL,
+  cc_type                         cc_type NOT NULL,
   status                          cc_status NOT NULL DEFAULT 'Requested',
   template_id                     uuid REFERENCES form_templates(id),
   template_version                text,
@@ -521,6 +602,7 @@ CREATE TABLE change_controls (
 );
 
 COMMENT ON TABLE change_controls IS 'Change Control records (ISO 13485 §7.3.9 / §8.5.1)';
+COMMENT ON COLUMN change_controls.cc_type IS 'CC type — renamed from "type" to avoid PostgreSQL reserved word';
 
 
 -- ============================================================================
@@ -531,7 +613,7 @@ CREATE TABLE audits (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   audit_number      text NOT NULL,
   title             text NOT NULL,
-  type              audit_type NOT NULL,
+  audit_type        audit_type NOT NULL,
   status            audit_status NOT NULL DEFAULT 'Planned',
   template_id       uuid REFERENCES form_templates(id),
   template_version  text,
@@ -547,7 +629,8 @@ CREATE TABLE audits (
 );
 
 COMMENT ON TABLE audits IS 'Audit records — Internal, External, Supplier audits (ISO 13485 §8.2.4)';
-COMMENT ON COLUMN audits.findings IS 'JSON array of AuditFinding objects {id, description, severity, referenceClause, correctiveActionRequired, capaId}';
+COMMENT ON COLUMN audits.audit_type IS 'Audit type — renamed from "type" to avoid PostgreSQL reserved word';
+COMMENT ON COLUMN audits.audit_scope IS 'Audit scope — renamed from "scope" to avoid PostgreSQL reserved word';
 
 
 -- ============================================================================
@@ -558,7 +641,7 @@ CREATE TABLE training (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   title             text NOT NULL,
   description       text,
-  type              training_type NOT NULL,
+  training_type     training_type NOT NULL,
   status            training_status NOT NULL DEFAULT 'Planned',
   template_id       uuid REFERENCES form_templates(id),
   template_version  text,
@@ -572,6 +655,7 @@ CREATE TABLE training (
 );
 
 COMMENT ON TABLE training IS 'Training records — SOP/Regulatory/Skill/Certification (ISO 13485 §6.2)';
+COMMENT ON COLUMN training.training_type IS 'Training type — renamed from "type" to avoid PostgreSQL reserved word';
 
 
 -- ============================================================================
@@ -631,8 +715,6 @@ CREATE TABLE batch_records (
 );
 
 COMMENT ON TABLE batch_records IS 'Batch/Production records (ISO 13485 §7.5.1)';
-COMMENT ON COLUMN batch_records.steps IS 'JSON array of BatchStep objects';
-COMMENT ON COLUMN batch_records.raw_materials IS 'JSON array of RawMaterial objects';
 
 
 -- ============================================================================
@@ -679,7 +761,7 @@ COMMENT ON TABLE suppliers IS 'Supplier qualification records (ISO 13485 §7.4.1
 
 CREATE TABLE audit_trails (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  audit_action     audit_action NOT NULL,
+  audit_action    audit_action NOT NULL,
   table_name      text NOT NULL,
   record_id       uuid,
   user_id         uuid REFERENCES profiles(id),
@@ -696,30 +778,92 @@ COMMENT ON TABLE audit_trails IS 'Immutable audit trail — 21 CFR Part 11 compl
 
 
 -- ============================================================================
+-- ADDITIONAL TABLES from document_hierarchy_triggers migration
+-- ============================================================================
+
+-- Departments
+CREATE TABLE departments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code TEXT UNIQUE NOT NULL,
+  label_fr TEXT NOT NULL,
+  label_en TEXT NOT NULL,
+  category TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  parent_code TEXT REFERENCES departments(code),
+  organization_id UUID REFERENCES organizations(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Document Triggers (Déclencheurs)
+CREATE TABLE document_triggers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  target_document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  trigger_type TEXT NOT NULL DEFAULT 'prerequisite'
+    CHECK (trigger_type IN ('prerequisite', 'references', 'activates', 'output', 'escalation')),
+  description TEXT,
+  is_mandatory BOOLEAN NOT NULL DEFAULT false,
+  organization_id UUID REFERENCES organizations(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  
+  CONSTRAINT no_self_trigger CHECK (source_document_id != target_document_id),
+  CONSTRAINT unique_trigger_pair UNIQUE (source_document_id, target_document_id, trigger_type)
+);
+
+-- Document Relationships
+CREATE TABLE document_relationships (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parent_document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  child_document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  relationship_type TEXT NOT NULL DEFAULT 'parent_child'
+    CHECK (relationship_type IN ('parent_child', 'references', 'supersedes', 'obsoletes', 'amends')),
+  organization_id UUID REFERENCES organizations(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  
+  CONSTRAINT no_self_relationship CHECK (parent_document_id != child_document_id),
+  CONSTRAINT unique_relationship UNIQUE (parent_document_id, child_document_id, relationship_type)
+);
+
+-- Document Code Sequences
+CREATE TABLE document_code_sequences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  prefix TEXT NOT NULL,
+  department_suffix TEXT NOT NULL DEFAULT '',
+  last_sequence INTEGER NOT NULL DEFAULT 0,
+  organization_id UUID REFERENCES organizations(id),
+  
+  CONSTRAINT unique_code_sequence UNIQUE (prefix, department_suffix, organization_id)
+);
+
+
+-- ============================================================================
 -- CIRCULAR FOREIGN KEY CONSTRAINTS (added after all tables exist)
 -- ============================================================================
 
--- CAPA → Non-Conformance
 ALTER TABLE capas
   ADD CONSTRAINT fk_capas_linked_ncr
   FOREIGN KEY (linked_ncr_id) REFERENCES non_conformances(id);
 
--- CAPA → Audit
 ALTER TABLE capas
   ADD CONSTRAINT fk_capas_linked_audit
   FOREIGN KEY (linked_audit_id) REFERENCES audits(id);
 
--- Non-Conformance → Supplier
 ALTER TABLE non_conformances
   ADD CONSTRAINT fk_ncr_supplier
   FOREIGN KEY (supplier_id) REFERENCES suppliers(id);
+
+-- Add FK for department_code in documents
+ALTER TABLE documents
+  ADD CONSTRAINT fk_documents_department
+  FOREIGN KEY (department_code) REFERENCES departments(code);
 
 
 -- ============================================================================
 -- INDEXES — Performance optimization for common queries
 -- ============================================================================
 
--- Organization scoping (most queries filter by organization_id)
+-- Organization scoping
 CREATE INDEX idx_documents_org ON documents(organization_id);
 CREATE INDEX idx_capas_org ON capas(organization_id);
 CREATE INDEX idx_non_conformances_org ON non_conformances(organization_id);
@@ -735,8 +879,9 @@ CREATE INDEX idx_form_instances_org ON form_instances(organization_id);
 CREATE INDEX idx_audit_trails_org ON audit_trails(organization_id);
 CREATE INDEX idx_electronic_signatures_org ON electronic_signatures(organization_id);
 CREATE INDEX idx_document_prerequisites_org ON document_prerequisites(organization_id);
+CREATE INDEX idx_departments_org ON departments(organization_id);
 
--- Status filters (most list views filter by status)
+-- Status filters
 CREATE INDEX idx_documents_status ON documents(status);
 CREATE INDEX idx_capas_status ON capas(status);
 CREATE INDEX idx_non_conformances_status ON non_conformances(status);
@@ -758,18 +903,21 @@ CREATE INDEX idx_deviations_template ON deviations(template_id);
 CREATE INDEX idx_change_controls_template ON change_controls(template_id);
 CREATE INDEX idx_audits_template ON audits(template_id);
 CREATE INDEX idx_training_template ON training(template_id);
-CREATE INDEX idx_risks_template ON risks(risk_level);
+CREATE INDEX idx_risks_rpn ON risks(risk_level);
 CREATE INDEX idx_batch_records_template ON batch_records(template_id);
 CREATE INDEX idx_suppliers_template ON suppliers(template_id);
 
--- Template module type (filtering templates by QMS module)
+-- Template module type
 CREATE INDEX idx_form_templates_module_type ON form_templates(module_type);
 
 -- Document hierarchy
 CREATE INDEX idx_documents_parent ON documents(parent_document_id);
 CREATE INDEX idx_documents_level ON documents(document_level);
+CREATE INDEX idx_documents_code ON documents(code);
+CREATE INDEX idx_documents_code_org ON documents(code, organization_id) WHERE code IS NOT NULL;
+CREATE INDEX idx_documents_department_code ON documents(department_code);
 
--- Number-based search (capa_number, ncr_number, etc.)
+-- Number-based search
 CREATE INDEX idx_capas_number ON capas(capa_number);
 CREATE INDEX idx_non_conformances_number ON non_conformances(ncr_number);
 CREATE INDEX idx_deviations_number ON deviations(dev_number);
@@ -779,13 +927,13 @@ CREATE INDEX idx_risks_number ON risks(risk_number);
 CREATE INDEX idx_batch_records_lot ON batch_records(lot_number);
 CREATE INDEX idx_suppliers_code ON suppliers(supplier_code);
 
--- Audit trail queries (time-range + table filters)
-CREATE INDEX idx_audit_trails_action ON audit_trails(audit_action);
+-- Audit trail queries
+CREATE INDEX idx_audit_trails_audit_action ON audit_trails(audit_action);
 CREATE INDEX idx_audit_trails_table ON audit_trails(table_name);
 CREATE INDEX idx_audit_trails_created ON audit_trails(created_at);
 CREATE INDEX idx_audit_trails_user ON audit_trails(user_id);
 
--- Due date tracking (overdue monitoring)
+-- Due date tracking
 CREATE INDEX idx_capas_due_date ON capas(due_date);
 CREATE INDEX idx_training_due_date ON training(due_date);
 CREATE INDEX idx_change_controls_due_date ON change_controls(due_date);
@@ -802,12 +950,25 @@ CREATE INDEX idx_profiles_role ON profiles(role);
 CREATE INDEX idx_form_instances_linked_record ON form_instances(linked_record_id);
 CREATE INDEX idx_form_instances_linked_type ON form_instances(linked_record_type);
 
+-- Departments
+CREATE INDEX idx_departments_code ON departments(code);
+CREATE INDEX idx_departments_category ON departments(category);
+
+-- Document triggers
+CREATE INDEX idx_triggers_source ON document_triggers(source_document_id);
+CREATE INDEX idx_triggers_target ON document_triggers(target_document_id);
+CREATE INDEX idx_triggers_type ON document_triggers(trigger_type);
+CREATE INDEX idx_triggers_organization ON document_triggers(organization_id);
+
+-- Document relationships
+CREATE INDEX idx_relationships_parent ON document_relationships(parent_document_id);
+CREATE INDEX idx_relationships_child ON document_relationships(child_document_id);
+
 
 -- ============================================================================
 -- ROW LEVEL SECURITY (RLS) — Multi-tenant isolation
 -- ============================================================================
 
--- Enable RLS on all tables
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organization_members ENABLE ROW LEVEL SECURITY;
@@ -826,11 +987,23 @@ ALTER TABLE risks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE batch_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_trails ENABLE ROW LEVEL SECURITY;
+ALTER TABLE departments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE document_triggers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE document_relationships ENABLE ROW LEVEL SECURITY;
+ALTER TABLE document_code_sequences ENABLE ROW LEVEL SECURITY;
 
--- RLS Policy: Users can only see data from their own organization
--- (Service role bypasses RLS for admin operations)
+-- Helper function to check org membership
+CREATE OR REPLACE FUNCTION is_org_member(org_id uuid)
+RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM organization_members
+    WHERE organization_id = org_id
+      AND user_id = auth.uid()
+      AND status = 'active'
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
 
--- Organizations: members can read their own org
+-- Organizations
 CREATE POLICY org_read ON organizations
   FOR SELECT USING (
     id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid())
@@ -845,7 +1018,7 @@ CREATE POLICY org_member_read ON organization_members
     organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid())
   );
 
--- Profiles: users can read their own profile
+-- Profiles
 CREATE POLICY profiles_read ON profiles
   FOR SELECT USING (
     id = auth.uid() OR
@@ -855,50 +1028,82 @@ CREATE POLICY profiles_read ON profiles
 CREATE POLICY profiles_update_own ON profiles
   FOR UPDATE USING (id = auth.uid());
 
--- Generic org-scoped read policy (applied to all org-scoped tables)
--- Helper function to check org membership
-CREATE OR REPLACE FUNCTION is_org_member(org_id uuid)
-RETURNS boolean AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM organization_members
-    WHERE organization_id = org_id
-      AND user_id = auth.uid()
-      AND status = 'active'
-  );
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
+-- Apply org-scoped read/write policies to all QMS tables
+CREATE POLICY documents_rw ON documents FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY capas_rw ON capas FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY ncr_rw ON non_conformances FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY deviations_rw ON deviations FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY change_controls_rw ON change_controls FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY audits_rw ON audits FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY training_rw ON training FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY risks_rw ON risks FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY batch_records_rw ON batch_records FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY suppliers_rw ON suppliers FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY form_templates_rw ON form_templates FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY form_instances_rw ON form_instances FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY audit_trails_rw ON audit_trails FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY electronic_signatures_rw ON electronic_signatures FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY document_prerequisites_rw ON document_prerequisites FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY departments_rw ON departments FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY document_triggers_rw ON document_triggers FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY document_relationships_rw ON document_relationships FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+CREATE POLICY document_code_sequences_rw ON document_code_sequences FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
 
--- Apply org-scoped read policies
-CREATE POLICY documents_read ON documents FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY capas_read ON capas FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY ncr_read ON non_conformances FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY deviations_read ON deviations FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY change_controls_read ON change_controls FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY audits_read ON audits FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY training_read ON training FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY risks_read ON risks FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY batch_records_read ON batch_records FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY suppliers_read ON suppliers FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY form_templates_read ON form_templates FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY form_instances_read ON form_instances FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY audit_trails_read ON audit_trails FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY electronic_signatures_read ON electronic_signatures FOR SELECT USING (is_org_member(organization_id));
-CREATE POLICY document_prerequisites_read ON document_prerequisites FOR SELECT USING (is_org_member(organization_id));
 
--- Apply org-scoped write policies (insert/update/delete)
-CREATE POLICY documents_write ON documents FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY capas_write ON capas FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY ncr_write ON non_conformances FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY deviations_write ON deviations FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY change_controls_write ON change_controls FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY audits_write ON audits FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY training_write ON training FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY risks_write ON risks FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY batch_records_write ON batch_records FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY suppliers_write ON suppliers FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY form_templates_write ON form_templates FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY form_instances_write ON form_instances FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY electronic_signatures_write ON electronic_signatures FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
-CREATE POLICY document_prerequisites_write ON document_prerequisites FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+-- ============================================================================
+-- VIEWS for common queries
+-- ============================================================================
+
+-- Document hierarchy with level labels
+CREATE OR REPLACE VIEW document_hierarchy AS
+SELECT 
+  d.id,
+  d.code,
+  d.title,
+  d.doc_type,
+  d.status,
+  d.document_level,
+  d.department_code,
+  dep.label_fr AS department_label_fr,
+  dep.label_en AS department_label_en,
+  d.parent_document_id,
+  parent.code AS parent_code,
+  parent.title AS parent_title,
+  d.triggers,
+  d.child_codes,
+  d.iso_clause,
+  CASE d.document_level
+    WHEN 1 THEN 'Stratégique'
+    WHEN 2 THEN 'Transversal'
+    WHEN 3 THEN 'Métier / Technique'
+    WHEN 4 THEN 'Enregistrement / Formulaire'
+  END AS level_label_fr,
+  CASE d.document_level
+    WHEN 1 THEN 'Strategic'
+    WHEN 2 THEN 'Cross-Functional'
+    WHEN 3 THEN 'Operational / Technical'
+    WHEN 4 THEN 'Record / Form'
+  END AS level_label_en,
+  d.created_at,
+  d.updated_at
+FROM documents d
+LEFT JOIN departments dep ON d.department_code = dep.code
+LEFT JOIN documents parent ON d.parent_document_id = parent.id;
+
+-- Document trigger graph
+CREATE OR REPLACE VIEW document_trigger_graph AS
+SELECT 
+  t.id,
+  s.code AS source_code,
+  s.title AS source_title,
+  tgt.code AS target_code,
+  tgt.title AS target_title,
+  t.trigger_type,
+  t.is_mandatory,
+  t.description
+FROM document_triggers t
+JOIN documents s ON t.source_document_id = s.id
+JOIN documents tgt ON t.target_document_id = tgt.id;
 
 
 -- ============================================================================
@@ -925,6 +1130,7 @@ CREATE TRIGGER trg_change_controls_updated BEFORE UPDATE ON change_controls FOR 
 CREATE TRIGGER trg_audits_updated BEFORE UPDATE ON audits FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trg_training_updated BEFORE UPDATE ON training FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trg_risks_updated BEFORE UPDATE ON risks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trg_departments_updated BEFORE UPDATE ON departments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 
 -- ============================================================================
@@ -934,32 +1140,31 @@ CREATE TRIGGER trg_risks_updated BEFORE UPDATE ON risks FOR EACH ROW EXECUTE FUN
 CREATE OR REPLACE FUNCTION log_audit_trail()
 RETURNS TRIGGER AS $$
 DECLARE
-  v_action text;
+  v_audit_action text;
   v_org_id uuid;
 BEGIN
   IF (TG_OP = 'INSERT') THEN
-    v_action := 'CREATE';
-    v_org_id := COALESCE(NEW.organization_id);
-    INSERT INTO audit_trails (action, table_name, record_id, new_values, organization_id)
-    VALUES (v_action, TG_TABLE_NAME, NEW.id, to_jsonb(NEW), v_org_id);
+    v_audit_action := 'CREATE';
+    v_org_id := NEW.organization_id;
+    INSERT INTO audit_trails (audit_action, table_name, record_id, new_values, organization_id)
+    VALUES (v_audit_action, TG_TABLE_NAME, NEW.id, to_jsonb(NEW), v_org_id);
     RETURN NEW;
   ELSIF (TG_OP = 'UPDATE') THEN
-    v_action := 'UPDATE';
-    v_org_id := COALESCE(NEW.organization_id);
-    INSERT INTO audit_trails (action, table_name, record_id, old_values, new_values, organization_id)
-    VALUES (v_action, TG_TABLE_NAME, NEW.id, to_jsonb(OLD), to_jsonb(NEW), v_org_id);
+    v_audit_action := 'UPDATE';
+    v_org_id := NEW.organization_id;
+    INSERT INTO audit_trails (audit_action, table_name, record_id, old_values, new_values, organization_id)
+    VALUES (v_audit_action, TG_TABLE_NAME, NEW.id, to_jsonb(OLD), to_jsonb(NEW), v_org_id);
     RETURN NEW;
   ELSIF (TG_OP = 'DELETE') THEN
-    v_action := 'DELETE';
-    v_org_id := COALESCE(OLD.organization_id);
-    INSERT INTO audit_trails (action, table_name, record_id, old_values, organization_id)
-    VALUES (v_action, TG_TABLE_NAME, OLD.id, to_jsonb(OLD), v_org_id);
+    v_audit_action := 'DELETE';
+    v_org_id := OLD.organization_id;
+    INSERT INTO audit_trails (audit_action, table_name, record_id, old_values, organization_id)
+    VALUES (v_audit_action, TG_TABLE_NAME, OLD.id, to_jsonb(OLD), v_org_id);
     RETURN OLD;
   END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Apply audit trail triggers to all QMS record tables
 CREATE TRIGGER trg_audit_documents AFTER INSERT OR UPDATE OR DELETE ON documents FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
 CREATE TRIGGER trg_audit_capas AFTER INSERT OR UPDATE OR DELETE ON capas FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
 CREATE TRIGGER trg_audit_non_conformances AFTER INSERT OR UPDATE OR DELETE ON non_conformances FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
@@ -972,6 +1177,7 @@ CREATE TRIGGER trg_audit_batch_records AFTER INSERT OR UPDATE OR DELETE ON batch
 CREATE TRIGGER trg_audit_suppliers AFTER INSERT OR UPDATE OR DELETE ON suppliers FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
 CREATE TRIGGER trg_audit_form_templates AFTER INSERT OR UPDATE OR DELETE ON form_templates FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
 CREATE TRIGGER trg_audit_form_instances AFTER INSERT OR UPDATE OR DELETE ON form_instances FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+CREATE TRIGGER trg_audit_document_triggers AFTER INSERT OR UPDATE OR DELETE ON document_triggers FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
 
 
 COMMIT;
@@ -979,19 +1185,21 @@ COMMIT;
 -- ============================================================================
 -- END OF MIGRATION 001_initial_schema.sql
 -- ============================================================================
--- Tables created: 18
+-- Tables created: 22
 --   Core:       organizations, profiles, organization_members
---   Documents:  documents, electronic_signatures, document_prerequisites
+--   Documents:  documents, electronic_signatures, document_prerequisites,
+--               departments, document_triggers, document_relationships,
+--               document_code_sequences
 --   Layer 1:    form_templates
 --   Layer 2:    form_instances
 --   Records:    capas, non_conformances, deviations, change_controls,
 --               audits, training, risks, batch_records, suppliers
 --   Audit:      audit_trails
 --
--- FK circular deps resolved: capas↔non_conformances, capas↔audits,
---                             non_conformances↔suppliers
---
--- Indexes:     55+ indexes for query performance
--- RLS:         18 tables with org-scoped policies
--- Triggers:    12 updated_at + 12 audit_trail auto-loggers
+-- Views:       document_hierarchy, document_trigger_graph
+-- FK circular: capas↔non_conformances, capas↔audits,
+--              non_conformances↔suppliers
+-- Indexes:     65+ indexes for query performance
+-- RLS:         22 tables with org-scoped policies
+-- Triggers:    14 updated_at + 13 audit_trail auto-loggers
 -- ============================================================================

@@ -239,7 +239,7 @@ export interface Document {
   id: string;
   documentNumber: string;
   title: string;
-  type: DocumentType;
+  docType: DocumentType;
   version: string;
   status: DocumentStatus;
   effectiveDate?: string;
@@ -316,7 +316,7 @@ export interface Capa {
   id: string;
   capaNumber: string;
   title: string;
-  type: CapaType;
+  capaType: CapaType;
   status: CapaStatus;
   /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
@@ -361,7 +361,7 @@ export interface NonConformance {
   id: string;
   ncrNumber: string;
   title: string;
-  type: NcrType;
+  ncrType: NcrType;
   status: NcrStatus;
   /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
@@ -765,7 +765,7 @@ export interface Audit {
   id: string;
   auditNumber: string;
   title: string;
-  type: AuditType;
+  auditType: AuditType;
   status: AuditStatus;
   /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
@@ -793,7 +793,7 @@ export interface Training {
   id: string;
   title: string;
   description?: string;
-  type: TrainingType;
+  trainingType: TrainingType;
   status: TrainingStatus;
   /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
@@ -864,7 +864,7 @@ export interface ChangeControl {
   id: string;
   ccNumber: string;
   title: string;
-  type: ChangeControlType;
+  ccType: ChangeControlType;
   status: ChangeControlStatus;
   /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
@@ -916,7 +916,7 @@ export interface Deviation {
   id: string;
   devNumber: string;
   title: string;
-  type: DeviationType;
+  deviationType: DeviationType;
   status: DeviationStatus;
   /** ID of the approved FormTemplate used to create this record */
   templateId?: string;

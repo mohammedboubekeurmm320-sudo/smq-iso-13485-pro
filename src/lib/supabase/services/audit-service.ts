@@ -8,7 +8,7 @@ export class AuditService extends BaseService {
     let query = this.supabase.from('audits').select('*', { count: 'exact' });
     if (this.orgId) query = query.eq('organization_id', this.orgId);
     if (filters?.status) query = query.eq('status', filters.status);
-    if (filters?.type) query = query.eq('type', filters.type);
+    if (filters?.type) query = query.eq('audit_type', filters.type);
     if (filters?.search) query = query.or(`title.ilike.%${filters.search}%,audit_number.ilike.%${filters.search}%`);
     const { data, count, error } = await query.range(from, to).order('created_at', { ascending: false });
     if (error) throw new Error(error.message);
