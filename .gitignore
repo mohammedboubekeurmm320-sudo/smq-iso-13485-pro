@@ -64,7 +64,8 @@ server.log
 /upload/
 /agent-ctx/
 /prisma/
-/supabase/
+/supabase/*
+!/supabase/migrations/
 generate_validation_pdf.py
 serve.js
 start-server.sh
