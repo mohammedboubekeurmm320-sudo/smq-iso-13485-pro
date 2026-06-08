@@ -30,6 +30,8 @@ import {
   ChevronRight,
   X,
   CalendarClock,
+  Layers,
+  FolderOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -88,6 +90,8 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'suppliers' as ActiveSection, labelKey: 'nav.suppliers', icon: Truck, module: 'suppliers' },
       { id: 'oos-oot' as ActiveSection, labelKey: 'nav.oosOot', icon: FlaskConical, module: 'oos_oot' },
       { id: 'forms' as ActiveSection, labelKey: 'nav.forms', icon: FileSpreadsheet, module: 'forms' },
+      { id: 'record-types' as ActiveSection, labelKey: 'nav.recordTypes', icon: Layers, module: 'forms' },
+      { id: 'custom-records' as ActiveSection, labelKey: 'nav.customRecords', icon: FolderOpen, module: 'forms' },
     ],
   },
   {

@@ -32,6 +32,8 @@ export interface ComplianceData {
   capaWithRootCauseCount: number;
   changeControlOpenCount: number;
   deviationOpenCount: number;
+  // CORRECTIF 4: Custom record type counts for §8.4 data analysis
+  customRecordTypeCounts: Record<string, { total: number; closed: number }>;
 }
 
 export interface ComplianceClause {
@@ -471,8 +473,25 @@ export function buildComplianceData(params: {
   suppliers: { status: string }[];
   changeControls: { status: string }[];
   deviations: { status: string }[];
+  // CORRECTIF 4: Custom record type instances for §8.4
+  customInstances?: { recordTypeSlug?: string; status: string }[];
 }): ComplianceData {
-  const { documents, capas, trainingItems, audits, ncrs, risks, batchRecords, suppliers, changeControls, deviations } = params;
+  const { documents, capas, trainingItems, audits, ncrs, risks, batchRecords, suppliers, changeControls, deviations, customInstances } = params;
+
+  // Build custom record type counts
+  const customRecordTypeCounts: Record<string, { total: number; closed: number }> = {};
+  if (customInstances && customInstances.length > 0) {
+    for (const inst of customInstances) {
+      const slug = inst.recordTypeSlug || 'general';
+      if (!customRecordTypeCounts[slug]) {
+        customRecordTypeCounts[slug] = { total: 0, closed: 0 };
+      }
+      customRecordTypeCounts[slug].total++;
+      if (inst.status === 'Approved' || inst.status === 'Closed') {
+        customRecordTypeCounts[slug].closed++;
+      }
+    }
+  }
 
   return {
     approvedDocCount: documents.filter(d => d.status === 'Approved').length,
@@ -498,5 +517,6 @@ export function buildComplianceData(params: {
     capaWithRootCauseCount: capas.filter(c => !!c.rootCauseAnalysis).length,
     changeControlOpenCount: changeControls.filter(cc => cc.status !== 'Completed' && cc.status !== 'Rejected').length,
     deviationOpenCount: deviations.filter(d => d.status !== 'Closed' && d.status !== 'Approved').length,
+    customRecordTypeCounts,
   };
 }

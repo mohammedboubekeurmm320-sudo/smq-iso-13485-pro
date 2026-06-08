@@ -13,3 +13,5 @@ export { DeviationService } from './deviation-service';
 export { AuditTrailService } from './audit-trail-service';
 export { ProfileService } from './profile-service';
 export { OrganizationService } from './organization-service';
+export { RecordTypeService } from './record-type-service';
+export { RecordLinkService } from './record-link-service';

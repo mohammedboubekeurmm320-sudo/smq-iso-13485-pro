@@ -19,7 +19,9 @@ export type Permission =
   | 'supplier.create' | 'supplier.read' | 'supplier.update' | 'supplier.delete'
   | 'reports.view' | 'reports.export'
   | 'compliance.view' | 'compliance.manage'
-  | 'admin.users' | 'admin.settings' | 'admin.audit_trail';
+  | 'admin.users' | 'admin.settings' | 'admin.audit_trail'
+  | 'recordtypes.create' | 'recordtypes.read' | 'recordtypes.update' | 'recordtypes.delete'
+  | 'recordlinks.create' | 'recordlinks.read' | 'recordlinks.delete';
 
 export const rolePermissions: Record<UserRole, Permission[]> = {
   admin: [
@@ -36,6 +38,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.export',
     'compliance.view', 'compliance.manage',
     'admin.users', 'admin.settings', 'admin.audit_trail',
+    'recordtypes.create', 'recordtypes.read', 'recordtypes.update', 'recordtypes.delete',
+    'recordlinks.create', 'recordlinks.read', 'recordlinks.delete',
   ],
   quality_manager: [
     'documents.create', 'documents.read', 'documents.update', 'documents.approve',
@@ -51,6 +55,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.export',
     'compliance.view', 'compliance.manage',
     'admin.audit_trail',
+    'recordtypes.create', 'recordtypes.read', 'recordtypes.update',
+    'recordlinks.create', 'recordlinks.read', 'recordlinks.delete',
   ],
   auditor: [
     'documents.read',
@@ -66,6 +72,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'reports.view',
     'compliance.view',
     'admin.audit_trail',
+    'recordtypes.read',
+    'recordlinks.read',
   ],
   document_controller: [
     'documents.create', 'documents.read', 'documents.update', 'documents.delete', 'documents.approve',
@@ -79,6 +87,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'supplier.read',
     'reports.view',
     'compliance.view',
+    'recordtypes.read',
+    'recordlinks.read',
   ],
   executive: [
     'documents.read',
@@ -93,6 +103,8 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'supplier.read',
     'reports.view', 'reports.export',
     'compliance.view',
+    'recordtypes.read',
+    'recordlinks.read',
   ],
   operator: [
     'documents.read',
@@ -300,6 +312,9 @@ export interface ElectronicSignature {
   revoked: boolean;
   revocationReason?: string;
   createdAt: string;
+  /** Polymorphic record link — 21 CFR §11.50/§11.70 signature-record linkage */
+  recordId?: string;
+  recordType?: string; // slug from record_type_definitions
 }
 
 // ============================================================================
@@ -338,6 +353,8 @@ export interface Capa {
   linkedDocumentId?: string;
   linkedNcrId?: string;
   linkedAuditId?: string;
+  /** Source record type slug — references record_type_definitions.slug (§8.5.2) */
+  sourceRecordType?: string;
   assignedTo: string;
   dueDate: string;
   createdDate: string;
@@ -578,11 +595,14 @@ export const FORM_TEMPLATE_TRANSITION_ROLES: Record<string, UserRole[]> = {
   'Approved→Draft': ['admin', 'quality_manager', 'document_controller'],
 };
 
-/** Module type enum for linking templates to record modules */
-export type FormTemplateModuleType =
-  | 'capa' | 'ncr' | 'deviation' | 'change_control'
-  | 'audit' | 'risk' | 'training' | 'supplier'
-  | 'batch_record' | 'oos_oot' | 'general';
+/**
+ * Module type for linking templates to record types.
+ * Now references record_type_definitions.slug — extensible (was hardcoded ENUM).
+ * System slugs: capa, ncr, deviation, change_control, audit, risk, training,
+ *               supplier, batch_record, oos_oot, general
+ * Custom slugs: Any org-defined slug (e.g., 'etalonnage_equipement')
+ */
+export type FormTemplateModuleType = string;
 
 export interface FormTemplateCompliance {
   regulatoryReference: string;
@@ -647,8 +667,10 @@ export interface FormInstance {
   parentDocumentId?: string;
   /** Linked QMS record ID (e.g., CAPA-001, NCR-001) */
   linkedRecordId?: string;
-  /** Linked QMS record type */
-  linkedRecordType?: FormTemplateModuleType;
+  /** Linked QMS record type — now TEXT referencing record_type_definitions.slug */
+  linkedRecordType?: string;
+  /** Record type slug — FK to record_type_definitions (§4.2.3 referential integrity) */
+  recordTypeSlug?: string;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
@@ -691,7 +713,7 @@ export interface AuditTrail {
 // Document Prerequisite
 // ============================================================================
 
-export type PrerequisiteRecordType = 'CAPA' | 'NCR' | 'TRAINING' | 'RISK' | 'AUDIT' | 'CHANGE_CONTROL' | 'DEVIATION';
+export type PrerequisiteRecordType = string; // Now references record_type_definitions.slug (was hardcoded ENUM)
 
 export interface DocumentPrerequisite {
   id: string;
@@ -955,6 +977,96 @@ export interface Deviation {
 }
 
 // ============================================================================
+// Record Type Definitions — Extensible Custom Record Types
+// ISO 13485 §4.1 (QMS completeness), §4.2.3 (document control),
+// §4.2.4 (record control), §7.5.9 (traceability)
+// ============================================================================
+
+/** Compliance reference for mapping a record type to ISO clauses */
+export interface ComplianceRef {
+  clause: string;       // e.g., '§7.5.6'
+  standard: string;     // e.g., 'ISO 13485'
+  description?: string; // e.g., 'Validation of processes'
+}
+
+/** Status flow step definition — stored in record_type_definitions.status_flow */
+export interface StatusFlowStep {
+  /** Linear progression steps */
+  linear: string[];
+  /** Branch states (e.g., Rejected, Disqualified) with return paths */
+  branches?: Record<string, string[]>;
+  /** States that require e-signature to transition to */
+  eSigRequired?: string[];
+  /** States that are terminal (no further transitions) */
+  terminal?: string[];
+}
+
+export interface RecordTypeDefinition {
+  id: string;
+  /** URL-safe slug — unique per organization. Used as FK target for form_templates.module_type */
+  slug: string;
+  /** Display name (French) */
+  name: string;
+  /** Display name (English) */
+  nameEn?: string;
+  /** Lucide icon name for navigation/UI */
+  icon: string;
+  description?: string;
+  /** Configurable status flow — replaces hardcoded MODULE_STATUS_FLOWS */
+  statusFlow: StatusFlowStep[];
+  /** Default form fields inherited by templates created for this type */
+  defaultFields: FormFieldDefinition[];
+  /** ISO 13485 / regulatory clause references for compliance mapping */
+  complianceRefs: ComplianceRef[];
+  /** Code prefix for auto-numbering (e.g., 'ETL' → ETL-2025-001) */
+  codePrefix?: string;
+  /** System types (true) cannot be deleted/deactivated — ISO 13485 §4.1 */
+  isSystem: boolean;
+  isActive: boolean;
+  /** Whether all transitions require e-signature */
+  requiresEsig: boolean;
+  /** Minimum number of approvers for Layer 1 template approval */
+  minApproverCount: number;
+  effectiveDate?: string;
+  previousVersionId?: string;
+  version: string;
+  changeReason?: string;
+  organizationId: string;
+  createdById?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================================================
+// Record Links — Generic Cross-Record Linking
+// Replaces hardcoded FKs (linked_capa_id, linked_ncr_id, etc.)
+// ISO 13485 §7.5.9 (traceability), §4.2.4 (record control)
+// ============================================================================
+
+export type RecordLinkType =
+  | 'related'       // General association
+  | 'caused_by'     // Source caused target (NCR → CAPA)
+  | 'corrected_by'  // Source corrected by target (NCR ← CAPA)
+  | 'linked_to'     // Reference link
+  | 'derived_from'  // Source derived from target
+  | 'supersedes'    // Source supersedes target (version control)
+  | 'references'    // Source references target
+  | 'depends_on';   // Source depends on target
+
+export interface RecordLink {
+  id: string;
+  sourceRecordId: string;
+  sourceRecordType: string;  // slug from record_type_definitions
+  targetRecordId: string;
+  targetRecordType: string;  // slug from record_type_definitions
+  linkType: RecordLinkType;
+  description?: string;
+  organizationId: string;
+  createdById?: string;
+  createdAt: string;
+}
+
+// ============================================================================
 // Navigation
 // ============================================================================
 
@@ -962,5 +1074,6 @@ export type ActiveSection =
   | 'dashboard'
   | 'documents' | 'document-hierarchy'
   | 'ncr' | 'capa' | 'audits' | 'risks' | 'training' | 'change-control' | 'deviations' | 'batch-records' | 'suppliers' | 'oos-oot' | 'forms'
+  | 'record-types' | 'custom-records' // Extensible record type management
   | 'reports' | 'compliance'
   | 'user-management';
