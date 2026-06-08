@@ -5,6 +5,7 @@ import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { TemplateSelector } from '@/components/shared/TemplateSelector';
 import { cn, formatDate } from '@/lib/utils';
 import type { Audit, AuditStatus, AuditType, AuditFinding, SignatureType, FormTemplateModule } from '@/types/qms';
 import {
@@ -218,6 +219,8 @@ export function AuditView() {
   const [formScope, setFormScope] = useState('');
   const [formCriteria, setFormCriteria] = useState<string[]>([]);
   const [formObjectives, setFormObjectives] = useState('');
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [newTemplateVersion, setNewTemplateVersion] = useState('');
 
   // ========== Step 2 - Schedule & Team ==========
   const [formStartDate, setFormStartDate] = useState('');
@@ -313,7 +316,8 @@ export function AuditView() {
     setFormExecutiveSummary(''); setFormComplianceRating('');
     setFormRiskAssessment(''); setFormManagementReviewRequired(false);
     setFormNextAuditDate('');
-    setFormTemplateId('');
+    setNewTemplateId('');
+    setNewTemplateVersion('');
   };
 
   const resetFindingForm = () => {
@@ -451,6 +455,8 @@ export function AuditView() {
         correctiveActionRequired: f.carRequired,
         capaId: f.capaReference.trim() || undefined,
       })),
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -550,6 +556,15 @@ export function AuditView() {
         <Label>Audit Title *</Label>
         <Input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="e.g., Q1 2024 Internal Quality Audit — Production" />
       </div>
+      <TemplateSelector
+        moduleType="audit"
+        value={newTemplateId}
+        onChange={(id, version) => {
+          setNewTemplateId(id);
+          setNewTemplateVersion(version);
+        }}
+        required
+      />
       <div className="grid gap-2">
         <Label>Audit Type *</Label>
         <Select value={formExtendedType} onValueChange={setFormExtendedType}>

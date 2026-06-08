@@ -58,7 +58,7 @@ export abstract class BaseService {
     userId?: string,
   ) {
     const { error } = await this.supabase.from('audit_trails').insert({
-      action,
+      audit_action: action,
       table_name: tableName,
       record_id: recordId,
       user_id: userId || null,

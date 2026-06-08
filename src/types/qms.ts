@@ -251,8 +251,8 @@ export interface Document {
   description?: string;
   classification?: DocumentClassification;
   retentionPeriod?: string;
-  scope?: string;
-  references?: string;
+  docScope?: string;
+  docReferences?: string;
   typeSpecificData?: Record<string, unknown>;
   parentDocumentId?: string;
   documentLevel?: DocumentLevel;
@@ -318,9 +318,9 @@ export interface Capa {
   title: string;
   type: CapaType;
   status: CapaStatus;
-  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
-  /** Version of the template at time of record creation */
+  /** Version of the FormTemplate at time of record creation */
   templateVersion?: string;
   priority?: CapaPriority;
   source?: CapaSource;
@@ -363,9 +363,9 @@ export interface NonConformance {
   title: string;
   type: NcrType;
   status: NcrStatus;
-  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
-  /** Version of the template at time of record creation */
+  /** Version of the FormTemplate at time of record creation */
   templateVersion?: string;
   severity?: NcrSeverity;
   source?: string;
@@ -442,11 +442,11 @@ export interface BatchRecord {
   manufacturingDate: string;
   expiryDate?: string;
   status: BatchStatus;
-  /** Reference to the FormTemplate that governs this record (Layer 2) */
-  templateId?: string;
-  /** Version of the template at time of record creation */
-  templateVersion?: string;
   isLocked: boolean;
+  /** ID of the approved FormTemplate used to create this record */
+  templateId?: string;
+  /** Version of the FormTemplate at time of record creation */
+  templateVersion?: string;
   qaReleaseDate?: string;
   qaReleasedById?: string;
   organizationId?: string;
@@ -470,9 +470,9 @@ export interface Supplier {
   name: string;
   category?: SupplierCategory;
   status: SupplierStatus;
-  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
-  /** Version of the template at time of record creation */
+  /** Version of the FormTemplate at time of record creation */
   templateVersion?: string;
   qualificationDate?: string;
   nextReviewDate?: string;
@@ -504,7 +504,6 @@ export interface Supplier {
 // ============================================================================
 
 /** FormTemplate lifecycle states — Layer 1 of Hybrid Supervision */
-export type FormTemplateStatus = 'Draft' | 'Under_Review' | 'Approved' | 'Rejected' | 'Obsolete';
 
 /** Maps each record module to its FormTemplate target */
 export type FormTemplateModule =
@@ -530,7 +529,60 @@ export interface FormTemplateWorkflow {
   allowDraftSaves: boolean;
   lockAfterSubmission: boolean;
   eSignatureRequired: boolean;
+  /** Approvers assigned for this template's approval workflow */
+  approvers?: WorkflowApprover[];
 }
+
+/** Approver in a workflow chain — used for sequential/parallel approval */
+export interface WorkflowApprover {
+  id: string;
+  userId: string;
+  userName: string;
+  role: UserRole;
+  order?: number; // For sequential: step order (1, 2, 3...)
+  approvedAt?: string;
+  status: 'pending' | 'approved' | 'rejected';
+}
+
+// ============================================================================
+// Form Template Status (Layer 1 — Template Approval Lifecycle)
+// ============================================================================
+
+/**
+ * FormTemplateStatus governs the lifecycle of a form template (Layer 1).
+ * ISO 13485 §4.2.3 requires document approval before use.
+ *
+ * Transitions:
+ *   Draft → Under_Review (submit for review)
+ *   Under_Review → Approved (approve, requires e-signature)
+ *   Under_Review → Draft (return for revision)
+ *   Approved → Obsolete (supersede/retire)
+ *   Approved → Draft (create new revision)
+ */
+export type FormTemplateStatus = 'Draft' | 'Under_Review' | 'Approved' | 'Obsolete';
+
+/** Map of valid status transitions for FormTemplate */
+export const FORM_TEMPLATE_TRANSITIONS: Record<FormTemplateStatus, FormTemplateStatus[]> = {
+  Draft: ['Under_Review'],
+  Under_Review: ['Approved', 'Draft'],
+  Approved: ['Obsolete', 'Draft'],
+  Obsolete: [],
+};
+
+/** Roles allowed to transition template status */
+export const FORM_TEMPLATE_TRANSITION_ROLES: Record<string, UserRole[]> = {
+  'Draft→Under_Review': ['admin', 'quality_manager', 'document_controller'],
+  'Under_Review→Approved': ['admin', 'quality_manager'],
+  'Under_Review→Draft': ['admin', 'quality_manager', 'document_controller'],
+  'Approved→Obsolete': ['admin', 'quality_manager'],
+  'Approved→Draft': ['admin', 'quality_manager', 'document_controller'],
+};
+
+/** Module type enum for linking templates to record modules */
+export type FormTemplateModuleType =
+  | 'capa' | 'ncr' | 'deviation' | 'change_control'
+  | 'audit' | 'risk' | 'training' | 'supplier'
+  | 'batch_record' | 'oos_oot' | 'general';
 
 export interface FormTemplateCompliance {
   regulatoryReference: string;
@@ -548,32 +600,24 @@ export interface FormTemplate {
   version: string;
   description?: string;
   fields: FormFieldDefinition[];
-  /** @deprecated Use `status` instead — isActive is kept for backward compatibility */
+  /** @deprecated Use `status` instead — isActive is kept for backward compat */
   isActive: boolean;
-  /** Layer 1 lifecycle status — replaces boolean isActive */
+  /** Layer 1 status lifecycle: Draft → Under_Review → Approved → Obsolete */
   status: FormTemplateStatus;
-  /** Which record module this template serves */
-  moduleType: FormTemplateModule;
-  /** Who submitted the template for review */
-  submittedForReviewById?: string;
-  /** When the template was submitted for review */
-  submittedForReviewAt?: string;
-  /** Who reviewed/approved the template */
-  reviewedById?: string;
-  /** When the template was reviewed */
-  reviewedAt?: string;
-  /** Who approved the template (final Layer 1 approval) */
-  approvedById?: string;
-  /** When the template was approved */
-  approvedAt?: string;
-  /** Rejection reason if status is Rejected */
-  rejectionReason?: string;
-  /** Obsolescence reason if status is Obsolete */
-  obsolescenceReason?: string;
-  /** Signature hash from approval e-signature */
-  approvalSignatureHash?: string;
+  /** Which QMS module this template belongs to (for 10-module connection) */
+  moduleType: FormTemplateModuleType;
   workflow?: FormTemplateWorkflow;
   compliance?: FormTemplateCompliance;
+  /** Electronic signatures on this template (for approval/review) */
+  signatures?: ElectronicSignature[];
+  /** Current approval step (for sequential workflow) */
+  currentApprovalStep?: number;
+  /** Version history tracking */
+  previousVersionId?: string;
+  /** Effective date when template was approved */
+  effectiveDate?: string;
+  /** Review/Rejection reason */
+  reviewComment?: string;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
@@ -594,10 +638,32 @@ export interface FormInstance {
   submittedById?: string;
   submittedAt?: string;
   signatureHash?: string;
+  /** Electronic signatures on this instance */
+  signatures?: ElectronicSignature[];
+  /** Current approval step (for sequential workflow from template) */
+  currentApprovalStep?: number;
+  /** Approval history tracking */
+  approvalHistory?: InstanceApprovalEntry[];
   parentDocumentId?: string;
+  /** Linked QMS record ID (e.g., CAPA-001, NCR-001) */
+  linkedRecordId?: string;
+  /** Linked QMS record type */
+  linkedRecordType?: FormTemplateModuleType;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
+  updatedAt?: string;
+}
+
+/** Approval entry for instance workflow history */
+export interface InstanceApprovalEntry {
+  id: string;
+  approverId: string;
+  approverName: string;
+  action: 'approved' | 'rejected' | 'returned';
+  comment?: string;
+  signatureHash?: string;
+  timestamp: string;
 }
 
 // ============================================================================
@@ -608,7 +674,7 @@ export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'REJECT' 
 
 export interface AuditTrail {
   id: string;
-  action: AuditAction;
+  auditAction: AuditAction;
   tableName: string;
   recordId?: string;
   userId?: string;
@@ -701,11 +767,11 @@ export interface Audit {
   title: string;
   type: AuditType;
   status: AuditStatus;
-  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
-  /** Version of the template at time of record creation */
+  /** Version of the FormTemplate at time of record creation */
   templateVersion?: string;
-  scope?: string;
+  auditScope?: string;
   scheduledDate: string;
   completedDate?: string;
   leadAuditor: string;
@@ -729,9 +795,9 @@ export interface Training {
   description?: string;
   type: TrainingType;
   status: TrainingStatus;
-  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
-  /** Version of the template at time of record creation */
+  /** Version of the FormTemplate at time of record creation */
   templateVersion?: string;
   assignedTo: string;
   dueDate: string;
@@ -760,9 +826,9 @@ export interface Risk {
   detectability: number; // 1-5
   rpn: number; // probability * impact * detectability
   riskLevel: RiskLevel;
-  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
-  /** Version of the template at time of record creation */
+  /** Version of the FormTemplate at time of record creation */
   templateVersion?: string;
   mitigation?: string;
   residualRisk?: string;
@@ -800,9 +866,9 @@ export interface ChangeControl {
   title: string;
   type: ChangeControlType;
   status: ChangeControlStatus;
-  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
-  /** Version of the template at time of record creation */
+  /** Version of the FormTemplate at time of record creation */
   templateVersion?: string;
   priority: ChangeControlPriority;
   category: ChangeControlCategory;
@@ -852,9 +918,9 @@ export interface Deviation {
   title: string;
   type: DeviationType;
   status: DeviationStatus;
-  /** Reference to the FormTemplate that governs this record (Layer 2) */
+  /** ID of the approved FormTemplate used to create this record */
   templateId?: string;
-  /** Version of the template at time of record creation */
+  /** Version of the FormTemplate at time of record creation */
   templateVersion?: string;
   severity: DeviationSeverity;
   category: DeviationCategory;

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { TemplateSelector } from '@/components/shared/TemplateSelector';
 import { cn, formatDate } from '@/lib/utils';
 import type { NonConformance, NcrStatus, NcrType, NcrSeverity, NcrDisposition, SignatureType, FormTemplateModule } from '@/types/qms';
 import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
@@ -127,6 +128,10 @@ export function NcrView() {
   const [formContainmentActions, setFormContainmentActions] = useState('');
   const [formAffectedProduct, setFormAffectedProduct] = useState('');
 
+  // Template
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [newTemplateVersion, setNewTemplateVersion] = useState('');
+
   // Detail dialog disposition edit
   const [detailDisposition, setDetailDisposition] = useState<string>('');
 
@@ -215,7 +220,8 @@ export function NcrView() {
     setFormPhase1Conclusion('Pending');
     setFormPreliminaryDisposition('Pending');
     setFormImpactAssessment(''); setFormContainmentActions(''); setFormAffectedProduct('');
-    setFormTemplateId('');
+    setNewTemplateId('');
+    setNewTemplateVersion('');
   };
 
   const handleCreate = () => {
@@ -248,6 +254,8 @@ export function NcrView() {
       templateId: formTemplateId || undefined,
       templateVersion: formTemplateId ? approvedNcrTemplates.find(t => t.id === formTemplateId)?.version : undefined,
       createdById: currentUser?.id,
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -369,6 +377,15 @@ export function NcrView() {
                 </p>
               </div>
             )}
+            <TemplateSelector
+              moduleType="ncr"
+              value={newTemplateId}
+              onChange={(id, version) => {
+                setNewTemplateId(id);
+                setNewTemplateVersion(version);
+              }}
+              required
+            />
           </div>
         );
 

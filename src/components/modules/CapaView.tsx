@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { Capa, CapaStatus, CapaType, CapaPriority, CapaSource, RootCauseCategory, SignatureType, FormTemplateModule } from '@/types/qms';
 import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { TemplateSelector } from '@/components/shared/TemplateSelector';
 import {
   Shield, Plus, Search, Eye, ArrowRight, CheckCircle2, AlertTriangle,
   Clock, XCircle, ChevronDown, ChevronUp, AlertCircle, Link2,
@@ -144,13 +145,9 @@ export function CapaView() {
   const [formLinkedNcrId, setFormLinkedNcrId] = useState('');
   const [formAdditionalReferences, setFormAdditionalReferences] = useState('');
 
-  // ── Template selection (Layer 2) ──
-  const [formTemplateId, setFormTemplateId] = useState('');
-
-  // ── Template workflow (Layer 1 & 2) ──
-  const { getApprovedTemplates, hasApprovedTemplate, moduleTypeLabels } = useRecordWorkflow();
-  const capaModuleType: FormTemplateModule = 'CAPA';
-  const approvedCapaTemplates = getApprovedTemplates(capaModuleType);
+  // ── Template ──
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [newTemplateVersion, setNewTemplateVersion] = useState('');
 
   // ── Electronic Signature ──
   const [showSignatureModal, setShowSignatureModal] = useState(false);
@@ -247,9 +244,9 @@ export function CapaView() {
       dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
       createdDate: new Date().toISOString(),
       linkedDocumentId: formLinkedDocId && formLinkedDocId !== 'none' ? formLinkedDocId : undefined,
-      linkedNcrId: formLinkedNcrId && formLinkedNcrId !== 'none' ? formLinkedNcrId : undefined,
-      templateId: formTemplateId || undefined,
-      templateVersion: formTemplateId ? approvedCapaTemplates.find(t => t.id === formTemplateId)?.version : undefined,
+      linkedCapaId: formLinkedCapaId && formLinkedCapaId !== 'none' ? formLinkedCapaId : undefined,
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
       createdById: currentUser?.id,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
@@ -289,7 +286,8 @@ export function CapaView() {
     setFormLinkedDocId('');
     setFormLinkedNcrId('');
     setFormAdditionalReferences('');
-    setFormTemplateId('');
+    setNewTemplateId('');
+    setNewTemplateVersion('');
     setPrereqError(null);
   };
 
@@ -400,22 +398,15 @@ export function CapaView() {
               <Label htmlFor="regulatory-trigger">Regulatory Trigger Reference</Label>
               <Input id="regulatory-trigger" value={formRegulatoryTrigger} onChange={(e) => setFormRegulatoryTrigger(e.target.value)} placeholder="e.g., ISO 13485 §8.5.2, 21 CFR 820.100" />
             </div>
-            {/* Template Selection (Layer 2) */}
-            <div className="grid gap-2">
-              <Label>Template</Label>
-              <Select value={formTemplateId} onValueChange={setFormTemplateId}>
-                <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No template</SelectItem>
-                  {approvedCapaTemplates.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {approvedCapaTemplates.length === 0 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">No approved CAPA templates found. Create one in the Forms module first.</p>
-              )}
-            </div>
+            <TemplateSelector
+              moduleType="capa"
+              value={newTemplateId}
+              onChange={(id, version) => {
+                setNewTemplateId(id);
+                setNewTemplateVersion(version);
+              }}
+              required
+            />
           </div>
         );
 

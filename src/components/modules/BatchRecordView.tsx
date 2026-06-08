@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { TemplateSelector } from '@/components/shared/TemplateSelector';
 import { cn, formatDate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import type { BatchRecord, BatchStep, BatchStatus, BatchStepStatus, SignatureType, RawMaterial, RawMaterialStatus, StepType, FormTemplateModule } from '@/types/qms';
@@ -151,6 +152,8 @@ export function BatchRecordView() {
   const [formExpiryDate, setFormExpiryDate] = useState('');
   const [formSopReference, setFormSopReference] = useState('');
   const [formSpecialInstructions, setFormSpecialInstructions] = useState('');
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [newTemplateVersion, setNewTemplateVersion] = useState('');
 
   // Raw materials in create form
   const [formRawMaterials, setFormRawMaterials] = useState<FormRawMaterial[]>([]);
@@ -250,8 +253,8 @@ export function BatchRecordView() {
     setFormSpecialInstructions('');
     setFormRawMaterials([]);
     setFormStepTemplates([]);
-    setFormTemplateId('');
-    setFormTemplateVersion('');
+    setNewTemplateId('');
+    setNewTemplateVersion('');
   };
 
   // ── Step validation ──
@@ -340,6 +343,8 @@ export function BatchRecordView() {
       createdAt: new Date().toISOString(),
       steps,
       rawMaterials: rawMaterials.length > 0 ? rawMaterials : undefined,
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
     };
     store.addBatchRecord(newBatch);
     resetForm();
@@ -554,6 +559,15 @@ export function BatchRecordView() {
                 <Input value={formSopReference} onChange={(e) => setFormSopReference(e.target.value)} placeholder="SOP-XXX" />
               </div>
             </div>
+            <TemplateSelector
+              moduleType="batch_record"
+              value={newTemplateId}
+              onChange={(id, version) => {
+                setNewTemplateId(id);
+                setNewTemplateVersion(version);
+              }}
+              required
+            />
           </div>
         );
 

@@ -13,7 +13,7 @@ export class AuditTrailService extends BaseService {
     const to = from + pageSize - 1;
     let query = this.supabase.from('audit_trails').select('*', { count: 'exact' });
     if (this.orgId) query = query.eq('organization_id', this.orgId);
-    if (filters?.action) query = query.eq('action', filters.action);
+    if (filters?.action) query = query.eq('audit_action', filters.action);
     if (filters?.tableName) query = query.eq('table_name', filters.tableName);
     if (filters?.userId) query = query.eq('user_id', filters.userId);
     if (filters?.startDate) query = query.gte('created_at', filters.startDate);

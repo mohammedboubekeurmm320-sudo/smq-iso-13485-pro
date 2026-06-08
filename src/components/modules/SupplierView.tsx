@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
+import { TemplateSelector } from '@/components/shared/TemplateSelector';
 import { cn, formatDate } from '@/lib/utils';
 import type { Supplier, SupplierCategory, SupplierStatus, QualificationMethod, FormTemplateModule } from '@/types/qms';
 import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
@@ -162,6 +163,8 @@ export function SupplierView() {
   const [formEmergencyContactPhone, setFormEmergencyContactPhone] = useState('');
   const [formQualificationMethod, setFormQualificationMethod] = useState<QualificationMethod>('On-Site Audit');
   const [formQualificationDocRef, setFormQualificationDocRef] = useState('');
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [newTemplateVersion, setNewTemplateVersion] = useState('');
 
   // Wizard state
   const [wizardStep, setWizardStep] = useState(0);
@@ -226,8 +229,8 @@ export function SupplierView() {
     setFormEmergencyContactPhone('');
     setFormQualificationMethod('On-Site Audit');
     setFormQualificationDocRef('');
-    setFormTemplateId('');
-    setFormTemplateVersion('');
+    setNewTemplateId('');
+    setNewTemplateVersion('');
   };
 
   const handleCreate = () => {
@@ -260,6 +263,8 @@ export function SupplierView() {
       organizationId: 'org-001',
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
     };
     store.addSupplier(newSupplier);
     resetForm();
@@ -418,6 +423,15 @@ export function SupplierView() {
                 </div>
               </div>
             </div>
+            <TemplateSelector
+              moduleType="supplier"
+              value={newTemplateId}
+              onChange={(id, version) => {
+                setNewTemplateId(id);
+                setNewTemplateVersion(version);
+              }}
+              required
+            />
           </div>
         );
 

@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { TemplateSelector } from '@/components/shared/TemplateSelector';
 import { cn, formatDate } from '@/lib/utils';
 import type { NonConformance, NcrStatus, NcrDisposition, SignatureType, FormTemplateModule } from '@/types/qms';
 import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
@@ -228,6 +229,8 @@ export function OosOotView() {
   // E-signature
   const [showEsigModal, setShowEsigModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<string>('');
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [newTemplateVersion, setNewTemplateVersion] = useState('');
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -347,8 +350,8 @@ export function OosOotView() {
   const resetCreateForm = () => {
     setWizardStep(1);
     setWizardData({ ...initialWizardData });
-    setFormTemplateId('');
-    setFormTemplateVersion('');
+    setNewTemplateId('');
+    setNewTemplateVersion('');
   };
 
   const openCreateDialog = () => {
@@ -388,6 +391,8 @@ export function OosOotView() {
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
     };
     store.addNCR(newNcr);
     resetCreateForm();
@@ -537,6 +542,17 @@ export function OosOotView() {
               <div className="grid gap-2 sm:col-span-2">
                 <Label>Applicable Specification Reference</Label>
                 <Input value={wizardData.specReference} onChange={(e) => updateWizard('specReference', e.target.value)} placeholder="e.g., SOP-QC-042 Rev. 3" />
+              </div>
+              <div className="sm:col-span-2">
+                <TemplateSelector
+                  moduleType="oos_oot"
+                  value={newTemplateId}
+                  onChange={(id, version) => {
+                    setNewTemplateId(id);
+                    setNewTemplateVersion(version);
+                  }}
+                  required
+                />
               </div>
             </div>
           </div>

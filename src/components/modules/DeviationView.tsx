@@ -10,6 +10,7 @@ import type {
 } from '@/types/qms';
 import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { TemplateSelector } from '@/components/shared/TemplateSelector';
 import { cn, formatDate } from '@/lib/utils';
 import {
   AlertTriangle, Plus, Search, Eye, ArrowRight, CheckCircle2,
@@ -173,6 +174,10 @@ export function DeviationView() {
   const [wizardStep, setWizardStep] = useState(0);
   const [form, setForm] = useState<DeviationFormState>({ ...emptyForm });
 
+  // Template
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [newTemplateVersion, setNewTemplateVersion] = useState('');
+
   const updateForm = <K extends keyof DeviationFormState>(key: K, value: DeviationFormState[K]) => {
     setForm(prev => ({ ...prev, [key]: value }));
   };
@@ -221,6 +226,8 @@ export function DeviationView() {
   const resetForm = () => {
     setForm({ ...emptyForm });
     setWizardStep(0);
+    setNewTemplateId('');
+    setNewTemplateVersion('');
   };
 
   const handleCreate = () => {
@@ -253,8 +260,8 @@ export function DeviationView() {
       quantityAffected: form.quantityAffected ? parseInt(form.quantityAffected) : undefined,
       linkedCapaId: form.linkedCapaId && form.linkedCapaId !== 'none' ? form.linkedCapaId : undefined,
       linkedDocumentId: form.linkedDocumentId && form.linkedDocumentId !== 'none' ? form.linkedDocumentId : undefined,
-      templateId: form.templateId || undefined,
-      templateVersion: form.templateId ? approvedDeviationTemplates.find(t => t.id === form.templateId)?.version : undefined,
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
       assignedTo: form.assignedTo,
       dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : new Date().toISOString(),
       createdById: currentUser?.id,
@@ -645,22 +652,15 @@ export function DeviationView() {
         <Label htmlFor="dev-description">Description *</Label>
         <Textarea id="dev-description" value={form.description} onChange={(e) => updateForm('description', e.target.value)} placeholder="Describe the deviation..." rows={4} />
       </div>
-      {/* Template Selection (Layer 2) */}
-      <div className="grid gap-2">
-        <Label>Template</Label>
-        <Select value={form.templateId} onValueChange={(v) => updateForm('templateId', v)}>
-          <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">No template</SelectItem>
-            {approvedDeviationTemplates.map(t => (
-              <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {approvedDeviationTemplates.length === 0 && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">No approved Deviation templates found. Create one in the Forms module first.</p>
-        )}
-      </div>
+      <TemplateSelector
+        moduleType="deviation"
+        value={newTemplateId}
+        onChange={(id, version) => {
+          setNewTemplateId(id);
+          setNewTemplateVersion(version);
+        }}
+        required
+      />
     </div>
   );
 

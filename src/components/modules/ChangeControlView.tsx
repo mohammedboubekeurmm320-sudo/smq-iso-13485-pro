@@ -10,6 +10,7 @@ import type {
   FormTemplateModule,
 } from '@/types/qms';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { TemplateSelector } from '@/components/shared/TemplateSelector';
 import { cn, formatDate } from '@/lib/utils';
 import {
   ArrowLeftRight, Plus, Search, Eye, ArrowRight, CheckCircle2,
@@ -133,6 +134,8 @@ export function ChangeControlView() {
   const [formDescription, setFormDescription] = useState('');
   const [formJustification, setFormJustification] = useState('');
   const [formRegulatoryTrigger, setFormRegulatoryTrigger] = useState('');
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [newTemplateVersion, setNewTemplateVersion] = useState('');
 
   // Step 2
   const [formDetailedChangeDescription, setFormDetailedChangeDescription] = useState('');
@@ -234,7 +237,8 @@ export function ChangeControlView() {
     setFormLinkedDocId('');
     setFormLinkedCapaId('');
     setFormAdditionalReferences('');
-    setFormTemplateId('');
+    setNewTemplateId('');
+    setNewTemplateVersion('');
     setPrereqError(null);
   };
 
@@ -305,6 +309,8 @@ export function ChangeControlView() {
       approver: formApprover || undefined,
       dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
       createdById: currentUser?.id,
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -417,30 +423,15 @@ export function ChangeControlView() {
               <Label htmlFor="cc-title">Title *</Label>
               <Input id="cc-title" value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="Change Control title" />
             </div>
-
-            {/* Template Selection (Layer 2 — Template Reference) */}
-            <div className="grid gap-2">
-              <Label className="flex items-center gap-1.5">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                Template
-              </Label>
-              <Select value={formTemplateId} onValueChange={setFormTemplateId}>
-                <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No template</SelectItem>
-                  {approvedTemplates.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {approvedTemplates.length === 0 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                  <AlertTriangle className="h-3 w-3" />
-                  No approved templates available. Create one in the Forms module first.
-                </p>
-              )}
-            </div>
-
+            <TemplateSelector
+              moduleType="change_control"
+              value={newTemplateId}
+              onChange={(id, version) => {
+                setNewTemplateId(id);
+                setNewTemplateVersion(version);
+              }}
+              required
+            />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="grid gap-2">
                 <Label>Type *</Label>

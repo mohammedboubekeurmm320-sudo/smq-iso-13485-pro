@@ -205,8 +205,8 @@ CREATE TABLE documents (
   description           text,
   classification        document_classification,
   retention_period      text,
-  scope                 text,
-  references            text,
+  doc_scope             text,
+  doc_references        text,
   type_specific_data    jsonb,
   parent_document_id    uuid REFERENCES documents(id),
   document_level        smallint CHECK (document_level BETWEEN 1 AND 4),
@@ -535,7 +535,7 @@ CREATE TABLE audits (
   status            audit_status NOT NULL DEFAULT 'Planned',
   template_id       uuid REFERENCES form_templates(id),
   template_version  text,
-  scope             text,
+  audit_scope       text,
   scheduled_date    timestamptz NOT NULL,
   completed_date    timestamptz,
   lead_auditor      text NOT NULL,
@@ -679,7 +679,7 @@ COMMENT ON TABLE suppliers IS 'Supplier qualification records (ISO 13485 §7.4.1
 
 CREATE TABLE audit_trails (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  action          audit_action NOT NULL,
+  audit_action     audit_action NOT NULL,
   table_name      text NOT NULL,
   record_id       uuid,
   user_id         uuid REFERENCES profiles(id),
@@ -780,7 +780,7 @@ CREATE INDEX idx_batch_records_lot ON batch_records(lot_number);
 CREATE INDEX idx_suppliers_code ON suppliers(supplier_code);
 
 -- Audit trail queries (time-range + table filters)
-CREATE INDEX idx_audit_trails_action ON audit_trails(action);
+CREATE INDEX idx_audit_trails_action ON audit_trails(audit_action);
 CREATE INDEX idx_audit_trails_table ON audit_trails(table_name);
 CREATE INDEX idx_audit_trails_created ON audit_trails(created_at);
 CREATE INDEX idx_audit_trails_user ON audit_trails(user_id);

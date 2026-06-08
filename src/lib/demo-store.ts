@@ -1,6 +1,7 @@
 // Demo Store - Zustand store for managing QMS data in memory (demo mode)
 import { create } from 'zustand';
-import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, FormTemplateStatus, FormTemplateModule, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation } from '@/types/qms';
+import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation, FormTemplateStatus, UserRole, ElectronicSignature } from '@/types/qms';
+import { FORM_TEMPLATE_TRANSITIONS, FORM_TEMPLATE_TRANSITION_ROLES } from '@/types/qms';
 import { mockProfiles, mockOrganizations, mockOrgMembers, mockDocuments, mockCapas, mockNCRs, mockBatchRecords, mockSuppliers, mockFormTemplates, mockFormInstances, mockAudits, mockTraining, mockRisks, mockAuditTrails, mockPrerequisites, mockChangeControls, mockDeviations } from './mock-data';
 
 interface QMSStore {
@@ -47,12 +48,14 @@ interface QMSStore {
   updateRisk: (id: string, updates: Partial<Risk>) => void;
   addFormTemplate: (template: FormTemplate) => void;
   updateFormTemplate: (id: string, updates: Partial<FormTemplate>) => void;
-  /** Transition a FormTemplate through its Layer 1 lifecycle */
-  transitionFormTemplate: (id: string, targetStatus: FormTemplateStatus, options?: { reason?: string; signatureHash?: string; userId?: string }) => { success: boolean; error?: string };
-  /** Get approved templates for a given module type (Layer 1 guard) */
-  getApprovedTemplatesForModule: (moduleType: FormTemplateModule) => FormTemplate[];
+  /** Transition template status with role-based guard (Layer 1) */
+  transitionFormTemplateStatus: (templateId: string, targetStatus: FormTemplateStatus, userId: string, userRole: UserRole, signatureHash?: string, comment?: string) => { success: boolean; error?: string };
+  /** Get only Approved templates for a given module type */
+  getApprovedTemplatesForModule: (moduleType: string) => FormTemplate[];
   addFormInstance: (instance: FormInstance) => void;
   updateFormInstance: (id: string, updates: Partial<FormInstance>) => void;
+  /** Transition instance status with workflow enforcement from parent template (Layer 2) */
+  transitionFormInstanceStatus: (instanceId: string, targetStatus: FormInstance['status'], userId: string, userRole: UserRole, signatureHash?: string, comment?: string) => { success: boolean; error?: string };
   addChangeControl: (cc: ChangeControl) => void;
   updateChangeControl: (id: string, updates: Partial<ChangeControl>) => void;
   addDeviation: (dev: Deviation) => void;
@@ -220,76 +223,255 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
 
   updateFormTemplate: (id, updates) => set(state => {
     const old = state.formTemplates.find(t => t.id === id);
-    state.logAudit('UPDATE', 'FormTemplate', id, old ? { status: old.status } : undefined, updates);
+    state.logAudit('UPDATE', 'FormTemplate', id, old ? { status: old.status, version: old.version } : undefined, updates);
     return { formTemplates: state.formTemplates.map(t => t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t) };
   }),
 
-  transitionFormTemplate: (id, targetStatus, options) => {
+  /** Layer 1: Transition FormTemplate status with full role-based guard and e-signature enforcement */
+  transitionFormTemplateStatus: (templateId, targetStatus, userId, userRole, signatureHash, comment) => {
     const state = get();
-    const template = state.formTemplates.find(t => t.id === id);
+    const template = state.formTemplates.find(t => t.id === templateId);
     if (!template) return { success: false, error: 'Template not found' };
 
-    const currentStatus = template.status || (template.isActive ? 'Approved' : 'Draft');
-    const validTransitions: Record<string, FormTemplateStatus[]> = {
-      'Draft': ['Under_Review'],
-      'Under_Review': ['Approved', 'Rejected', 'Draft'],
-      'Approved': ['Obsolete'],
-      'Rejected': ['Draft', 'Under_Review'],
-      'Obsolete': [],
-    };
-
-    const allowed = validTransitions[currentStatus] || [];
-    if (!allowed.includes(targetStatus)) {
-      return { success: false, error: `Transition from ${currentStatus} to ${targetStatus} is not allowed` };
+    // Validate transition is allowed
+    const allowedTransitions = FORM_TEMPLATE_TRANSITIONS[template.status];
+    if (!allowedTransitions.includes(targetStatus)) {
+      return { success: false, error: `Transition from ${template.status} to ${targetStatus} is not allowed` };
     }
 
+    // Validate role is authorized for this transition
+    const transitionKey = `${template.status}→${targetStatus}`;
+    const allowedRoles = FORM_TEMPLATE_TRANSITION_ROLES[transitionKey];
+    if (!allowedRoles || !allowedRoles.includes(userRole)) {
+      return { success: false, error: `Role '${userRole}' is not authorized for transition ${transitionKey}` };
+    }
+
+    // For approval (Under_Review → Approved), enforce e-signature
+    const requiresESig = targetStatus === 'Approved';
+    if (requiresESig && !signatureHash) {
+      return { success: false, error: 'Electronic signature is required for template approval' };
+    }
+
+    // Build signature record if provided
+    const newSignature: ElectronicSignature | undefined = signatureHash ? {
+      id: `sig-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      documentId: templateId,
+      signedById: userId,
+      signerName: state.profiles.find(p => p.id === userId)?.fullName || userId,
+      signerRole: userRole,
+      signatureType: targetStatus === 'Approved' ? 'approval' : targetStatus === 'Obsolete' ? 'rejection' : 'review',
+      signatureHash,
+      revoked: false,
+      createdAt: new Date().toISOString(),
+    } : undefined;
+
+    // Compute updated fields
     const now = new Date().toISOString();
     const updates: Partial<FormTemplate> = {
       status: targetStatus,
-      isActive: targetStatus === 'Approved',
+      isActive: targetStatus === 'Approved', // isActive derived from status
       updatedAt: now,
+      reviewComment: comment,
     };
-
-    if (targetStatus === 'Under_Review') {
-      updates.submittedForReviewById = options?.userId;
-      updates.submittedForReviewAt = now;
-    } else if (targetStatus === 'Approved') {
-      updates.approvedById = options?.userId;
-      updates.approvedAt = now;
-      updates.approvalSignatureHash = options?.signatureHash;
-      updates.rejectionReason = undefined;
-    } else if (targetStatus === 'Rejected') {
-      updates.rejectionReason = options?.reason;
-      updates.reviewedById = options?.userId;
-      updates.reviewedAt = now;
-    } else if (targetStatus === 'Obsolete') {
-      updates.obsolescenceReason = options?.reason;
-    } else if (targetStatus === 'Draft' && currentStatus === 'Rejected') {
-      updates.rejectionReason = undefined;
+    if (targetStatus === 'Approved') {
+      updates.effectiveDate = now;
+    }
+    if (newSignature) {
+      updates.signatures = [...(template.signatures || []), newSignature];
     }
 
-    set(state => {
-      state.logAudit('UPDATE', 'FormTemplate', id, { status: currentStatus }, { status: targetStatus, ...updates });
-      return { formTemplates: state.formTemplates.map(t => t.id === id ? { ...t, ...updates } : t) };
-    });
+    // Apply update
+    set(st => ({
+      formTemplates: st.formTemplates.map(t => t.id === templateId ? { ...t, ...updates } : t),
+    }));
+
+    // Log audit trail
+    const updatedTemplate = get().formTemplates.find(t => t.id === templateId);
+    get().logAudit(
+      targetStatus === 'Approved' ? 'APPROVE' : targetStatus === 'Obsolete' ? 'REJECT' : 'UPDATE',
+      'FormTemplate',
+      templateId,
+      { status: template.status },
+      { status: targetStatus, approvedBy: userId, comment }
+    );
 
     return { success: true };
   },
 
+  /** Get only Approved templates for a given module type (used by 10 record modules) */
   getApprovedTemplatesForModule: (moduleType) => {
     return get().formTemplates.filter(t => t.status === 'Approved' && t.moduleType === moduleType);
   },
 
   addFormInstance: (instance) => set(state => {
-    state.logAudit('CREATE', 'FormInstance', instance.id, undefined, { referenceNumber: instance.referenceNumber, status: instance.status });
+    state.logAudit('CREATE', 'FormInstance', instance.id, undefined, { referenceNumber: instance.referenceNumber, status: instance.status, templateId: instance.templateId });
     return { formInstances: [...state.formInstances, instance] };
   }),
 
   updateFormInstance: (id, updates) => set(state => {
     const old = state.formInstances.find(f => f.id === id);
     state.logAudit('UPDATE', 'FormInstance', id, old ? { status: old.status } : undefined, updates);
-    return { formInstances: state.formInstances.map(f => f.id === id ? { ...f, ...updates } : f) };
+    return { formInstances: state.formInstances.map(f => f.id === id ? { ...f, ...updates, updatedAt: new Date().toISOString() } : f) };
   }),
+
+  /** Layer 2: Transition FormInstance status with workflow enforcement from parent template */
+  transitionFormInstanceStatus: (instanceId, targetStatus, userId, userRole, signatureHash, comment) => {
+    const state = get();
+    const instance = state.formInstances.find(f => f.id === instanceId);
+    if (!instance) return { success: false, error: 'Instance not found' };
+
+    // Find parent template
+    const template = state.formTemplates.find(t => t.id === instance.templateId);
+    if (!template) return { success: false, error: 'Parent template not found' };
+
+    // Validate template is still Approved (cannot approve instances from Draft/Obsolete templates)
+    if (template.status !== 'Approved') {
+      return { success: false, error: `Cannot transition instance: parent template status is '${template.status}', must be 'Approved'` };
+    }
+
+    // Enforce workflow configuration from template
+    const wf = template.workflow;
+    if (wf) {
+      // Check eSignature requirement
+      if (wf.eSignatureRequired && (targetStatus === 'Approved' || targetStatus === 'Rejected') && !signatureHash) {
+        return { success: false, error: 'Electronic signature is required per template workflow configuration' };
+      }
+
+      // Enforce lockAfterSubmission: once Submitted, cannot go back to Draft
+      if (wf.lockAfterSubmission && instance.status === 'Submitted' && targetStatus === 'Draft') {
+        return { success: false, error: 'Template configuration prohibits returning to Draft after submission' };
+      }
+
+      // For sequential workflow: check currentApprovalStep
+      if (wf.workflowType === 'sequential' && targetStatus === 'Approved') {
+        const approvers = wf.approvers || [];
+        const currentStep = instance.currentApprovalStep || 0;
+        if (approvers.length > 0 && currentStep < approvers.length - 1) {
+          // Not all sequential approvers have approved yet
+          const nextStep = currentStep + 1;
+          const nextApprover = approvers[nextStep];
+          if (nextApprover && nextApprover.userId !== userId) {
+            // Update step and continue
+            set(st => ({
+              formInstances: st.formInstances.map(f => f.id === instanceId ? {
+                ...f,
+                currentApprovalStep: nextStep,
+                updatedAt: new Date().toISOString(),
+                approvalHistory: [
+                  ...(f.approvalHistory || []),
+                  {
+                    id: `ae-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                    approverId: userId,
+                    approverName: state.profiles.find(p => p.id === userId)?.fullName || userId,
+                    action: 'approved' as const,
+                    comment,
+                    signatureHash,
+                    timestamp: new Date().toISOString(),
+                  },
+                ],
+              } : f),
+            }));
+            get().logAudit('APPROVE', 'FormInstance', instanceId, { currentApprovalStep: instance.currentApprovalStep }, { currentApprovalStep: nextStep, approver: userId });
+            return { success: true, error: `Step ${currentStep + 1}/${approvers.length} approved. Waiting for step ${nextStep + 1}/${approvers.length}.` };
+          }
+        }
+      }
+
+      // For parallel workflow: all approvers must approve
+      if (wf.workflowType === 'parallel' && targetStatus === 'Approved') {
+        const approvers = wf.approvers || [];
+        if (approvers.length > 1) {
+          // Record this approver's approval
+          const approvalEntry = {
+            id: `ae-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+            approverId: userId,
+            approverName: state.profiles.find(p => p.id === userId)?.fullName || userId,
+            action: 'approved' as const,
+            comment,
+            signatureHash,
+            timestamp: new Date().toISOString(),
+          };
+
+          const existingHistory = instance.approvalHistory || [];
+          const approvedIds = [...existingHistory.filter(e => e.action === 'approved'), approvalEntry].map(e => e.approverId);
+          const allApproved = approvers.every(a => approvedIds.includes(a.userId));
+
+          if (!allApproved) {
+            // Not all approvers have approved yet
+            set(st => ({
+              formInstances: st.formInstances.map(f => f.id === instanceId ? {
+                ...f,
+                updatedAt: new Date().toISOString(),
+                approvalHistory: [...(f.approvalHistory || []), approvalEntry],
+              } : f),
+            }));
+            const approvedCount = approvedIds.length;
+            get().logAudit('APPROVE', 'FormInstance', instanceId, undefined, { approver: userId, progress: `${approvedCount}/${approvers.length}` });
+            return { success: true, error: `Partial approval: ${approvedCount}/${approvers.length} approvers have approved.` };
+          }
+        }
+      }
+
+      // Check approval permission for instance
+      const hasApprovePerm = ['admin', 'quality_manager'].includes(userRole);
+      if ((targetStatus === 'Approved' || targetStatus === 'Rejected') && !hasApprovePerm) {
+        return { success: false, error: `Role '${userRole}' is not authorized to approve/reject instances` };
+      }
+    }
+
+    // Build signature if provided
+    const newSignature: ElectronicSignature | undefined = signatureHash ? {
+      id: `sig-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      documentId: instanceId,
+      signedById: userId,
+      signerName: state.profiles.find(p => p.id === userId)?.fullName || userId,
+      signerRole: userRole,
+      signatureType: targetStatus === 'Approved' ? 'approval' : targetStatus === 'Rejected' ? 'rejection' : 'review',
+      signatureHash,
+      revoked: false,
+      createdAt: new Date().toISOString(),
+    } : undefined;
+
+    // Apply status transition
+    const now = new Date().toISOString();
+    const updates: Partial<FormInstance> = {
+      status: targetStatus,
+      isLocked: targetStatus === 'Approved' || (wf?.lockAfterSubmission && targetStatus === 'Submitted'),
+      signatureHash: signatureHash || instance.signatureHash,
+      updatedAt: now,
+    };
+    if (newSignature) {
+      updates.signatures = [...(instance.signatures || []), newSignature];
+    }
+    if (targetStatus === 'Approved' || targetStatus === 'Rejected') {
+      updates.approvalHistory = [
+        ...(instance.approvalHistory || []),
+        {
+          id: `ae-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          approverId: userId,
+          approverName: state.profiles.find(p => p.id === userId)?.fullName || userId,
+          action: targetStatus === 'Approved' ? 'approved' as const : 'rejected' as const,
+          comment,
+          signatureHash,
+          timestamp: now,
+        },
+      ];
+    }
+
+    set(st => ({
+      formInstances: st.formInstances.map(f => f.id === instanceId ? { ...f, ...updates } : f),
+    }));
+
+    get().logAudit(
+      targetStatus === 'Approved' ? 'APPROVE' : targetStatus === 'Rejected' ? 'REJECT' : 'UPDATE',
+      'FormInstance',
+      instanceId,
+      { status: instance.status },
+      { status: targetStatus, by: userId }
+    );
+
+    return { success: true };
+  },
 
   addChangeControl: (cc) => set(state => {
     state.logAudit('CREATE', 'ChangeControl', cc.id, undefined, { ccNumber: cc.ccNumber, title: cc.title, status: cc.status });

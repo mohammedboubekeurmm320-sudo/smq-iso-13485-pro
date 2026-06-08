@@ -7,6 +7,7 @@ import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import { cn, formatDate } from '@/lib/utils';
 import type { Risk, RiskCategory, RiskLevel, RiskStatus, SignatureType, FormTemplateModule } from '@/types/qms';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { TemplateSelector } from '@/components/shared/TemplateSelector';
 import {
   BarChart3, Plus, Search, Eye, AlertTriangle, Shield, ShieldCheck,
   ArrowRight, AlertCircle, CheckCircle2, XCircle, Info,
@@ -337,6 +338,8 @@ export function RiskView() {
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1);
   const [wizardForm, setWizardForm] = useState<WizardFormState>({ ...initialWizardForm });
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [newTemplateVersion, setNewTemplateVersion] = useState('');
 
   // Template selection
   const [formTemplateId, setFormTemplateId] = useState('');
@@ -392,7 +395,8 @@ export function RiskView() {
   const resetWizard = () => {
     setWizardStep(1);
     setWizardForm({ ...initialWizardForm });
-    setFormTemplateId('');
+    setNewTemplateId('');
+    setNewTemplateVersion('');
   };
 
   const canAdvanceStep = (step: number): boolean => {
@@ -427,19 +431,8 @@ export function RiskView() {
       mitigation: wizardForm.mitigationMeasures.trim() || undefined,
       residualRisk: `Residual RPN: ${residualRpn} (${residualRiskLevel}) — Control: ${wizardForm.controlType}`,
       status: 'Open',
-      // --- P0-2: Persist ALL wizard data (previously lost) ---
-      hazardDescription: wizardForm.hazardDescription.trim() || undefined,
-      riskAcceptability: wizardForm.riskAcceptability,
-      regulatoryReference: wizardForm.regulatoryReference.trim() || undefined,
-      controlType: wizardForm.controlType,
-      verificationMethod: wizardForm.verificationMethod.trim() || undefined,
-      residualProbability: wizardForm.residualProbability,
-      residualImpact: wizardForm.residualImpact,
-      residualDetectability: wizardForm.residualDetectability,
-      riskOwner: wizardForm.riskOwner.trim() || undefined,
-      priorityNotes: wizardForm.priorityNotes.trim() || undefined,
-      linkedDocumentId: wizardForm.linkedDocument && wizardForm.linkedDocument !== 'none' ? wizardForm.linkedDocument : undefined,
-      linkedCapaId: wizardForm.linkedCapa && wizardForm.linkedCapa !== 'none' ? wizardForm.linkedCapa : undefined,
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -813,6 +806,15 @@ export function RiskView() {
                         placeholder="e.g., Sterilization process failure risk"
                       />
                     </div>
+                    <TemplateSelector
+                      moduleType="risk"
+                      value={newTemplateId}
+                      onChange={(id, version) => {
+                        setNewTemplateId(id);
+                        setNewTemplateVersion(version);
+                      }}
+                      required
+                    />
 
                     <div className="grid gap-2">
                       <Label>Category</Label>

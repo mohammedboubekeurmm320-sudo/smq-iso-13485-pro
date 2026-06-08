@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { TemplateSelector } from '@/components/shared/TemplateSelector';
 import { cn, formatDate } from '@/lib/utils';
 import type { Training, TrainingType, TrainingStatus, SignatureType } from '@/types/qms';
 import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
@@ -155,6 +156,8 @@ export function TrainingView() {
   const [formCertificationValidity, setFormCertificationValidity] = useState<TrainingExtendedMeta['certificationValidity']>('');
   const [formApplicableStandards, setFormApplicableStandards] = useState('');
   const [formCategory, setFormCategory] = useState<TrainingExtendedMeta['category']>('');
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [newTemplateVersion, setNewTemplateVersion] = useState('');
 
   // Extended metadata store (keyed by training ID)
   const [extendedMeta, setExtendedMeta] = useState<Record<string, TrainingExtendedMeta>>({});
@@ -220,8 +223,8 @@ export function TrainingView() {
     setFormCertificationValidity('');
     setFormApplicableStandards('');
     setFormCategory('');
-    setFormTemplateId('');
-    setFormTemplateVersion('');
+    setNewTemplateId('');
+    setNewTemplateVersion('');
   };
 
   // ── Step validation ──
@@ -259,6 +262,8 @@ export function TrainingView() {
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
     };
     // Store extended metadata locally
     const meta: TrainingExtendedMeta = {
@@ -416,6 +421,15 @@ export function TrainingView() {
                 <Label htmlFor="train-desc">Description</Label>
                 <Textarea id="train-desc" value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Describe the training purpose and objectives..." rows={4} />
               </div>
+              <TemplateSelector
+                moduleType="training"
+                value={newTemplateId}
+                onChange={(id, version) => {
+                  setNewTemplateId(id);
+                  setNewTemplateVersion(version);
+                }}
+                required
+              />
             </div>
           </div>
         );
