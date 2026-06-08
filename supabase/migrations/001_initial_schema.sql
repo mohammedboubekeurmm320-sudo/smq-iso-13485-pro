@@ -864,105 +864,105 @@ ALTER TABLE documents
 -- ============================================================================
 
 -- Organization scoping
-CREATE INDEX idx_documents_org ON documents(organization_id);
-CREATE INDEX idx_capas_org ON capas(organization_id);
-CREATE INDEX idx_non_conformances_org ON non_conformances(organization_id);
-CREATE INDEX idx_deviations_org ON deviations(organization_id);
-CREATE INDEX idx_change_controls_org ON change_controls(organization_id);
-CREATE INDEX idx_audits_org ON audits(organization_id);
-CREATE INDEX idx_training_org ON training(organization_id);
-CREATE INDEX idx_risks_org ON risks(organization_id);
-CREATE INDEX idx_batch_records_org ON batch_records(organization_id);
-CREATE INDEX idx_suppliers_org ON suppliers(organization_id);
-CREATE INDEX idx_form_templates_org ON form_templates(organization_id);
-CREATE INDEX idx_form_instances_org ON form_instances(organization_id);
-CREATE INDEX idx_audit_trails_org ON audit_trails(organization_id);
-CREATE INDEX idx_electronic_signatures_org ON electronic_signatures(organization_id);
-CREATE INDEX idx_document_prerequisites_org ON document_prerequisites(organization_id);
-CREATE INDEX idx_departments_org ON departments(organization_id);
+CREATE INDEX IF NOT EXISTS idx_documents_org ON documents(organization_id);
+CREATE INDEX IF NOT EXISTS idx_capas_org ON capas(organization_id);
+CREATE INDEX IF NOT EXISTS idx_non_conformances_org ON non_conformances(organization_id);
+CREATE INDEX IF NOT EXISTS idx_deviations_org ON deviations(organization_id);
+CREATE INDEX IF NOT EXISTS idx_change_controls_org ON change_controls(organization_id);
+CREATE INDEX IF NOT EXISTS idx_audits_org ON audits(organization_id);
+CREATE INDEX IF NOT EXISTS idx_training_org ON training(organization_id);
+CREATE INDEX IF NOT EXISTS idx_risks_org ON risks(organization_id);
+CREATE INDEX IF NOT EXISTS idx_batch_records_org ON batch_records(organization_id);
+CREATE INDEX IF NOT EXISTS idx_suppliers_org ON suppliers(organization_id);
+CREATE INDEX IF NOT EXISTS idx_form_templates_org ON form_templates(organization_id);
+CREATE INDEX IF NOT EXISTS idx_form_instances_org ON form_instances(organization_id);
+CREATE INDEX IF NOT EXISTS idx_audit_trails_org ON audit_trails(organization_id);
+CREATE INDEX IF NOT EXISTS idx_electronic_signatures_org ON electronic_signatures(organization_id);
+CREATE INDEX IF NOT EXISTS idx_document_prerequisites_org ON document_prerequisites(organization_id);
+CREATE INDEX IF NOT EXISTS idx_departments_org ON departments(organization_id);
 
 -- Status filters
-CREATE INDEX idx_documents_status ON documents(status);
-CREATE INDEX idx_capas_status ON capas(status);
-CREATE INDEX idx_non_conformances_status ON non_conformances(status);
-CREATE INDEX idx_deviations_status ON deviations(status);
-CREATE INDEX idx_change_controls_status ON change_controls(status);
-CREATE INDEX idx_audits_status ON audits(status);
-CREATE INDEX idx_training_status ON training(status);
-CREATE INDEX idx_risks_status ON risks(status);
-CREATE INDEX idx_batch_records_status ON batch_records(status);
-CREATE INDEX idx_suppliers_status ON suppliers(status);
-CREATE INDEX idx_form_templates_status ON form_templates(status);
-CREATE INDEX idx_form_instances_status ON form_instances(status);
+CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
+CREATE INDEX IF NOT EXISTS idx_capas_status ON capas(status);
+CREATE INDEX IF NOT EXISTS idx_non_conformances_status ON non_conformances(status);
+CREATE INDEX IF NOT EXISTS idx_deviations_status ON deviations(status);
+CREATE INDEX IF NOT EXISTS idx_change_controls_status ON change_controls(status);
+CREATE INDEX IF NOT EXISTS idx_audits_status ON audits(status);
+CREATE INDEX IF NOT EXISTS idx_training_status ON training(status);
+CREATE INDEX IF NOT EXISTS idx_risks_status ON risks(status);
+CREATE INDEX IF NOT EXISTS idx_batch_records_status ON batch_records(status);
+CREATE INDEX IF NOT EXISTS idx_suppliers_status ON suppliers(status);
+CREATE INDEX IF NOT EXISTS idx_form_templates_status ON form_templates(status);
+CREATE INDEX IF NOT EXISTS idx_form_instances_status ON form_instances(status);
 
 -- Template connection (Layer 1 → Layer 2 bridge)
-CREATE INDEX idx_form_instances_template ON form_instances(template_id);
-CREATE INDEX idx_capas_template ON capas(template_id);
-CREATE INDEX idx_non_conformances_template ON non_conformances(template_id);
-CREATE INDEX idx_deviations_template ON deviations(template_id);
-CREATE INDEX idx_change_controls_template ON change_controls(template_id);
-CREATE INDEX idx_audits_template ON audits(template_id);
-CREATE INDEX idx_training_template ON training(template_id);
-CREATE INDEX idx_risks_rpn ON risks(risk_level);
-CREATE INDEX idx_batch_records_template ON batch_records(template_id);
-CREATE INDEX idx_suppliers_template ON suppliers(template_id);
+CREATE INDEX IF NOT EXISTS idx_form_instances_template ON form_instances(template_id);
+CREATE INDEX IF NOT EXISTS idx_capas_template ON capas(template_id);
+CREATE INDEX IF NOT EXISTS idx_non_conformances_template ON non_conformances(template_id);
+CREATE INDEX IF NOT EXISTS idx_deviations_template ON deviations(template_id);
+CREATE INDEX IF NOT EXISTS idx_change_controls_template ON change_controls(template_id);
+CREATE INDEX IF NOT EXISTS idx_audits_template ON audits(template_id);
+CREATE INDEX IF NOT EXISTS idx_training_template ON training(template_id);
+CREATE INDEX IF NOT EXISTS idx_risks_rpn ON risks(risk_level);
+CREATE INDEX IF NOT EXISTS idx_batch_records_template ON batch_records(template_id);
+CREATE INDEX IF NOT EXISTS idx_suppliers_template ON suppliers(template_id);
 
 -- Template module type
-CREATE INDEX idx_form_templates_module_type ON form_templates(module_type);
+CREATE INDEX IF NOT EXISTS idx_form_templates_module_type ON form_templates(module_type);
 
 -- Document hierarchy
-CREATE INDEX idx_documents_parent ON documents(parent_document_id);
-CREATE INDEX idx_documents_level ON documents(document_level);
-CREATE INDEX idx_documents_code ON documents(code);
-CREATE INDEX idx_documents_code_org ON documents(code, organization_id) WHERE code IS NOT NULL;
-CREATE INDEX idx_documents_department_code ON documents(department_code);
+CREATE INDEX IF NOT EXISTS idx_documents_parent ON documents(parent_document_id);
+CREATE INDEX IF NOT EXISTS idx_documents_level ON documents(document_level);
+CREATE INDEX IF NOT EXISTS idx_documents_code ON documents(code);
+CREATE INDEX IF NOT EXISTS idx_documents_code_org ON documents(code, organization_id) WHERE code IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_documents_department_code ON documents(department_code);
 
 -- Number-based search
-CREATE INDEX idx_capas_number ON capas(capa_number);
-CREATE INDEX idx_non_conformances_number ON non_conformances(ncr_number);
-CREATE INDEX idx_deviations_number ON deviations(dev_number);
-CREATE INDEX idx_change_controls_number ON change_controls(cc_number);
-CREATE INDEX idx_audits_number ON audits(audit_number);
-CREATE INDEX idx_risks_number ON risks(risk_number);
-CREATE INDEX idx_batch_records_lot ON batch_records(lot_number);
-CREATE INDEX idx_suppliers_code ON suppliers(supplier_code);
+CREATE INDEX IF NOT EXISTS idx_capas_number ON capas(capa_number);
+CREATE INDEX IF NOT EXISTS idx_non_conformances_number ON non_conformances(ncr_number);
+CREATE INDEX IF NOT EXISTS idx_deviations_number ON deviations(dev_number);
+CREATE INDEX IF NOT EXISTS idx_change_controls_number ON change_controls(cc_number);
+CREATE INDEX IF NOT EXISTS idx_audits_number ON audits(audit_number);
+CREATE INDEX IF NOT EXISTS idx_risks_number ON risks(risk_number);
+CREATE INDEX IF NOT EXISTS idx_batch_records_lot ON batch_records(lot_number);
+CREATE INDEX IF NOT EXISTS idx_suppliers_code ON suppliers(supplier_code);
 
 -- Audit trail queries
-CREATE INDEX idx_audit_trails_audit_action ON audit_trails(audit_action);
-CREATE INDEX idx_audit_trails_table ON audit_trails(table_name);
-CREATE INDEX idx_audit_trails_created ON audit_trails(created_at);
-CREATE INDEX idx_audit_trails_user ON audit_trails(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_trails_audit_action ON audit_trails(audit_action);
+CREATE INDEX IF NOT EXISTS idx_audit_trails_table ON audit_trails(table_name);
+CREATE INDEX IF NOT EXISTS idx_audit_trails_created ON audit_trails(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_trails_user ON audit_trails(user_id);
 
 -- Due date tracking
-CREATE INDEX idx_capas_due_date ON capas(due_date);
-CREATE INDEX idx_training_due_date ON training(due_date);
-CREATE INDEX idx_change_controls_due_date ON change_controls(due_date);
+CREATE INDEX IF NOT EXISTS idx_capas_due_date ON capas(due_date);
+CREATE INDEX IF NOT EXISTS idx_training_due_date ON training(due_date);
+CREATE INDEX IF NOT EXISTS idx_change_controls_due_date ON change_controls(due_date);
 
 -- Electronic signature lookups
-CREATE INDEX idx_electronic_signatures_document ON electronic_signatures(document_id);
-CREATE INDEX idx_electronic_signatures_user ON electronic_signatures(signed_by_id);
+CREATE INDEX IF NOT EXISTS idx_electronic_signatures_document ON electronic_signatures(document_id);
+CREATE INDEX IF NOT EXISTS idx_electronic_signatures_user ON electronic_signatures(signed_by_id);
 
 -- Profiles
-CREATE INDEX idx_profiles_org ON profiles(organization_id);
-CREATE INDEX idx_profiles_role ON profiles(role);
+CREATE INDEX IF NOT EXISTS idx_profiles_org ON profiles(organization_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
 
 -- Form instance linked records
-CREATE INDEX idx_form_instances_linked_record ON form_instances(linked_record_id);
-CREATE INDEX idx_form_instances_linked_type ON form_instances(linked_record_type);
+CREATE INDEX IF NOT EXISTS idx_form_instances_linked_record ON form_instances(linked_record_id);
+CREATE INDEX IF NOT EXISTS idx_form_instances_linked_type ON form_instances(linked_record_type);
 
 -- Departments
-CREATE INDEX idx_departments_code ON departments(code);
-CREATE INDEX idx_departments_category ON departments(category);
+CREATE INDEX IF NOT EXISTS idx_departments_code ON departments(code);
+CREATE INDEX IF NOT EXISTS idx_departments_category ON departments(category);
 
 -- Document triggers
-CREATE INDEX idx_triggers_source ON document_triggers(source_document_id);
-CREATE INDEX idx_triggers_target ON document_triggers(target_document_id);
-CREATE INDEX idx_triggers_type ON document_triggers(trigger_type);
-CREATE INDEX idx_triggers_organization ON document_triggers(organization_id);
+CREATE INDEX IF NOT EXISTS idx_triggers_source ON document_triggers(source_document_id);
+CREATE INDEX IF NOT EXISTS idx_triggers_target ON document_triggers(target_document_id);
+CREATE INDEX IF NOT EXISTS idx_triggers_type ON document_triggers(trigger_type);
+CREATE INDEX IF NOT EXISTS idx_triggers_organization ON document_triggers(organization_id);
 
 -- Document relationships
-CREATE INDEX idx_relationships_parent ON document_relationships(parent_document_id);
-CREATE INDEX idx_relationships_child ON document_relationships(child_document_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_parent ON document_relationships(parent_document_id);
+CREATE INDEX IF NOT EXISTS idx_relationships_child ON document_relationships(child_document_id);
 
 
 -- ============================================================================
@@ -1004,14 +1004,17 @@ RETURNS boolean AS $$
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 -- Organizations
+DROP POLICY IF EXISTS org_read ON organizations;
 CREATE POLICY org_read ON organizations
   FOR SELECT USING (
     id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid())
   );
 
+DROP POLICY IF EXISTS org_member_insert ON organization_members;
 CREATE POLICY org_member_insert ON organization_members
   FOR INSERT WITH CHECK (auth.uid() = user_id OR auth.uid() = invited_by);
 
+DROP POLICY IF EXISTS org_member_read ON organization_members;
 CREATE POLICY org_member_read ON organization_members
   FOR SELECT USING (
     user_id = auth.uid() OR
@@ -1019,34 +1022,55 @@ CREATE POLICY org_member_read ON organization_members
   );
 
 -- Profiles
+DROP POLICY IF EXISTS profiles_read ON profiles;
 CREATE POLICY profiles_read ON profiles
   FOR SELECT USING (
     id = auth.uid() OR
     organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid())
   );
 
+DROP POLICY IF EXISTS profiles_update_own ON profiles;
 CREATE POLICY profiles_update_own ON profiles
   FOR UPDATE USING (id = auth.uid());
 
 -- Apply org-scoped read/write policies to all QMS tables
+DROP POLICY IF EXISTS documents_rw ON documents;
 CREATE POLICY documents_rw ON documents FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS capas_rw ON capas;
 CREATE POLICY capas_rw ON capas FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS ncr_rw ON non_conformances;
 CREATE POLICY ncr_rw ON non_conformances FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS deviations_rw ON deviations;
 CREATE POLICY deviations_rw ON deviations FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS change_controls_rw ON change_controls;
 CREATE POLICY change_controls_rw ON change_controls FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS audits_rw ON audits;
 CREATE POLICY audits_rw ON audits FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS training_rw ON training;
 CREATE POLICY training_rw ON training FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS risks_rw ON risks;
 CREATE POLICY risks_rw ON risks FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS batch_records_rw ON batch_records;
 CREATE POLICY batch_records_rw ON batch_records FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS suppliers_rw ON suppliers;
 CREATE POLICY suppliers_rw ON suppliers FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS form_templates_rw ON form_templates;
 CREATE POLICY form_templates_rw ON form_templates FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS form_instances_rw ON form_instances;
 CREATE POLICY form_instances_rw ON form_instances FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS audit_trails_rw ON audit_trails;
 CREATE POLICY audit_trails_rw ON audit_trails FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS electronic_signatures_rw ON electronic_signatures;
 CREATE POLICY electronic_signatures_rw ON electronic_signatures FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS document_prerequisites_rw ON document_prerequisites;
 CREATE POLICY document_prerequisites_rw ON document_prerequisites FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS departments_rw ON departments;
 CREATE POLICY departments_rw ON departments FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS document_triggers_rw ON document_triggers;
 CREATE POLICY document_triggers_rw ON document_triggers FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS document_relationships_rw ON document_relationships;
 CREATE POLICY document_relationships_rw ON document_relationships FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
+DROP POLICY IF EXISTS document_code_sequences_rw ON document_code_sequences;
 CREATE POLICY document_code_sequences_rw ON document_code_sequences FOR ALL USING (is_org_member(organization_id)) WITH CHECK (is_org_member(organization_id));
 
 
@@ -1118,18 +1142,31 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_organizations_updated ON organizations;
 CREATE TRIGGER trg_organizations_updated BEFORE UPDATE ON organizations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_profiles_updated ON profiles;
 CREATE TRIGGER trg_profiles_updated BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_documents_updated ON documents;
 CREATE TRIGGER trg_documents_updated BEFORE UPDATE ON documents FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_form_templates_updated ON form_templates;
 CREATE TRIGGER trg_form_templates_updated BEFORE UPDATE ON form_templates FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_form_instances_updated ON form_instances;
 CREATE TRIGGER trg_form_instances_updated BEFORE UPDATE ON form_instances FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_capas_updated ON capas;
 CREATE TRIGGER trg_capas_updated BEFORE UPDATE ON capas FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_non_conformances_updated ON non_conformances;
 CREATE TRIGGER trg_non_conformances_updated BEFORE UPDATE ON non_conformances FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_deviations_updated ON deviations;
 CREATE TRIGGER trg_deviations_updated BEFORE UPDATE ON deviations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_change_controls_updated ON change_controls;
 CREATE TRIGGER trg_change_controls_updated BEFORE UPDATE ON change_controls FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_audits_updated ON audits;
 CREATE TRIGGER trg_audits_updated BEFORE UPDATE ON audits FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_training_updated ON training;
 CREATE TRIGGER trg_training_updated BEFORE UPDATE ON training FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_risks_updated ON risks;
 CREATE TRIGGER trg_risks_updated BEFORE UPDATE ON risks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS trg_departments_updated ON departments;
 CREATE TRIGGER trg_departments_updated BEFORE UPDATE ON departments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 
@@ -1165,18 +1202,31 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP TRIGGER IF EXISTS trg_audit_documents ON documents;
 CREATE TRIGGER trg_audit_documents AFTER INSERT OR UPDATE OR DELETE ON documents FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_capas ON capas;
 CREATE TRIGGER trg_audit_capas AFTER INSERT OR UPDATE OR DELETE ON capas FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_non_conformances ON non_conformances;
 CREATE TRIGGER trg_audit_non_conformances AFTER INSERT OR UPDATE OR DELETE ON non_conformances FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_deviations ON deviations;
 CREATE TRIGGER trg_audit_deviations AFTER INSERT OR UPDATE OR DELETE ON deviations FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_change_controls ON change_controls;
 CREATE TRIGGER trg_audit_change_controls AFTER INSERT OR UPDATE OR DELETE ON change_controls FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_audits ON audits;
 CREATE TRIGGER trg_audit_audits AFTER INSERT OR UPDATE OR DELETE ON audits FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_training ON training;
 CREATE TRIGGER trg_audit_training AFTER INSERT OR UPDATE OR DELETE ON training FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_risks ON risks;
 CREATE TRIGGER trg_audit_risks AFTER INSERT OR UPDATE OR DELETE ON risks FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_batch_records ON batch_records;
 CREATE TRIGGER trg_audit_batch_records AFTER INSERT OR UPDATE OR DELETE ON batch_records FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_suppliers ON suppliers;
 CREATE TRIGGER trg_audit_suppliers AFTER INSERT OR UPDATE OR DELETE ON suppliers FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_form_templates ON form_templates;
 CREATE TRIGGER trg_audit_form_templates AFTER INSERT OR UPDATE OR DELETE ON form_templates FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_form_instances ON form_instances;
 CREATE TRIGGER trg_audit_form_instances AFTER INSERT OR UPDATE OR DELETE ON form_instances FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
+DROP TRIGGER IF EXISTS trg_audit_document_triggers ON document_triggers;
 CREATE TRIGGER trg_audit_document_triggers AFTER INSERT OR UPDATE OR DELETE ON document_triggers FOR EACH ROW EXECUTE FUNCTION log_audit_trail();
 
 
