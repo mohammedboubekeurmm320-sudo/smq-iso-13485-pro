@@ -3,8 +3,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { cn } from '@/lib/utils';
-import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import { OrganizationProvider, useOrganization } from '@/contexts/OrganizationContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { SetupWizard } from '@/components/setup/SetupWizard';
 import { GlobalSearch } from '@/components/shared/GlobalSearch';
 import { useI18n } from '@/lib/i18n';
@@ -235,11 +235,6 @@ function AppLayoutInner({ children }: AppLayoutProps) {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
-  return (
-    <AuthProvider>
-      <OrganizationProvider>
-        <AppLayoutInner>{children}</AppLayoutInner>
-      </OrganizationProvider>
-    </AuthProvider>
-  );
+  // AuthProvider and OrganizationProvider are now in root layout.tsx
+  return <AppLayoutInner>{children}</AppLayoutInner>;
 }
