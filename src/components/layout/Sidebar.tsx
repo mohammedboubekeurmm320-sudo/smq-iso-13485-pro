@@ -105,6 +105,7 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 const SETTINGS_ITEMS: NavItem[] = [
+  { id: 'settings', labelKey: 'nav.settings', icon: Settings },
   { id: 'user-management', labelKey: 'nav.userManagement', icon: Users },
 ];
 

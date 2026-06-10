@@ -19,6 +19,7 @@ import { DocumentHierarchyView } from '@/components/modules/DocumentHierarchyVie
 import { ComplianceView } from '@/components/modules/ComplianceView';
 import { ReportsView } from '@/components/modules/ReportsView';
 import { UserManagementView } from '@/components/modules/UserManagementView';
+import { SettingsView } from '@/components/modules/SettingsView';
 import { ScheduledReportsView } from '@/components/modules/ScheduledReportsView';
 
 interface DashboardContentProps {
@@ -63,6 +64,8 @@ export function DashboardContent({ activeSection }: DashboardContentProps) {
       return <ScheduledReportsView />;
     case 'user-management':
       return <UserManagementView />;
+    case 'settings':
+      return <SettingsView />;
     default:
       return <DashboardView />;
   }
