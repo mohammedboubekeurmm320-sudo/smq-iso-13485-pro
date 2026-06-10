@@ -97,7 +97,7 @@ export function ElectronicSignatureModal({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[480px]" role="dialog" aria-modal="true" aria-labelledby="esig-title">
+      <DialogContent className="sm:max-w-[480px]" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle id="esig-title" className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5 text-primary" />

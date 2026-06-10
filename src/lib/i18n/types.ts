@@ -65,7 +65,6 @@ export interface TranslationStrings {
     forms: string;
     reports: string;
     compliance: string;
-    scheduledReports: string;
     userManagement: string;
     settings: string;
     records: string;
@@ -90,7 +89,7 @@ export interface TranslationStrings {
     reports: string;
     compliance: string;
     'user-management': string;
-    'scheduled-reports': string;
+    settings: string;
   };
   // Dashboard
   dashboard: {
@@ -225,6 +224,21 @@ export interface TranslationStrings {
       levelN2: string;
       levelN3: string;
       levelN4: string;
+      isTemplate: string;
+      templateReference: string;
+      selectTemplate: string;
+      noTemplateNeeded: string;
+      noApprovedTemplates: string;
+      noApprovedTemplatesDesc: string;
+      templateMustBeApproved: string;
+      templateMustBeApprovedDesc: string;
+      createdFromTemplate: string;
+      createdFromTemplateNote: string;
+      templateBadge: string;
+      templateApprovedBadge: string;
+      templatePendingBadge: string;
+      templatesCount: string;
+      referenceTemplate: string;
     };
     capa: {
       title: string;
@@ -375,5 +389,50 @@ export interface TranslationStrings {
   rateLimit: {
     tooManyRequests: string;
     retryAfter: string;
+  };
+  // Settings module
+  settings: {
+    title: string;
+    description: string;
+    accessDenied: string;
+    accessDeniedDesc: string;
+    tabs: {
+      general: string;
+      recordTypes: string;
+      users: string;
+    };
+    general: {
+      orgSettings: string;
+      orgSettingsDesc: string;
+      notificationSettings: string;
+    };
+    recordTypes: {
+      title: string;
+      description: string;
+      newType: string;
+      totalTypes: string;
+      systemTypes: string;
+      customTypes: string;
+      allTypes: string;
+      systemOnly: string;
+      customOnly: string;
+      searchPlaceholder: string;
+      noTypesFound: string;
+      createTitle: string;
+      createDesc: string;
+      editTitle: string;
+      editDesc: string;
+      deleteTitle: string;
+      deleteDesc: string;
+      deleteWarning: string;
+      name: string;
+      namePlaceholder: string;
+      codePrefix: string;
+      descriptionField: string;
+      descriptionPlaceholder: string;
+      workflowTemplate: string;
+      workflowPreview: string;
+      initialStatus: string;
+    };
   };
 }

@@ -19,9 +19,7 @@ export type Permission =
   | 'supplier.create' | 'supplier.read' | 'supplier.update' | 'supplier.delete'
   | 'reports.view' | 'reports.export'
   | 'compliance.view' | 'compliance.manage'
-  | 'admin.users' | 'admin.settings' | 'admin.audit_trail'
-  | 'recordtypes.create' | 'recordtypes.read' | 'recordtypes.update' | 'recordtypes.delete'
-  | 'recordlinks.create' | 'recordlinks.read' | 'recordlinks.delete';
+  | 'admin.users' | 'admin.settings' | 'admin.audit_trail';
 
 export const rolePermissions: Record<UserRole, Permission[]> = {
   admin: [
@@ -38,8 +36,6 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.export',
     'compliance.view', 'compliance.manage',
     'admin.users', 'admin.settings', 'admin.audit_trail',
-    'recordtypes.create', 'recordtypes.read', 'recordtypes.update', 'recordtypes.delete',
-    'recordlinks.create', 'recordlinks.read', 'recordlinks.delete',
   ],
   quality_manager: [
     'documents.create', 'documents.read', 'documents.update', 'documents.approve',
@@ -55,8 +51,6 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'reports.view', 'reports.export',
     'compliance.view', 'compliance.manage',
     'admin.audit_trail',
-    'recordtypes.create', 'recordtypes.read', 'recordtypes.update',
-    'recordlinks.create', 'recordlinks.read', 'recordlinks.delete',
   ],
   auditor: [
     'documents.read',
@@ -72,8 +66,6 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'reports.view',
     'compliance.view',
     'admin.audit_trail',
-    'recordtypes.read',
-    'recordlinks.read',
   ],
   document_controller: [
     'documents.create', 'documents.read', 'documents.update', 'documents.delete', 'documents.approve',
@@ -87,8 +79,6 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'supplier.read',
     'reports.view',
     'compliance.view',
-    'recordtypes.read',
-    'recordlinks.read',
   ],
   executive: [
     'documents.read',
@@ -103,8 +93,6 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     'supplier.read',
     'reports.view', 'reports.export',
     'compliance.view',
-    'recordtypes.read',
-    'recordlinks.read',
   ],
   operator: [
     'documents.read',
@@ -251,7 +239,7 @@ export interface Document {
   id: string;
   documentNumber: string;
   title: string;
-  docType: DocumentType;
+  type: DocumentType;
   version: string;
   status: DocumentStatus;
   effectiveDate?: string;
@@ -263,8 +251,8 @@ export interface Document {
   description?: string;
   classification?: DocumentClassification;
   retentionPeriod?: string;
-  docScope?: string;
-  docReferences?: string;
+  scope?: string;
+  references?: string;
   typeSpecificData?: Record<string, unknown>;
   parentDocumentId?: string;
   documentLevel?: DocumentLevel;
@@ -292,6 +280,16 @@ export interface Document {
   isPrerequisite?: boolean;
   /** Review cycle in months */
   reviewCycleMonths?: number;
+  /** Custom field values */
+  customFields?: CustomFieldValue[];
+  /** Whether this document is a template that other documents can reference for creation.
+   *  Templates must be Approved/Effective before they can be used as references. */
+  isTemplate?: boolean;
+  /** ID of the approved template document this document was created from.
+   *  Provides traceability from document back to its source template. */
+  templateReferenceId?: string;
+  /** Version of the template at the time this document was created from it. */
+  templateReferenceVersion?: string;
 }
 
 // ============================================================================
@@ -312,9 +310,6 @@ export interface ElectronicSignature {
   revoked: boolean;
   revocationReason?: string;
   createdAt: string;
-  /** Polymorphic record link — 21 CFR §11.50/§11.70 signature-record linkage */
-  recordId?: string;
-  recordType?: string; // slug from record_type_definitions
 }
 
 // ============================================================================
@@ -331,12 +326,8 @@ export interface Capa {
   id: string;
   capaNumber: string;
   title: string;
-  capaType: CapaType;
+  type: CapaType;
   status: CapaStatus;
-  /** ID of the approved FormTemplate used to create this record */
-  templateId?: string;
-  /** Version of the FormTemplate at time of record creation */
-  templateVersion?: string;
   priority?: CapaPriority;
   source?: CapaSource;
   sourceReferenceId?: string;
@@ -353,8 +344,6 @@ export interface Capa {
   linkedDocumentId?: string;
   linkedNcrId?: string;
   linkedAuditId?: string;
-  /** Source record type slug — references record_type_definitions.slug (§8.5.2) */
-  sourceRecordType?: string;
   assignedTo: string;
   dueDate: string;
   createdDate: string;
@@ -378,12 +367,8 @@ export interface NonConformance {
   id: string;
   ncrNumber: string;
   title: string;
-  ncrType: NcrType;
+  type: NcrType;
   status: NcrStatus;
-  /** ID of the approved FormTemplate used to create this record */
-  templateId?: string;
-  /** Version of the FormTemplate at time of record creation */
-  templateVersion?: string;
   severity?: NcrSeverity;
   source?: string;
   description: string;
@@ -460,10 +445,6 @@ export interface BatchRecord {
   expiryDate?: string;
   status: BatchStatus;
   isLocked: boolean;
-  /** ID of the approved FormTemplate used to create this record */
-  templateId?: string;
-  /** Version of the FormTemplate at time of record creation */
-  templateVersion?: string;
   qaReleaseDate?: string;
   qaReleasedById?: string;
   organizationId?: string;
@@ -487,10 +468,6 @@ export interface Supplier {
   name: string;
   category?: SupplierCategory;
   status: SupplierStatus;
-  /** ID of the approved FormTemplate used to create this record */
-  templateId?: string;
-  /** Version of the FormTemplate at time of record creation */
-  templateVersion?: string;
   qualificationDate?: string;
   nextReviewDate?: string;
   certifications?: string[];
@@ -515,18 +492,8 @@ export interface Supplier {
 }
 
 // ============================================================================
-// Form Template & Instance — Hybrid 2-Layer Supervision
-// Layer 1: Template Approval (§4.2.3 Sovereign)
-// Layer 2: Record Execution (§4.2.4 Execution)
+// Form Template & Instance
 // ============================================================================
-
-/** FormTemplate lifecycle states — Layer 1 of Hybrid Supervision */
-
-/** Maps each record module to its FormTemplate target */
-export type FormTemplateModule =
-  | 'CAPA' | 'NCR' | 'DEVIATION' | 'CHANGE_CONTROL' | 'AUDIT'
-  | 'RISK' | 'TRAINING' | 'SUPPLIER' | 'BATCH_RECORD' | 'OOS_OOT'
-  | 'GENERAL';
 
 export interface FormFieldDefinition {
   id: string;
@@ -546,63 +513,7 @@ export interface FormTemplateWorkflow {
   allowDraftSaves: boolean;
   lockAfterSubmission: boolean;
   eSignatureRequired: boolean;
-  /** Approvers assigned for this template's approval workflow */
-  approvers?: WorkflowApprover[];
 }
-
-/** Approver in a workflow chain — used for sequential/parallel approval */
-export interface WorkflowApprover {
-  id: string;
-  userId: string;
-  userName: string;
-  role: UserRole;
-  order?: number; // For sequential: step order (1, 2, 3...)
-  approvedAt?: string;
-  status: 'pending' | 'approved' | 'rejected';
-}
-
-// ============================================================================
-// Form Template Status (Layer 1 — Template Approval Lifecycle)
-// ============================================================================
-
-/**
- * FormTemplateStatus governs the lifecycle of a form template (Layer 1).
- * ISO 13485 §4.2.3 requires document approval before use.
- *
- * Transitions:
- *   Draft → Under_Review (submit for review)
- *   Under_Review → Approved (approve, requires e-signature)
- *   Under_Review → Draft (return for revision)
- *   Approved → Obsolete (supersede/retire)
- *   Approved → Draft (create new revision)
- */
-export type FormTemplateStatus = 'Draft' | 'Under_Review' | 'Approved' | 'Obsolete';
-
-/** Map of valid status transitions for FormTemplate */
-export const FORM_TEMPLATE_TRANSITIONS: Record<FormTemplateStatus, FormTemplateStatus[]> = {
-  Draft: ['Under_Review'],
-  Under_Review: ['Approved', 'Draft'],
-  Approved: ['Obsolete', 'Draft'],
-  Obsolete: [],
-};
-
-/** Roles allowed to transition template status */
-export const FORM_TEMPLATE_TRANSITION_ROLES: Record<string, UserRole[]> = {
-  'Draft→Under_Review': ['admin', 'quality_manager', 'document_controller'],
-  'Under_Review→Approved': ['admin', 'quality_manager'],
-  'Under_Review→Draft': ['admin', 'quality_manager', 'document_controller'],
-  'Approved→Obsolete': ['admin', 'quality_manager'],
-  'Approved→Draft': ['admin', 'quality_manager', 'document_controller'],
-};
-
-/**
- * Module type for linking templates to record types.
- * Now references record_type_definitions.slug — extensible (was hardcoded ENUM).
- * System slugs: capa, ncr, deviation, change_control, audit, risk, training,
- *               supplier, batch_record, oos_oot, general
- * Custom slugs: Any org-defined slug (e.g., 'etalonnage_equipement')
- */
-export type FormTemplateModuleType = string;
 
 export interface FormTemplateCompliance {
   regulatoryReference: string;
@@ -620,28 +531,12 @@ export interface FormTemplate {
   version: string;
   description?: string;
   fields: FormFieldDefinition[];
-  /** @deprecated Use `status` instead — isActive is kept for backward compat */
   isActive: boolean;
-  /** Layer 1 status lifecycle: Draft → Under_Review → Approved → Obsolete */
-  status: FormTemplateStatus;
-  /** Which QMS module this template belongs to (for 10-module connection) */
-  moduleType: FormTemplateModuleType;
   workflow?: FormTemplateWorkflow;
   compliance?: FormTemplateCompliance;
-  /** Electronic signatures on this template (for approval/review) */
-  signatures?: ElectronicSignature[];
-  /** Current approval step (for sequential workflow) */
-  currentApprovalStep?: number;
-  /** Version history tracking */
-  previousVersionId?: string;
-  /** Effective date when template was approved */
-  effectiveDate?: string;
-  /** Review/Rejection reason */
-  reviewComment?: string;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
-  updatedAt?: string;
   instances?: FormInstance[];
 }
 
@@ -658,34 +553,10 @@ export interface FormInstance {
   submittedById?: string;
   submittedAt?: string;
   signatureHash?: string;
-  /** Electronic signatures on this instance */
-  signatures?: ElectronicSignature[];
-  /** Current approval step (for sequential workflow from template) */
-  currentApprovalStep?: number;
-  /** Approval history tracking */
-  approvalHistory?: InstanceApprovalEntry[];
   parentDocumentId?: string;
-  /** Linked QMS record ID (e.g., CAPA-001, NCR-001) */
-  linkedRecordId?: string;
-  /** Linked QMS record type — now TEXT referencing record_type_definitions.slug */
-  linkedRecordType?: string;
-  /** Record type slug — FK to record_type_definitions (§4.2.3 referential integrity) */
-  recordTypeSlug?: string;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
-  updatedAt?: string;
-}
-
-/** Approval entry for instance workflow history */
-export interface InstanceApprovalEntry {
-  id: string;
-  approverId: string;
-  approverName: string;
-  action: 'approved' | 'rejected' | 'returned';
-  comment?: string;
-  signatureHash?: string;
-  timestamp: string;
 }
 
 // ============================================================================
@@ -696,7 +567,7 @@ export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'REJECT' 
 
 export interface AuditTrail {
   id: string;
-  auditAction: AuditAction;
+  action: AuditAction;
   tableName: string;
   recordId?: string;
   userId?: string;
@@ -713,7 +584,7 @@ export interface AuditTrail {
 // Document Prerequisite
 // ============================================================================
 
-export type PrerequisiteRecordType = string; // Now references record_type_definitions.slug (was hardcoded ENUM)
+export type PrerequisiteRecordType = 'CAPA' | 'NCR' | 'TRAINING' | 'RISK' | 'AUDIT' | 'CHANGE_CONTROL' | 'DEVIATION';
 
 export interface DocumentPrerequisite {
   id: string;
@@ -787,13 +658,9 @@ export interface Audit {
   id: string;
   auditNumber: string;
   title: string;
-  auditType: AuditType;
+  type: AuditType;
   status: AuditStatus;
-  /** ID of the approved FormTemplate used to create this record */
-  templateId?: string;
-  /** Version of the FormTemplate at time of record creation */
-  templateVersion?: string;
-  auditScope?: string;
+  scope?: string;
   scheduledDate: string;
   completedDate?: string;
   leadAuditor: string;
@@ -815,12 +682,8 @@ export interface Training {
   id: string;
   title: string;
   description?: string;
-  trainingType: TrainingType;
+  type: TrainingType;
   status: TrainingStatus;
-  /** ID of the approved FormTemplate used to create this record */
-  templateId?: string;
-  /** Version of the FormTemplate at time of record creation */
-  templateVersion?: string;
   assignedTo: string;
   dueDate: string;
   completedDate?: string;
@@ -848,10 +711,6 @@ export interface Risk {
   detectability: number; // 1-5
   rpn: number; // probability * impact * detectability
   riskLevel: RiskLevel;
-  /** ID of the approved FormTemplate used to create this record */
-  templateId?: string;
-  /** Version of the FormTemplate at time of record creation */
-  templateVersion?: string;
   mitigation?: string;
   residualRisk?: string;
   status: RiskStatus;
@@ -886,12 +745,8 @@ export interface ChangeControl {
   id: string;
   ccNumber: string;
   title: string;
-  ccType: ChangeControlType;
+  type: ChangeControlType;
   status: ChangeControlStatus;
-  /** ID of the approved FormTemplate used to create this record */
-  templateId?: string;
-  /** Version of the FormTemplate at time of record creation */
-  templateVersion?: string;
   priority: ChangeControlPriority;
   category: ChangeControlCategory;
   description: string;
@@ -938,12 +793,8 @@ export interface Deviation {
   id: string;
   devNumber: string;
   title: string;
-  deviationType: DeviationType;
+  type: DeviationType;
   status: DeviationStatus;
-  /** ID of the approved FormTemplate used to create this record */
-  templateId?: string;
-  /** Version of the FormTemplate at time of record creation */
-  templateVersion?: string;
   severity: DeviationSeverity;
   category: DeviationCategory;
   description: string;
@@ -977,93 +828,30 @@ export interface Deviation {
 }
 
 // ============================================================================
-// Record Type Definitions — Extensible Custom Record Types
-// ISO 13485 §4.1 (QMS completeness), §4.2.3 (document control),
-// §4.2.4 (record control), §7.5.9 (traceability)
+// Scheduled Report
 // ============================================================================
 
-/** Compliance reference for mapping a record type to ISO clauses */
-export interface ComplianceRef {
-  clause: string;       // e.g., '§7.5.6'
-  standard: string;     // e.g., 'ISO 13485'
-  description?: string; // e.g., 'Validation of processes'
-}
+export type ReportFrequency = 'daily' | 'weekly' | 'monthly' | 'quarterly';
+export type ReportType = 'management-review' | 'capa-summary' | 'audit-summary' | 'compliance-overview' | 'training-status' | 'risk-profile';
+export type ReportFormat = 'csv' | 'html' | 'pdf';
+export type ScheduledReportStatus = 'active' | 'paused' | 'completed' | 'error';
 
-/** Status flow step definition — stored in record_type_definitions.status_flow */
-export interface StatusFlowStep {
-  /** Linear progression steps */
-  linear: string[];
-  /** Branch states (e.g., Rejected, Disqualified) with return paths */
-  branches?: Record<string, string[]>;
-  /** States that require e-signature to transition to */
-  eSigRequired?: string[];
-  /** States that are terminal (no further transitions) */
-  terminal?: string[];
-}
-
-export interface RecordTypeDefinition {
+export interface ScheduledReport {
   id: string;
-  /** URL-safe slug — unique per organization. Used as FK target for form_templates.module_type */
-  slug: string;
-  /** Display name (French) */
   name: string;
-  /** Display name (English) */
-  nameEn?: string;
-  /** Lucide icon name for navigation/UI */
-  icon: string;
-  description?: string;
-  /** Configurable status flow — replaces hardcoded MODULE_STATUS_FLOWS */
-  statusFlow: StatusFlowStep[];
-  /** Default form fields inherited by templates created for this type */
-  defaultFields: FormFieldDefinition[];
-  /** ISO 13485 / regulatory clause references for compliance mapping */
-  complianceRefs: ComplianceRef[];
-  /** Code prefix for auto-numbering (e.g., 'ETL' → ETL-2025-001) */
-  codePrefix?: string;
-  /** System types (true) cannot be deleted/deactivated — ISO 13485 §4.1 */
-  isSystem: boolean;
-  isActive: boolean;
-  /** Whether all transitions require e-signature */
-  requiresEsig: boolean;
-  /** Minimum number of approvers for Layer 1 template approval */
-  minApproverCount: number;
-  effectiveDate?: string;
-  previousVersionId?: string;
-  version: string;
-  changeReason?: string;
-  organizationId: string;
+  reportType: ReportType;
+  format: ReportFormat;
+  frequency: ReportFrequency;
+  status: ScheduledReportStatus;
+  recipients: string[]; // email addresses
+  filters?: Record<string, string>; // e.g., { department: 'Quality', priority: 'Critical' }
+  lastRunAt?: string;
+  nextRunAt: string;
+  lastResult?: { success: boolean; recordCount: number; error?: string };
+  organizationId?: string;
   createdById?: string;
   createdAt: string;
   updatedAt: string;
-}
-
-// ============================================================================
-// Record Links — Generic Cross-Record Linking
-// Replaces hardcoded FKs (linked_capa_id, linked_ncr_id, etc.)
-// ISO 13485 §7.5.9 (traceability), §4.2.4 (record control)
-// ============================================================================
-
-export type RecordLinkType =
-  | 'related'       // General association
-  | 'caused_by'     // Source caused target (NCR → CAPA)
-  | 'corrected_by'  // Source corrected by target (NCR ← CAPA)
-  | 'linked_to'     // Reference link
-  | 'derived_from'  // Source derived from target
-  | 'supersedes'    // Source supersedes target (version control)
-  | 'references'    // Source references target
-  | 'depends_on';   // Source depends on target
-
-export interface RecordLink {
-  id: string;
-  sourceRecordId: string;
-  sourceRecordType: string;  // slug from record_type_definitions
-  targetRecordId: string;
-  targetRecordType: string;  // slug from record_type_definitions
-  linkType: RecordLinkType;
-  description?: string;
-  organizationId: string;
-  createdById?: string;
-  createdAt: string;
 }
 
 // ============================================================================
@@ -1074,6 +862,96 @@ export type ActiveSection =
   | 'dashboard'
   | 'documents' | 'document-hierarchy'
   | 'ncr' | 'capa' | 'audits' | 'risks' | 'training' | 'change-control' | 'deviations' | 'batch-records' | 'suppliers' | 'oos-oot' | 'forms'
-  | 'record-types' | 'custom-records' // Extensible record type management
-  | 'reports' | 'compliance'
-  | 'user-management';
+  | 'reports' | 'compliance' | 'scheduled-reports'
+  | 'user-management' | 'settings';
+
+// ============================================================================
+// Extensible Record Type System (ISO 13485 §4.2.3 / §4.2.4)
+// ============================================================================
+
+export type RecordLinkType =
+  | 'parent_of' | 'child_of'
+  | 'caused_by' | 'corrected_by'
+  | 'related_to' | 'derived_from';
+
+export interface StatusFlowTransition {
+  from: string;
+  to: string;
+  required_role: UserRole[];
+}
+
+export interface StatusFlowConfig {
+  statuses: string[];
+  transitions: StatusFlowTransition[];
+  initial_status: string;
+}
+
+export interface RecordTypeDefinition {
+  id: string;
+  org_id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  is_system: boolean;
+  code_prefix: string;
+  status_flow: StatusFlowConfig;
+  json_schema: Record<string, unknown> | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecordLink {
+  id: string;
+  org_id: string;
+  source_type: string;
+  source_id: string;
+  target_type: string;
+  target_id: string;
+  link_type: RecordLinkType;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface CreateRecordTypeDefinitionDTO {
+  name: string;
+  description?: string;
+  code_prefix: string;
+  status_flow: StatusFlowConfig;
+  json_schema?: Record<string, unknown> | null;
+}
+
+/** 10 system module slugs — protected from modification/deletion */
+export const SYSTEM_RECORD_TYPE_SLUGS = [
+  'capa', 'ncr', 'deviation', 'change-control', 'audit',
+  'risk', 'training', 'supplier', 'batch-record', 'oos-oot',
+] as const;
+
+export type SystemRecordTypeSlug = typeof SYSTEM_RECORD_TYPE_SLUGS[number];
+
+// ============================================================================
+// Custom Fields
+// ============================================================================
+
+export type CustomFieldType = 'text' | 'number' | 'date' | 'select' | 'checkbox' | 'textarea' | 'url';
+
+export interface CustomFieldDefinition {
+  id: string;
+  name: string;
+  label: string;
+  type: CustomFieldType;
+  required: boolean;
+  options?: string[]; // for select type
+  placeholder?: string;
+  defaultValue?: string;
+  applicableTo: string[]; // document types this field applies to, or ['*'] for all
+  organizationId: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomFieldValue {
+  definitionId: string;
+  value: string;
+}
