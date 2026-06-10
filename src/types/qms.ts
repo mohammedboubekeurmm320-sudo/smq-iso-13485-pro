@@ -524,6 +524,13 @@ export interface FormTemplateCompliance {
   cfrPart11Compliance: boolean;
 }
 
+export type FormTemplateStatus = 'Draft' | 'Under_Review' | 'Approved' | 'Obsolete';
+
+export type FormTemplateModuleType = 'capa' | 'ncr' | 'deviation' | 'change_control' | 'audit' | 'risk' | 'training' | 'supplier' | 'batch_record' | 'oos_oot' | 'general';
+
+/** @deprecated Use FormTemplateModuleType instead */
+export type FormTemplateModule = FormTemplateModuleType;
+
 export interface FormTemplate {
   id: string;
   documentId: string;
@@ -532,15 +539,48 @@ export interface FormTemplate {
   description?: string;
   fields: FormFieldDefinition[];
   isActive: boolean;
+  status?: FormTemplateStatus;
+  moduleType?: FormTemplateModuleType;
   workflow?: FormTemplateWorkflow;
   compliance?: FormTemplateCompliance;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
+  updatedAt?: string;
+  effectiveDate?: string;
+  reviewComment?: string;
+  signatures?: ElectronicSignature[];
   instances?: FormInstance[];
 }
 
+/** Allowed status transitions for form templates (state machine) */
+export const FORM_TEMPLATE_TRANSITIONS: Record<FormTemplateStatus, FormTemplateStatus[]> = {
+  Draft: ['Under_Review'],
+  Under_Review: ['Approved', 'Draft'],
+  Approved: ['Obsolete', 'Draft'],
+  Obsolete: [],
+};
+
+/** Role-based access control for template status transitions */
+export const FORM_TEMPLATE_TRANSITION_ROLES: Record<string, UserRole[]> = {
+  'Draft→Under_Review': ['admin', 'quality_manager', 'document_controller'],
+  'Under_Review→Approved': ['admin', 'quality_manager'],
+  'Under_Review→Draft': ['admin', 'quality_manager', 'document_controller'],
+  'Approved→Obsolete': ['admin', 'quality_manager'],
+  'Approved→Draft': ['admin', 'quality_manager'],
+};
+
 export type FormInstanceStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected';
+
+export interface FormInstanceApprovalEntry {
+  id: string;
+  action: 'approved' | 'rejected' | 'returned';
+  approverName: string;
+  approverId: string;
+  timestamp: string;
+  comment?: string;
+  signatureHash?: string;
+}
 
 export interface FormInstance {
   id: string;
@@ -557,6 +597,11 @@ export interface FormInstance {
   organizationId?: string;
   createdById?: string;
   createdAt: string;
+  updatedAt?: string;
+  linkedRecordType?: string;
+  linkedRecordId?: string;
+  signatures?: ElectronicSignature[];
+  approvalHistory?: FormInstanceApprovalEntry[];
 }
 
 // ============================================================================

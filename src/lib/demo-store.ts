@@ -265,13 +265,14 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
     if (!template) return { success: false, error: 'Template not found' };
 
     // Validate transition is allowed
-    const allowedTransitions = FORM_TEMPLATE_TRANSITIONS[template.status];
-    if (!allowedTransitions.includes(targetStatus)) {
+    const currentStatus = template.status || (template.isActive ? 'Approved' : 'Draft');
+    const allowedTransitions = FORM_TEMPLATE_TRANSITIONS[currentStatus];
+    if (!allowedTransitions || !allowedTransitions.includes(targetStatus)) {
       return { success: false, error: `Transition from ${template.status} to ${targetStatus} is not allowed` };
     }
 
     // Validate role is authorized for this transition
-    const transitionKey = `${template.status}→${targetStatus}`;
+    const transitionKey = `${currentStatus}→${targetStatus}`;
     const allowedRoles = FORM_TEMPLATE_TRANSITION_ROLES[transitionKey];
     if (!allowedRoles || !allowedRoles.includes(userRole)) {
       return { success: false, error: `Role '${userRole}' is not authorized for transition ${transitionKey}` };

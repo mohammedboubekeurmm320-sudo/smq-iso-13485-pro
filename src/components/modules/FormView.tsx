@@ -56,6 +56,13 @@ const templateStatusColors: Record<FormTemplateStatus, string> = {
   'Obsolete': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 };
 
+const templateStatusLabels: Record<FormTemplateStatus, string> = {
+  'Draft': 'Draft',
+  'Under_Review': 'Under Review',
+  'Approved': 'Approved',
+  'Obsolete': 'Obsolete',
+};
+
 const moduleTypeLabels: Record<FormTemplateModuleType, string> = {
   capa: 'CAPA', ncr: 'NCR', deviation: 'Deviation', change_control: 'Change Control',
   audit: 'Audit', risk: 'Risk', training: 'Training', supplier: 'Supplier',
@@ -557,79 +564,6 @@ export function FormView() {
   };
 
   // ===========================================================================
-  // RENDER TEMPLATE WORKFLOW ACTIONS
-  // ===========================================================================
-  const renderTemplateWorkflowActions = (template: FormTemplate) => {
-    const status = getTemplateStatus(template);
-    const canApprove = hasPermission('documents.approve');
-
-    return (
-      <div className="flex flex-wrap gap-2 mt-2">
-        {status === 'Draft' && canApprove && (
-          <Button
-            size="sm"
-            onClick={() => handleSubmitForReview(template.id)}
-          >
-            <Send className="h-3.5 w-3.5 mr-1.5" />
-            Submit for Review
-          </Button>
-        )}
-
-        {status === 'Under_Review' && canApprove && (
-          <>
-            <Button
-              size="sm"
-              onClick={() => handleApproveTemplate(template.id)}
-            >
-              <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
-              Approve
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => handleRejectTemplate(template.id)}
-            >
-              <Ban className="h-3.5 w-3.5 mr-1.5" />
-              Reject
-            </Button>
-          </>
-        )}
-
-        {status === 'Approved' && canApprove && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => handleMarkObsolete(template.id)}
-          >
-            <Archive className="h-3.5 w-3.5 mr-1.5" />
-            Mark Obsolete
-          </Button>
-        )}
-
-        {status === 'Rejected' && canApprove && (
-          <>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleReturnToDraft(template.id)}
-            >
-              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-              Return to Draft
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => handleResubmit(template.id)}
-            >
-              <Send className="h-3.5 w-3.5 mr-1.5" />
-              Resubmit
-            </Button>
-          </>
-        )}
-      </div>
-    );
-  };
-
-  // ===========================================================================
   // RENDER
   // ===========================================================================
   return (
@@ -752,32 +686,21 @@ export function FormView() {
                                 <span className="text-xs font-mono">{linkedDoc.documentNumber}</span>
                                 <span className="text-xs text-muted-foreground truncate max-w-[140px]">{linkedDoc.title}</span>
                               </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="text-xs">
-                                {workflowModuleLabels[template.moduleType || 'GENERAL'] || template.moduleType || 'General'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="font-mono text-sm">{template.version}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{template.fields.length} fields</Badge>
-                            </TableCell>
-                            <TableCell>
-                              {renderTemplateStatusBadge(template)}
-                            </TableCell>
-                            <TableCell className="text-sm">
-                              {linkedDoc ? (
-                                <div className="flex flex-col">
-                                  <span className="text-xs font-mono">{linkedDoc.documentNumber}</span>
-                                  <span className="text-xs text-muted-foreground truncate max-w-[140px]">{linkedDoc.title}</span>
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground text-xs">—</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="secondary">{instanceCount}</Badge>
-                            </TableCell>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {renderTemplateStatusBadge(template)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs">
+                              {workflowModuleLabels[template.moduleType || 'GENERAL'] || template.moduleType || 'General'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{instanceCount}</Badge>
+                          </TableCell>
                             <TableCell>
                               <div className="flex gap-1">
                                 <Button variant="ghost" size="sm" className="h-8" onClick={(e) => { e.stopPropagation(); openTemplateDetail(template); }}>
@@ -790,14 +713,14 @@ export function FormView() {
                                         variant="ghost"
                                         size="sm"
                                         className="h-8"
-                                        disabled={!canFill}
-                                        onClick={(e) => { e.stopPropagation(); if (canFill) openFiller(template); }}
+                                        disabled={getTemplateStatus(template) !== 'Approved'}
+                                        onClick={(e) => { e.stopPropagation(); if (getTemplateStatus(template) === 'Approved') openFiller(template); }}
                                       >
                                         <Plus className="h-3 w-3 mr-1" />Fill
                                       </Button>
                                     </span>
                                   </TooltipTrigger>
-                                  {!canFill && (
+                                  {getTemplateStatus(template) !== 'Approved' && (
                                     <TooltipContent>
                                       <p>Template must be approved before creating instances</p>
                                     </TooltipContent>
@@ -884,40 +807,36 @@ export function FormView() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <Badge className={cn('text-xs', templateStatusColors[template.status])} variant="secondary">
-                              {template.status === 'Under_Review' ? 'Under Review' : template.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs">{moduleTypeLabels[template.moduleType]}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">{instanceCount}</Badge>
-                          </TableCell>
-                          <TableCell>
                             <div className="flex gap-1">
-                              <Button variant="ghost" size="sm" className="h-8" onClick={(e) => { e.stopPropagation(); openTemplateDetail(template); }}>
+                              <Button variant="ghost" size="sm" className="h-8" onClick={(e) => { e.stopPropagation(); openInstanceDetail(instance); }}>
                                 <Eye className="h-3 w-3 mr-1" />View
                               </Button>
-                              <Button variant="ghost" size="sm" className="h-8" onClick={(e) => { e.stopPropagation(); openFiller(template); }} disabled={template.status !== 'Approved'}>
-                                <Plus className="h-3 w-3 mr-1" />Fill
-                              </Button>
+                              {instance.status === 'Submitted' && hasPermission('documents.approve') && (
+                                <>
+                                  <Button variant="ghost" size="sm" className="h-8 text-green-600 hover:text-green-700" onClick={(e) => { e.stopPropagation(); handleApproveReject(instance.id, 'approve'); }}>
+                                    <CheckCircle2 className="h-3 w-3 mr-1" />Approve
+                                  </Button>
+                                  <Button variant="ghost" size="sm" className="h-8 text-red-600 hover:text-red-700" onClick={(e) => { e.stopPropagation(); handleApproveReject(instance.id, 'reject'); }}>
+                                    <XCircle className="h-3 w-3 mr-1" />Reject
+                                  </Button>
+                                </>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
-                      );
-                    })}
-                    {filteredTemplates.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No templates found</TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                      ))}
+                      {filteredInstances.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No instances found</TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
         {/* ============================================================ */}
         {/* 6-STEP TEMPLATE BUILDER WIZARD DIALOG                        */}
@@ -927,45 +846,36 @@ export function FormView() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <LayoutTemplate className="h-5 w-5 text-primary" />
-                Template Info
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Title *</Label>
-                  <Input value={builderTitle} onChange={(e) => setBuilderTitle(e.target.value)} placeholder="Enter template title" />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Version</Label>
-                  <Input value={builderVersion} onChange={(e) => setBuilderVersion(e.target.value)} placeholder="e.g. 1.0" />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label>Linked Document</Label>
-                <Select value={builderLinkedDoc} onValueChange={setBuilderLinkedDoc}>
-                  <SelectTrigger><SelectValue placeholder="Select a linked document..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {approvedDocuments.map(d => (
-                      <SelectItem key={d.id} value={d.id}>{d.documentNumber} — {d.title}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Module Type</Label>
-                <Select value={builderModuleType} onValueChange={(v) => setBuilderModuleType(v as FormTemplateModuleType)}>
-                  <SelectTrigger><SelectValue placeholder="Select module type..." /></SelectTrigger>
-                  <SelectContent>
-                    {(Object.keys(moduleTypeLabels) as FormTemplateModuleType[]).map(mt => (
-                      <SelectItem key={mt} value={mt}>{moduleTypeLabels[mt]}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Description</Label>
-                <Textarea value={builderDescription} onChange={(e) => setBuilderDescription(e.target.value)} placeholder="Describe the purpose of this form template..." rows={3} />
-              </div>
+                Create New Template
+              </DialogTitle>
+            </DialogHeader>
+
+            {/* Wizard Progress */}
+            <div className="flex items-center gap-1 mb-2">
+              {WIZARD_STEPS.map((step, idx) => {
+                const StepIcon = step.icon;
+                const isActive = wizardStep === step.id;
+                const isComplete = wizardStep > step.id;
+                return (
+                  <React.Fragment key={step.id}>
+                    <div
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer',
+                        isActive && 'bg-primary text-primary-foreground',
+                        isComplete && 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                        !isActive && !isComplete && 'bg-muted text-muted-foreground',
+                      )}
+                      onClick={() => { if (isComplete || step.id <= wizardStep) setWizardStep(step.id); }}
+                    >
+                      <StepIcon className="h-3.5 w-3.5" />
+                      {step.label}
+                    </div>
+                    {idx < WIZARD_STEPS.length - 1 && (
+                      <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </div>
 
             <Separator />
@@ -990,13 +900,13 @@ export function FormView() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Module Type *</Label>
-                    <Select value={builderModuleType} onValueChange={(v) => setBuilderModuleType(v as FormTemplateModule)}>
+                    <Select value={builderModuleType} onValueChange={(v) => setBuilderModuleType(v as FormTemplateModuleType)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select module type..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {MODULE_TYPE_OPTIONS.map(m => (
-                          <SelectItem key={m} value={m}>{moduleTypeLabels[m]}</SelectItem>
+                        {(Object.keys(moduleTypeLabels) as FormTemplateModuleType[]).map(mt => (
+                          <SelectItem key={mt} value={mt}>{moduleTypeLabels[mt]}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1066,172 +976,7 @@ export function FormView() {
                   </Button>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 p-3 border rounded-md">
-                    <Checkbox
-                      checked={workflowAllowDraftSaves}
-                      onCheckedChange={(v) => setWorkflowAllowDraftSaves(v === true)}
-                    />
-                    <div>
-                      <Label className="font-medium">Allow Draft Saves</Label>
-                      <p className="text-xs text-muted-foreground">Users can save and resume forms before submission</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 border rounded-md">
-                    <Checkbox
-                      checked={workflowLockAfterSubmission}
-                      onCheckedChange={(v) => setWorkflowLockAfterSubmission(v === true)}
-                    />
-                    <div>
-                      <Label className="font-medium">Lock After Submission</Label>
-                      <p className="text-xs text-muted-foreground">Prevent editing once the form is submitted</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 border rounded-md">
-                    <Checkbox
-                      checked={workflowESignatureRequired}
-                      onCheckedChange={(v) => setWorkflowESignatureRequired(v === true)}
-                    />
-                    <div>
-                      <Label className="font-medium">E-Signature Required</Label>
-                      <p className="text-xs text-muted-foreground">Electronic signature required on submission</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ===== STEP 5: Compliance ===== */}
-          {wizardStep === 5 && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-primary" />
-                Compliance
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div className="grid gap-2">
-                    <Label>Regulatory Reference</Label>
-                    <Input value={complianceRegulatoryRef} onChange={(e) => setComplianceRegulatoryRef(e.target.value)} placeholder="e.g., ISO 13485:2016 Clause 4.2.4" />
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label>Retention Period</Label>
-                    <Select value={complianceRetentionPeriod} onValueChange={setComplianceRetentionPeriod}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Product Lifetime">Product Lifetime</SelectItem>
-                        <SelectItem value="5 Years">5 Years</SelectItem>
-                        <SelectItem value="10 Years">10 Years</SelectItem>
-                        <SelectItem value="15 Years">15 Years</SelectItem>
-                        <SelectItem value="25 Years">25 Years</SelectItem>
-                        <SelectItem value="Permanent">Permanent</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label>Data Classification</Label>
-                    <Select value={complianceDataClassification} onValueChange={(v) => setComplianceDataClassification(v as FormTemplateCompliance['dataClassification'])}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Internal">Internal</SelectItem>
-                        <SelectItem value="Confidential">Confidential</SelectItem>
-                        <SelectItem value="Regulatory">Regulatory</SelectItem>
-                        <SelectItem value="GxP Critical">GxP Critical</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 p-3 border rounded-md">
-                    <Checkbox
-                      checked={complianceAuditTrailEnabled}
-                      onCheckedChange={(v) => setComplianceAuditTrailEnabled(v === true)}
-                    />
-                    <div>
-                      <Label className="font-medium">Audit Trail Enabled</Label>
-                      <p className="text-xs text-muted-foreground">Track all changes with full audit trail</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 border rounded-md">
-                    <Checkbox
-                      checked={compliancePrintFriendly}
-                      onCheckedChange={(v) => setCompliancePrintFriendly(v === true)}
-                    />
-                    <div>
-                      <Label className="font-medium">Print-Friendly Layout</Label>
-                      <p className="text-xs text-muted-foreground">Generate print-optimized versions of form records</p>
-                    </div>
-                  </div>
-
-                  <div className={cn(
-                    'flex items-start gap-3 p-3 border rounded-md',
-                    complianceCfrPart11 && 'border-orange-300 bg-orange-50 dark:border-orange-700 dark:bg-orange-900/10'
-                  )}>
-                    <Checkbox
-                      checked={complianceCfrPart11}
-                      onCheckedChange={(v) => setComplianceCfrPart11(v === true)}
-                      className="mt-0.5"
-                    />
-                    <div>
-                      <Label className="font-medium flex items-center gap-1">
-                        21 CFR Part 11 Compliance
-                        {complianceCfrPart11 && <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />}
-                      </Label>
-                      <p className="text-xs text-muted-foreground">
-                        Enables electronic record and signature requirements per FDA 21 CFR Part 11.
-                        All form entries will require electronic signatures and full audit trails.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ===== STEP 6: Review & Submit ===== */}
-          {wizardStep === 6 && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-primary" />
-                Review & Submit
-              </h3>
-
-              {/* Template Info Summary */}
-              <div className="border rounded-md p-4 space-y-2">
-                <h4 className="font-semibold text-sm flex items-center gap-2">
-                  <LayoutTemplate className="h-4 w-4 text-primary" />
-                  Template Info
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                  <div><span className="text-muted-foreground">Title:</span> <span className="font-medium ml-1">{builderTitle || '—'}</span></div>
-                  <div><span className="text-muted-foreground">Version:</span> <span className="font-mono ml-1">{builderVersion}</span></div>
-                  <div><span className="text-muted-foreground">Module:</span> <span className="font-medium ml-1">{moduleTypeLabels[builderModuleType]}</span></div>
-                  <div><span className="text-muted-foreground">Linked Doc:</span> <span className="ml-1">{builderLinkedDoc && builderLinkedDoc !== 'none' ? approvedDocuments.find(d => d.id === builderLinkedDoc)?.documentNumber || '—' : 'None'}</span></div>
-                </div>
-                <div className="text-sm">
-                  <span className="text-muted-foreground">Initial Status:</span>{' '}
-                  <Badge className={cn('text-xs ml-1', templateStatusColors['Draft'])} variant="secondary">Draft</Badge>
-                  <span className="text-muted-foreground ml-3">Fields:</span> <span className="font-medium ml-1">{builderFields.length}</span>
-                </div>
-                {builderDescription && (
-                  <p className="text-sm text-muted-foreground mt-1">{builderDescription}</p>
-                )}
-              </div>
-
-              {/* Fields Preview */}
-              <div className="border rounded-md p-4 space-y-2">
-                <h4 className="font-semibold text-sm flex items-center gap-2">
-                  <ClipboardList className="h-4 w-4 text-primary" />
-                  Field Preview ({builderFields.length} fields)
-                </h4>
+                {/* Field List */}
                 {builderFields.length > 0 ? (
                   <div className="space-y-2">
                     <h4 className="font-medium text-sm">Fields ({builderFields.length})</h4>
@@ -1276,13 +1021,403 @@ export function FormView() {
               </div>
             )}
 
+            {/* ===== STEP 3: Field Config ===== */}
+            {wizardStep === 3 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-primary" />
+                  Field Configuration
+                </h3>
+
+                {selectedField ? (
+                  <div className="space-y-4">
+                    <div className="border rounded-md p-4 space-y-3">
+                      <h4 className="font-semibold text-sm">{selectedField.label} <span className="text-muted-foreground font-mono text-xs">({selectedField.name})</span></h4>
+                      <Badge variant="outline" className="text-xs">{fieldTypeIcons[selectedField.type]} {selectedField.type}</Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label>Placeholder</Label>
+                        <Input value={fieldPlaceholder} onChange={(e) => setFieldPlaceholder(e.target.value)} placeholder="Placeholder text..." />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Default Value</Label>
+                        <Input value={fieldDefaultValue} onChange={(e) => setFieldDefaultValue(e.target.value)} placeholder="Default value..." />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 border rounded-md">
+                      <Checkbox
+                        checked={fieldRequired}
+                        onCheckedChange={(v) => setFieldRequired(v === true)}
+                      />
+                      <div>
+                        <Label className="font-medium">Required Field</Label>
+                        <p className="text-xs text-muted-foreground">Users must fill in this field before submission</p>
+                      </div>
+                    </div>
+
+                    {selectedField.type === 'select' && (
+                      <div className="grid gap-2">
+                        <Label>Options (comma-separated)</Label>
+                        <Input value={fieldOptions} onChange={(e) => setFieldOptions(e.target.value)} placeholder="Option 1, Option 2, Option 3" />
+                      </div>
+                    )}
+
+                    {(selectedField.type === 'number' || selectedField.type === 'text') && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="grid gap-2">
+                          <Label>Min Value</Label>
+                          <Input value={fieldValidationMin} onChange={(e) => setFieldValidationMin(e.target.value)} placeholder="Min" />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Max Value</Label>
+                          <Input value={fieldValidationMax} onChange={(e) => setFieldValidationMax(e.target.value)} placeholder="Max" />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Pattern (regex)</Label>
+                          <Input value={fieldValidationPattern} onChange={(e) => setFieldValidationPattern(e.target.value)} placeholder="^[A-Z]+$" />
+                        </div>
+                      </div>
+                    )}
+
+                    <Button onClick={applyFieldConfig}>
+                      <CheckCircle2 className="h-4 w-4 mr-2" />Apply Configuration
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-md">
+                    <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">Select a field from Step 2 to configure its properties.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ===== STEP 4: Workflow & Rules ===== */}
+            {wizardStep === 4 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <Gavel className="h-5 w-5 text-primary" />
+                  Workflow & Rules
+                </h3>
+
+                <div className="flex items-center gap-3 p-3 border rounded-md">
+                  <Checkbox
+                    checked={workflowRequiresApproval}
+                    onCheckedChange={(v) => setWorkflowRequiresApproval(v === true)}
+                  />
+                  <div>
+                    <Label className="font-medium">Requires Approval</Label>
+                    <p className="text-xs text-muted-foreground">Form submissions must be reviewed and approved</p>
+                  </div>
+                </div>
+
+                {workflowRequiresApproval && (
+                  <div className="grid gap-2 pl-4">
+                    <Label>Approval Workflow Type</Label>
+                    <Select value={workflowType} onValueChange={(v) => setWorkflowType(v as 'single' | 'sequential' | 'parallel')}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="single">Single Approver</SelectItem>
+                        <SelectItem value="sequential">Sequential (Multi-step)</SelectItem>
+                        <SelectItem value="parallel">Parallel (Any Approver)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3 p-3 border rounded-md">
+                  <Checkbox
+                    checked={workflowAllowDraftSaves}
+                    onCheckedChange={(v) => setWorkflowAllowDraftSaves(v === true)}
+                  />
+                  <div>
+                    <Label className="font-medium">Allow Draft Saves</Label>
+                    <p className="text-xs text-muted-foreground">Users can save and resume forms before submission</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 p-3 border rounded-md">
+                  <Checkbox
+                    checked={workflowLockAfterSubmission}
+                    onCheckedChange={(v) => setWorkflowLockAfterSubmission(v === true)}
+                  />
+                  <div>
+                    <Label className="font-medium">Lock After Submission</Label>
+                    <p className="text-xs text-muted-foreground">Prevent editing once the form is submitted</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 p-3 border rounded-md">
+                  <Checkbox
+                    checked={workflowESignatureRequired}
+                    onCheckedChange={(v) => setWorkflowESignatureRequired(v === true)}
+                  />
+                  <div>
+                    <Label className="font-medium">E-Signature Required</Label>
+                    <p className="text-xs text-muted-foreground">Electronic signature required on submission</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ===== STEP 5: Compliance ===== */}
+            {wizardStep === 5 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-primary" />
+                  Compliance
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div className="grid gap-2">
+                      <Label>Regulatory Reference</Label>
+                      <Input value={complianceRegulatoryRef} onChange={(e) => setComplianceRegulatoryRef(e.target.value)} placeholder="e.g., ISO 13485:2016 Clause 4.2.4" />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Retention Period</Label>
+                      <Select value={complianceRetentionPeriod} onValueChange={setComplianceRetentionPeriod}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Product Lifetime">Product Lifetime</SelectItem>
+                          <SelectItem value="5 Years">5 Years</SelectItem>
+                          <SelectItem value="10 Years">10 Years</SelectItem>
+                          <SelectItem value="15 Years">15 Years</SelectItem>
+                          <SelectItem value="25 Years">25 Years</SelectItem>
+                          <SelectItem value="Permanent">Permanent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Data Classification</Label>
+                      <Select value={complianceDataClassification} onValueChange={(v) => setComplianceDataClassification(v as FormTemplateCompliance['dataClassification'])}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Internal">Internal</SelectItem>
+                          <SelectItem value="Confidential">Confidential</SelectItem>
+                          <SelectItem value="Regulatory">Regulatory</SelectItem>
+                          <SelectItem value="GxP Critical">GxP Critical</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3 p-3 border rounded-md">
+                      <Checkbox
+                        checked={complianceAuditTrailEnabled}
+                        onCheckedChange={(v) => setComplianceAuditTrailEnabled(v === true)}
+                      />
+                      <div>
+                        <Label className="font-medium">Audit Trail Enabled</Label>
+                        <p className="text-xs text-muted-foreground">Track all changes with full audit trail</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3 border rounded-md">
+                      <Checkbox
+                        checked={compliancePrintFriendly}
+                        onCheckedChange={(v) => setCompliancePrintFriendly(v === true)}
+                      />
+                      <div>
+                        <Label className="font-medium">Print-Friendly Layout</Label>
+                        <p className="text-xs text-muted-foreground">Generate print-optimized versions of form records</p>
+                      </div>
+                    </div>
+
+                    <div className={cn(
+                      'flex items-start gap-3 p-3 border rounded-md',
+                      complianceCfrPart11 && 'border-orange-300 bg-orange-50 dark:border-orange-700 dark:bg-orange-900/10'
+                    )}>
+                      <Checkbox
+                        checked={complianceCfrPart11}
+                        onCheckedChange={(v) => setComplianceCfrPart11(v === true)}
+                        className="mt-0.5"
+                      />
+                      <div>
+                        <Label className="font-medium flex items-center gap-1">
+                          21 CFR Part 11 Compliance
+                          {complianceCfrPart11 && <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />}
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Enables electronic record and signature requirements per FDA 21 CFR Part 11.
+                          All form entries will require electronic signatures and full audit trails.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ===== STEP 6: Review & Submit ===== */}
+            {wizardStep === 6 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-primary" />
+                  Review & Submit
+                </h3>
+
+                {/* Template Info Summary */}
+                <div className="border rounded-md p-4 space-y-2">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <LayoutTemplate className="h-4 w-4 text-primary" />
+                    Template Info
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                    <div><span className="text-muted-foreground">Title:</span> <span className="font-medium ml-1">{builderTitle || '—'}</span></div>
+                    <div><span className="text-muted-foreground">Version:</span> <span className="font-mono ml-1">{builderVersion}</span></div>
+                    <div><span className="text-muted-foreground">Module:</span> <span className="font-medium ml-1">{moduleTypeLabels[builderModuleType]}</span></div>
+                    <div><span className="text-muted-foreground">Linked Doc:</span> <span className="ml-1">{builderLinkedDoc && builderLinkedDoc !== 'none' ? approvedDocuments.find(d => d.id === builderLinkedDoc)?.documentNumber || '—' : 'None'}</span></div>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Initial Status:</span>{' '}
+                    <Badge className={cn('text-xs ml-1', templateStatusColors['Draft'])} variant="secondary">Draft</Badge>
+                    <span className="text-muted-foreground ml-3">Fields:</span> <span className="font-medium ml-1">{builderFields.length}</span>
+                  </div>
+                  {builderDescription && (
+                    <p className="text-sm text-muted-foreground mt-1">{builderDescription}</p>
+                  )}
+                </div>
+
+                {/* Fields Preview */}
+                <div className="border rounded-md p-4 space-y-2">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <ClipboardList className="h-4 w-4 text-primary" />
+                    Field Preview ({builderFields.length} fields)
+                  </h4>
+                  {builderFields.length > 0 ? (
+                    <div className="max-h-[200px] overflow-y-auto space-y-1">
+                      {builderFields.map((field, i) => (
+                        <div key={field.id} className="flex items-center gap-2 py-1 text-sm border-b last:border-0">
+                          <span className="text-muted-foreground font-mono text-xs w-6">{i + 1}.</span>
+                          <span className="font-medium flex-1">{field.label}</span>
+                          <Badge variant="outline" className="text-xs">{fieldTypeIcons[field.type]} {field.type}</Badge>
+                          {field.required && <Badge variant="outline" className="text-xs border-red-300 text-red-700">Req</Badge>}
+                          {field.placeholder && <span className="text-xs text-muted-foreground italic truncate max-w-[100px]">&quot;{field.placeholder}&quot;</span>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No fields defined</p>
+                  )}
+                </div>
+
+                {/* Workflow Summary */}
+                <div className="border rounded-md p-4 space-y-2">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <Gavel className="h-4 w-4 text-primary" />
+                    Workflow & Rules
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                    <div className="flex items-center gap-1.5">
+                      {workflowRequiresApproval ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                      <span>Requires Approval</span>
+                    </div>
+                    {workflowRequiresApproval && (
+                      <div><span className="text-muted-foreground">Type:</span> <span className="font-medium ml-1 capitalize">{workflowType === 'single' ? 'Single Approver' : workflowType === 'sequential' ? 'Sequential' : 'Parallel'}</span></div>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      {workflowAllowDraftSaves ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                      <span>Allow Draft Saves</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {workflowLockAfterSubmission ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                      <span>Lock After Submission</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {workflowESignatureRequired ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                      <span>E-Signature Required</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Compliance Summary */}
+                <div className="border rounded-md p-4 space-y-2">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-primary" />
+                    Compliance
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                    <div><span className="text-muted-foreground">Regulatory Ref:</span> <span className="font-medium ml-1">{complianceRegulatoryRef || '—'}</span></div>
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{complianceRetentionPeriod}</span>
+                    </div>
+                    <div>
+                      <Badge className={cn(dataClassificationColors[complianceDataClassification])} variant="secondary">
+                        {complianceDataClassification}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {complianceAuditTrailEnabled ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                      <span>Audit Trail</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {compliancePrintFriendly ? <Printer className="h-3.5 w-3.5 text-green-500" /> : <Printer className="h-3.5 w-3.5 text-muted-foreground" />}
+                      <span>Print-Friendly</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {complianceCfrPart11 ? (
+                        <>
+                          <Scale className="h-3.5 w-3.5 text-orange-500" />
+                          <span className="font-medium text-orange-700 dark:text-orange-400">21 CFR Part 11</span>
+                        </>
+                      ) : (
+                        <>
+                          <Scale className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-muted-foreground">No CFR Part 11</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ===== WIZARD NAVIGATION ===== */}
+            <div className="flex items-center justify-between pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setWizardStep(Math.max(1, wizardStep - 1))}
+                disabled={wizardStep === 1}
+              >
+                <ChevronLeft className="h-4 w-4 mr-1" />Back
+              </Button>
+
+              <span className="text-sm text-muted-foreground">Step {wizardStep} of 6</span>
+
+              {wizardStep < 6 ? (
+                <Button
+                  onClick={() => setWizardStep(wizardStep + 1)}
+                  disabled={!canGoNext()}
+                >
+                  Next<ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleSaveTemplate}
+                  disabled={!builderTitle || builderFields.length === 0}
+                >
+                  <LayoutTemplate className="h-4 w-4 mr-2" />Create as Draft
+                </Button>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
       {/* ============================================================ */}
       {/* ENHANCED TEMPLATE DETAIL DIALOG                              */}
       {/* ============================================================ */}
       <Dialog open={showTemplateDetailDialog} onOpenChange={setShowTemplateDetailDialog}>
         <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
           {selectedTemplate && (() => {
-            const currentStatus = selectedTemplate.status;
+            const currentStatus = getTemplateStatus(selectedTemplate);
             const allowedTransitions = FORM_TEMPLATE_TRANSITIONS[currentStatus] || [];
             const currentStepIndex = TEMPLATE_STATUS_STEPS.indexOf(currentStatus);
 
@@ -1343,7 +1478,7 @@ export function FormView() {
                   {/* Template Info */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                     <div><span className="text-muted-foreground">Version:</span> <span className="font-medium ml-1">{selectedTemplate.version}</span></div>
-                    <div><span className="text-muted-foreground">Module:</span> <Badge variant="outline" className="text-xs ml-1">{moduleTypeLabels[selectedTemplate.moduleType]}</Badge></div>
+                    <div><span className="text-muted-foreground">Module:</span> <Badge variant="outline" className="text-xs ml-1">{selectedTemplate.moduleType ? moduleTypeLabels[selectedTemplate.moduleType] : '—'}</Badge></div>
                     <div><span className="text-muted-foreground">Fields:</span> <span className="font-medium ml-1">{selectedTemplate.fields.length}</span></div>
                     <div><span className="text-muted-foreground">Instances:</span> <span className="font-medium ml-1">{getInstanceCount(selectedTemplate.id)}</span></div>
                     <div><span className="text-muted-foreground">Created:</span> <span className="font-medium ml-1">{formatDate(selectedTemplate.createdAt)}</span></div>
@@ -1581,7 +1716,7 @@ export function FormView() {
       </Dialog>
 
       {/* ============================================================ */}
-      {/* ENHANCED FILL FORM DIALOG                                    */}
+      {/* FILL FORM DIALOG                                              */}
       {/* ============================================================ */}
       <Dialog open={showFillerDialog} onOpenChange={setShowFillerDialog}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
@@ -1619,293 +1754,135 @@ export function FormView() {
 
               <Separator />
 
-            {/* ===== STEP 5: Compliance ===== */}
-            {wizardStep === 5 && (
+              {/* Form Fields */}
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <ShieldCheck className="h-5 w-5 text-primary" />
-                  Compliance
-                </h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="grid gap-2">
-                      <Label>Regulatory Reference</Label>
-                      <Input value={complianceRegulatoryRef} onChange={(e) => setComplianceRegulatoryRef(e.target.value)} placeholder="e.g., ISO 13485:2016 Clause 4.2.4" />
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label>Retention Period</Label>
-                      <Select value={complianceRetentionPeriod} onValueChange={setComplianceRetentionPeriod}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Product Lifetime">Product Lifetime</SelectItem>
-                          <SelectItem value="5 Years">5 Years</SelectItem>
-                          <SelectItem value="10 Years">10 Years</SelectItem>
-                          <SelectItem value="15 Years">15 Years</SelectItem>
-                          <SelectItem value="25 Years">25 Years</SelectItem>
-                          <SelectItem value="Permanent">Permanent</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label>Data Classification</Label>
-                      <Select value={complianceDataClassification} onValueChange={(v) => setComplianceDataClassification(v as FormTemplateCompliance['dataClassification'])}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Internal">Internal</SelectItem>
-                          <SelectItem value="Confidential">Confidential</SelectItem>
-                          <SelectItem value="Regulatory">Regulatory</SelectItem>
-                          <SelectItem value="GxP Critical">GxP Critical</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3 p-3 border rounded-md">
-                      <Checkbox
-                        checked={complianceAuditTrailEnabled}
-                        onCheckedChange={(v) => setComplianceAuditTrailEnabled(v === true)}
+                {fillingTemplate.fields.map(field => (
+                  <div key={field.id} className="grid gap-1.5">
+                    <Label className="text-sm">
+                      {field.label}
+                      {field.required && <span className="text-red-500 ml-1">*</span>}
+                    </Label>
+                    {field.type === 'text' && (
+                      <Input
+                        placeholder={field.placeholder}
+                        value={(formValues[field.name] as string) ?? ''}
+                        onChange={(e) => setFormValues({ ...formValues, [field.name]: e.target.value })}
                       />
-                      <div>
-                        <Label className="font-medium">Audit Trail Enabled</Label>
-                        <p className="text-xs text-muted-foreground">Track all changes with full audit trail</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-3 border rounded-md">
-                      <Checkbox
-                        checked={compliancePrintFriendly}
-                        onCheckedChange={(v) => setCompliancePrintFriendly(v === true)}
-                      />
-                      <div>
-                        <Label className="font-medium">Print-Friendly Layout</Label>
-                        <p className="text-xs text-muted-foreground">Generate print-optimized versions of form records</p>
-                      </div>
-                    </div>
-
-                    <div className={cn(
-                      'flex items-start gap-3 p-3 border rounded-md',
-                      complianceCfrPart11 && 'border-orange-300 bg-orange-50 dark:border-orange-700 dark:bg-orange-900/10'
-                    )}>
-                      <Checkbox
-                        checked={complianceCfrPart11}
-                        onCheckedChange={(v) => setComplianceCfrPart11(v === true)}
-                        className="mt-0.5"
-                      />
-                      <div>
-                        <Label className="font-medium flex items-center gap-1">
-                          21 CFR Part 11 Compliance
-                          {complianceCfrPart11 && <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />}
-                        </Label>
-                        <p className="text-xs text-muted-foreground">
-                          Enables electronic record and signature requirements per FDA 21 CFR Part 11.
-                          All form entries will require electronic signatures and full audit trails.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ===== STEP 6: Review & Submit ===== */}
-            {wizardStep === 6 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-primary" />
-                  Review & Submit
-                </h3>
-
-                {/* Template Info Summary */}
-                <div className="border rounded-md p-4 space-y-2">
-                  <h4 className="font-semibold text-sm flex items-center gap-2">
-                    <LayoutTemplate className="h-4 w-4 text-primary" />
-                    Template Info
-                  </h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                    <div><span className="text-muted-foreground">Title:</span> <span className="font-medium ml-1">{builderTitle || '—'}</span></div>
-                    <div><span className="text-muted-foreground">Version:</span> <span className="font-mono ml-1">{builderVersion}</span></div>
-                    <div><span className="text-muted-foreground">Module:</span> <span className="ml-1">{moduleTypeLabels[builderModuleType]}</span></div>
-                    <div><span className="text-muted-foreground">Fields:</span> <span className="font-medium ml-1">{builderFields.length}</span></div>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Linked Doc:</span>{' '}
-                    <span className="ml-1">{builderLinkedDoc && builderLinkedDoc !== 'none' ? approvedDocuments.find(d => d.id === builderLinkedDoc)?.documentNumber || '—' : 'None'}</span>
-                  </div>
-                  {builderDescription && (
-                    <p className="text-sm text-muted-foreground mt-1">{builderDescription}</p>
-                  )}
-                  <div className="mt-2">
-                    <Badge className={cn('text-xs', templateStatusColors['Draft'])} variant="secondary">
-                      Draft — will require approval before use
-                    </Badge>
-                  </div>
-                </div>
-
-                {/* Fields Preview */}
-                <div className="border rounded-md p-4 space-y-2">
-                  <h4 className="font-semibold text-sm flex items-center gap-2">
-                    <ClipboardList className="h-4 w-4 text-primary" />
-                    Field Preview ({builderFields.length} fields)
-                  </h4>
-                  {builderFields.length > 0 ? (
-                    <div className="max-h-[200px] overflow-y-auto space-y-1">
-                      {builderFields.map((field, i) => (
-                        <div key={field.id} className="flex items-center gap-2 py-1 text-sm border-b last:border-0">
-                          <span className="text-muted-foreground font-mono text-xs w-6">{i + 1}.</span>
-                          <span className="font-medium flex-1">{field.label}</span>
-                          <Badge variant="outline" className="text-xs">{fieldTypeIcons[field.type]} {field.type}</Badge>
-                          {field.required && <Badge variant="outline" className="text-xs border-red-300 text-red-700">Req</Badge>}
-                          {field.placeholder && <span className="text-xs text-muted-foreground italic truncate max-w-[100px]">&quot;{field.placeholder}&quot;</span>}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No fields defined</p>
-                  )}
-                </div>
-
-                {/* Workflow Summary */}
-                <div className="border rounded-md p-4 space-y-2">
-                  <h4 className="font-semibold text-sm flex items-center gap-2">
-                    <Gavel className="h-4 w-4 text-primary" />
-                    Workflow & Rules
-                  </h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                    <div className="flex items-center gap-1.5">
-                      {workflowRequiresApproval ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                      <span>Requires Approval</span>
-                    </div>
-                    {workflowRequiresApproval && (
-                      <div><span className="text-muted-foreground">Type:</span> <span className="font-medium ml-1 capitalize">{workflowType === 'single' ? 'Single Approver' : workflowType === 'sequential' ? 'Sequential' : 'Parallel'}</span></div>
                     )}
-                    <div className="flex items-center gap-1.5">
-                      {workflowAllowDraftSaves ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                      <span>Allow Draft Saves</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {workflowLockAfterSubmission ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                      <span>Lock After Submission</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {workflowESignatureRequired ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                      <span>E-Signature Required</span>
-                    </div>
+                    {field.type === 'number' && (
+                      <Input
+                        type="number"
+                        placeholder={field.placeholder}
+                        value={(formValues[field.name] as string) ?? ''}
+                        onChange={(e) => setFormValues({ ...formValues, [field.name]: e.target.value })}
+                      />
+                    )}
+                    {field.type === 'date' && (
+                      <Input
+                        type="date"
+                        value={(formValues[field.name] as string) ?? ''}
+                        onChange={(e) => setFormValues({ ...formValues, [field.name]: e.target.value })}
+                      />
+                    )}
+                    {field.type === 'select' && field.options && (
+                      <Select
+                        value={(formValues[field.name] as string) ?? ''}
+                        onValueChange={(v) => setFormValues({ ...formValues, [field.name]: v })}
+                      >
+                        <SelectTrigger><SelectValue placeholder={`Select ${field.label.toLowerCase()}...`} /></SelectTrigger>
+                        <SelectContent>
+                          {field.options.map(opt => (
+                            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {field.type === 'checkbox' && (
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={(formValues[field.name] as boolean) ?? false}
+                          onCheckedChange={(v) => setFormValues({ ...formValues, [field.name]: v === true })}
+                        />
+                        <span className="text-sm text-muted-foreground">{field.label}</span>
+                      </div>
+                    )}
+                    {field.type === 'textarea' && (
+                      <Textarea
+                        placeholder={field.placeholder}
+                        value={(formValues[field.name] as string) ?? ''}
+                        onChange={(e) => setFormValues({ ...formValues, [field.name]: e.target.value })}
+                        rows={3}
+                      />
+                    )}
+                    {field.type === 'signature' && (
+                      <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md h-20 flex items-center justify-center text-muted-foreground text-xs">
+                        <PenLine className="h-5 w-5 mr-2" />Signature Area
+                      </div>
+                    )}
+                    {field.type === 'rating' && (
+                      <div className="flex items-center gap-1">
+                        {[1, 2, 3, 4, 5].map(star => (
+                          <Star
+                            key={star}
+                            className={cn(
+                              'h-6 w-6 cursor-pointer',
+                              ((formValues[field.name] as number) || 0) >= star
+                                ? 'fill-amber-400 text-amber-400'
+                                : 'text-muted-foreground/30'
+                            )}
+                            onClick={() => setFormValues({ ...formValues, [field.name]: star })}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {field.type === 'file' && (
+                      <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md h-16 flex items-center justify-center text-muted-foreground text-xs">
+                        <Upload className="h-4 w-4 mr-2" />File Upload Area
+                      </div>
+                    )}
+                    {(field.type === 'table' || field.type === 'repeater') && (
+                      <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-md h-16 flex items-center justify-center text-muted-foreground text-xs">
+                        {field.type === 'table' ? '▦' : '⟳'} {field.type === 'table' ? 'Table' : 'Repeater'} Field
+                      </div>
+                    )}
                   </div>
-                </div>
-
-                {/* Compliance Summary */}
-                <div className="border rounded-md p-4 space-y-2">
-                  <h4 className="font-semibold text-sm flex items-center gap-2">
-                    <ShieldCheck className="h-4 w-4 text-primary" />
-                    Compliance
-                  </h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                    <div><span className="text-muted-foreground">Regulatory Ref:</span> <span className="font-medium ml-1">{complianceRegulatoryRef || '—'}</span></div>
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span>{complianceRetentionPeriod}</span>
-                    </div>
-                    <div>
-                      <Badge className={cn(dataClassificationColors[complianceDataClassification])} variant="secondary">
-                        {complianceDataClassification}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {complianceAuditTrailEnabled ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                      <span>Audit Trail</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {compliancePrintFriendly ? <Printer className="h-3.5 w-3.5 text-green-500" /> : <Printer className="h-3.5 w-3.5 text-muted-foreground" />}
-                      <span>Print-Friendly</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {complianceCfrPart11 ? (
-                        <>
-                          <Scale className="h-3.5 w-3.5 text-orange-500" />
-                          <span className="font-medium text-orange-700 dark:text-orange-400">21 CFR Part 11</span>
-                        </>
-                      ) : (
-                        <>
-                          <Scale className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="text-muted-foreground">No CFR Part 11</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                ))}
               </div>
-            )}
 
-            {/* ===== WIZARD NAVIGATION ===== */}
-            <div className="flex items-center justify-between pt-2">
-              <Button
-                variant="outline"
-                onClick={() => setWizardStep(Math.max(1, wizardStep - 1))}
-                disabled={wizardStep === 1}
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />Back
-              </Button>
-
-              <span className="text-sm text-muted-foreground">Step {wizardStep} of 6</span>
-
-              {wizardStep < 6 ? (
-                <Button
-                  onClick={() => setWizardStep(wizardStep + 1)}
-                  disabled={!canGoNext()}
-                >
-                  Next<ChevronRight className="h-4 w-4 ml-1" />
+              {/* Submit Button */}
+              <div className="flex justify-end pt-2">
+                <Button onClick={handleSubmitInstance}>
+                  <Send className="h-4 w-4 mr-2" />Submit Form
                 </Button>
-              ) : (
-                <Button
-                  onClick={handleSaveTemplate}
-                  disabled={!builderTitle || builderFields.length === 0}
-                >
-                  <LayoutTemplate className="h-4 w-4 mr-2" />Create as Draft
-                </Button>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
-        {/* ============================================================ */}
-        {/* ENHANCED TEMPLATE DETAIL DIALOG                              */}
-        {/* ============================================================ */}
-        <Dialog open={showTemplateDetailDialog} onOpenChange={setShowTemplateDetailDialog}>
-          <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
-            {selectedTemplate && (
+      {/* ============================================================ */}
+      {/* INSTANCE DETAIL DIALOG                                       */}
+      {/* ============================================================ */}
+      <Dialog open={showInstanceDetailDialog} onOpenChange={setShowInstanceDetailDialog}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          {selectedInstance && (() => {
+            const instanceTemplate = templates.find(t => t.id === selectedInstance.templateId);
+            return (
               <>
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
-                    <LayoutTemplate className="h-5 w-5 text-primary" />
-                    {selectedTemplate.title}
-                    <Badge variant="outline" className="font-mono text-xs">v{selectedTemplate.version}</Badge>
-                    {renderTemplateStatusBadge(selectedTemplate)}
-                    {selectedTemplate.compliance?.cfrPart11Compliance && (
-                      <Badge variant="outline" className="text-xs border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-400">21 CFR Part 11</Badge>
-                    )}
+                    <FileSpreadsheet className="h-5 w-5 text-primary" />
+                    {selectedInstance.referenceNumber}
+                    <Badge className={cn('text-xs', instanceStatusColors[selectedInstance.status])} variant="secondary">
+                      {selectedInstance.status}
+                    </Badge>
+                    <Badge variant="outline">v{selectedInstance.templateVersion}</Badge>
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4">
-                  {/* Template Info */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                    <div><span className="text-muted-foreground">Version:</span> <span className="font-medium ml-1">{selectedTemplate.version}</span></div>
-                    <div>
-                      <span className="text-muted-foreground">Status:</span>{' '}
-                      {renderTemplateStatusBadge(selectedTemplate)}
-                    </div>
-                  )}
-
-                  {/* Status & Meta */}
-                  <div className="flex flex-wrap gap-2">
-                    <Badge className={cn(instanceStatusColors[selectedInstance.status])} variant="secondary">{selectedInstance.status}</Badge>
-                    <Badge variant="outline">v{selectedInstance.templateVersion}</Badge>
-                  </div>
-
+                  {/* Instance Meta */}
                   <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div><span className="text-muted-foreground">Template:</span> <span className="font-medium ml-1">{instanceTemplate?.title || selectedInstance.templateId}</span></div>
                     <div><span className="text-muted-foreground">Submitted By:</span> <span className="font-medium ml-1">{getUserName(selectedInstance.submittedById)}</span></div>
                     <div><span className="text-muted-foreground">Submitted Date:</span> <span className="font-medium ml-1">{formatDate(selectedInstance.submittedAt)}</span></div>
                     <div><span className="text-muted-foreground">Created:</span> <span className="font-medium ml-1">{formatDate(selectedInstance.createdAt)}</span></div>
@@ -1924,7 +1901,7 @@ export function FormView() {
                       </h4>
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         {selectedInstance.linkedRecordType && (
-                          <div><span className="text-muted-foreground">Type:</span> <Badge variant="outline" className="text-xs ml-1">{moduleTypeLabels[selectedInstance.linkedRecordType]}</Badge></div>
+                          <div><span className="text-muted-foreground">Type:</span> <Badge variant="outline" className="text-xs ml-1">{selectedInstance.linkedRecordType}</Badge></div>
                         )}
                         {selectedInstance.linkedRecordId && (
                           <div><span className="text-muted-foreground">ID:</span> <span className="font-mono text-xs ml-1">{selectedInstance.linkedRecordId}</span></div>
@@ -1935,10 +1912,10 @@ export function FormView() {
 
                   <Separator />
 
-                  {/* Filled Values */}
+                  {/* Form Values */}
                   <div className="space-y-2">
                     <h4 className="font-semibold text-sm">Form Values</h4>
-                    {template ? template.fields.map(field => {
+                    {instanceTemplate ? instanceTemplate.fields.map(field => {
                       const value = selectedInstance.values[field.name];
                       return (
                         <div key={field.id} className="border-b pb-2">
@@ -1964,7 +1941,7 @@ export function FormView() {
                                     (value as number || 0) >= star ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30'
                                   )} />
                                 ))}
-                                <span className="ml-1">({value || 0})</span>
+                                <span className="ml-1">({String(value ?? 0)})</span>
                               </span>
                             ) : field.type === 'file' ? (
                               value ? (
@@ -2051,106 +2028,32 @@ export function FormView() {
                     </>
                   )}
 
-                  {/* Approval/Rejection buttons */}
-                  {(selectedInstance.status === 'Submitted' || selectedInstance.status === 'Draft') && hasPermission('documents.approve') && (
+                  {/* Approve/Reject buttons */}
+                  {(selectedInstance.status === 'Submitted') && hasPermission('documents.approve') && (
                     <>
                       <Separator />
-                      <div className="space-y-2">
-                        <h4 className="font-semibold text-sm flex items-center gap-2">
-                          <Gavel className="h-4 w-4 text-primary" />
-                          Workflow Rules
-                        </h4>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div className="flex items-center gap-1.5">
-                            {selectedTemplate.workflow.requiresApproval ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                            <span>Requires Approval</span>
-                          </div>
-                          {selectedTemplate.workflow.requiresApproval && (
-                            <div><span className="text-muted-foreground">Type:</span> <span className="font-medium ml-1 capitalize">{selectedTemplate.workflow.workflowType === 'single' ? 'Single Approver' : selectedTemplate.workflow.workflowType === 'sequential' ? 'Sequential' : 'Parallel'}</span></div>
-                          )}
-                          <div className="flex items-center gap-1.5">
-                            {selectedTemplate.workflow.allowDraftSaves ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                            <span>Allow Draft Saves</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {selectedTemplate.workflow.lockAfterSubmission ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                            <span>Lock After Submission</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {selectedTemplate.workflow.eSignatureRequired ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                            <span>E-Signature Required</span>
-                          </div>
-                        </div>
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          onClick={() => handleApproveReject(selectedInstance.id, 'reject')}
+                          variant="destructive"
+                        >
+                          <XCircle className="h-4 w-4 mr-2" />Reject
+                        </Button>
+                        <Button
+                          onClick={() => handleApproveReject(selectedInstance.id, 'approve')}
+                          className="bg-green-600 hover:bg-green-700 text-white"
+                        >
+                          <CheckCircle2 className="h-4 w-4 mr-2" />Approve
+                        </Button>
                       </div>
                     </>
                   )}
-
-                  {/* Compliance Settings */}
-                  {selectedTemplate.compliance && (
-                    <>
-                      <Separator />
-                      <div className="space-y-2">
-                        <h4 className="font-semibold text-sm flex items-center gap-2">
-                          <ShieldCheck className="h-4 w-4 text-primary" />
-                          Compliance
-                        </h4>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div><span className="text-muted-foreground">Regulatory Ref:</span> <span className="font-medium ml-1">{selectedTemplate.compliance.regulatoryReference || '—'}</span></div>
-                          <div><span className="text-muted-foreground">Retention:</span> <span className="font-medium ml-1">{selectedTemplate.compliance.retentionPeriod}</span></div>
-                          <div>
-                            <span className="text-muted-foreground">Classification:</span>{' '}
-                            <Badge className={cn(dataClassificationColors[selectedTemplate.compliance.dataClassification])} variant="secondary">
-                              {selectedTemplate.compliance.dataClassification}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {selectedTemplate.compliance.auditTrailEnabled ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                            <span>Audit Trail</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {selectedTemplate.compliance.printFriendlyLayout ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
-                            <span>Print-Friendly</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            {selectedTemplate.compliance.cfrPart11Compliance ? <Scale className="h-3.5 w-3.5 text-orange-500" /> : <Scale className="h-3.5 w-3.5 text-muted-foreground" />}
-                            <span className={selectedTemplate.compliance.cfrPart11Compliance ? 'font-medium text-orange-700 dark:text-orange-400' : ''}>21 CFR Part 11</span>
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {/* Template Statistics */}
-                  <Separator />
-                  <div className="space-y-2">
-                    <h4 className="font-semibold text-sm flex items-center gap-2">
-                      <FileSpreadsheet className="h-4 w-4 text-primary" />
-                      Template Statistics
-                    </h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className="border rounded-md p-3 text-center">
-                        <div className="text-2xl font-bold">{selectedTemplate.fields.length}</div>
-                        <div className="text-xs text-muted-foreground">Total Fields</div>
-                      </div>
-                      <div className="border rounded-md p-3 text-center">
-                        <div className="text-2xl font-bold">{selectedTemplate.fields.filter(f => f.required).length}</div>
-                        <div className="text-xs text-muted-foreground">Required Fields</div>
-                      </div>
-                      <div className="border rounded-md p-3 text-center">
-                        <div className="text-2xl font-bold">{getInstanceCount(selectedTemplate.id)}</div>
-                        <div className="text-xs text-muted-foreground">Instances</div>
-                      </div>
-                      <div className="border rounded-md p-3 text-center">
-                        <div className="text-2xl font-bold">{selectedTemplate.fields.filter(f => f.type === 'signature').length}</div>
-                        <div className="text-xs text-muted-foreground">Signature Fields</div>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </>
-            )}
-          </DialogContent>
-        </Dialog>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Electronic Signature Modal (Instance) */}
       <ElectronicSignatureModal
@@ -2172,5 +2075,6 @@ export function FormView() {
         signatureType="approval"
       />
     </div>
+  </TooltipProvider>
   );
 }
