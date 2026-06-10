@@ -16,6 +16,7 @@ import {
   User,
   Menu,
   Globe,
+  Settings,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { MobileBottomNav } from '@/components/shared/MobileBottomNav';
@@ -40,7 +41,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
   const [activeSection, setActiveSection] = useState<ActiveSection>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const { currentUser, logout, switchUser } = useAuth();
+  const { currentUser, logout, switchUser, hasPermission } = useAuth();
   const { currentOrg, orgSettings, updateSettings } = useOrganization();
   const { locale, setLocale, t } = useI18n();
   const storeUpdateOrganization = useQMSStore(state => state.updateOrganization);
@@ -147,6 +148,18 @@ function AppLayoutInner({ children }: AppLayoutProps) {
           </div>
 
           <div className="flex items-center gap-1 md:gap-3 flex-shrink-0">
+            {/* Settings button — mobile only, visible for admin */}
+            {hasPermission('admin.settings') && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="lg:hidden h-9 w-9"
+                onClick={() => setActiveSection('settings')}
+              >
+                <Settings className="h-5 w-5" />
+              </Button>
+            )}
+
             {/* Global Search — hidden on very small screens */}
             <div className="hidden sm:block">
               <GlobalSearch onNavigate={(section) => { setActiveSection(section); setMobileSidebarOpen(false); }} />

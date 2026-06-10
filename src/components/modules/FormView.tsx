@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
+import { useRecordWorkflow, MODULE_TYPE_LABELS } from '@/hooks/useRecordWorkflow';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
 import type { FormTemplate, FormInstance, FormFieldDefinition, FormInstanceStatus, SignatureType, FormTemplateWorkflow, FormTemplateCompliance, FormTemplateStatus, FormTemplateModuleType } from '@/types/qms';
@@ -97,7 +97,8 @@ const TEMPLATE_STATUS_STEPS: FormTemplateStatus[] = ['Draft', 'Under_Review', 'A
 export function FormView() {
   const { currentUser, hasPermission } = useAuth();
   const store = useQMSStore();
-  const { moduleTypeLabels: workflowModuleLabels } = useRecordWorkflow();
+  const { getModuleTypeLabel } = useRecordWorkflow();
+  const workflowModuleLabels = MODULE_TYPE_LABELS;
   const templates = store.formTemplates;
   const instances = store.formInstances;
   const documents = store.documents;

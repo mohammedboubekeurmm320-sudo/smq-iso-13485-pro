@@ -2,7 +2,9 @@
 
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
-import type { ActiveSection } from '@/types/qms';
+import { useAuth } from '@/contexts/AuthContext';
+import type { ActiveSection, Permission, UserRole } from '@/types/qms';
+import { rolePermissions } from '@/types/qms';
 import {
   LayoutDashboard,
   FileText,
@@ -22,10 +24,10 @@ import {
   PieChart,
   CheckCircle2,
   Users,
+  Settings,
 } from 'lucide-react';
 import {
   Drawer,
-  DrawerClose,
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
@@ -38,6 +40,8 @@ interface NavItem {
   id: ActiveSection;
   label: string;
   icon: React.ElementType;
+  /** If set, this item is only visible to users with this permission */
+  requiredPermission?: string;
 }
 
 const PRIMARY_NAV_ITEMS: NavItem[] = [
@@ -76,9 +80,10 @@ const MORE_NAV_ITEMS: { group: string; items: NavItem[] }[] = [
     ],
   },
   {
-    group: 'Settings',
+    group: 'Paramètres',
     items: [
-      { id: 'user-management', label: 'Users', icon: Users },
+      { id: 'settings', label: 'Paramètres', icon: Settings, requiredPermission: 'admin.settings' },
+      { id: 'user-management', label: 'Utilisateurs', icon: Users },
     ],
   },
 ];
@@ -90,6 +95,13 @@ interface MobileBottomNavProps {
 
 export function MobileBottomNav({ activeSection, onSectionChange }: MobileBottomNavProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const { hasPermission: ctxHasPermission, currentUser } = useAuth();
+
+  const hasPermission = (permission: string): boolean => {
+    if (!currentUser) return false;
+    const perms = rolePermissions[currentUser.role as UserRole] || [];
+    return perms.includes(permission as Permission);
+  };
 
   const isPrimaryActive = (id: string) => activeSection === id;
   const isMoreActive = () =>
@@ -99,6 +111,9 @@ export function MobileBottomNav({ activeSection, onSectionChange }: MobileBottom
     onSectionChange(section);
     setMoreOpen(false);
   };
+
+  // Check if settings is accessible
+  const canAccessSettings = hasPermission('admin.settings');
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-30 lg:hidden bg-background border-t border-border safe-area-bottom">
@@ -125,59 +140,88 @@ export function MobileBottomNav({ activeSection, onSectionChange }: MobileBottom
           );
         })}
 
+        {/* Settings direct access — visible for admin on mobile */}
+        {canAccessSettings && (
+          <button
+            onClick={() => handleSectionChange('settings')}
+            className={cn(
+              'flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors rounded-lg',
+              activeSection === 'settings'
+                ? 'text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Settings className={cn('h-5 w-5', activeSection === 'settings' && 'text-primary')} />
+            <span className={cn('text-[10px] font-medium', activeSection === 'settings' && 'text-primary')}>
+              Paramètres
+            </span>
+          </button>
+        )}
+
         {/* More button opens drawer */}
         <Drawer open={moreOpen} onOpenChange={setMoreOpen}>
           <DrawerTrigger asChild>
             <button
               className={cn(
                 'flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors rounded-lg',
-                isMoreActive()
+                isMoreActive() && !canAccessSettings
                   ? 'text-primary'
                   : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              <MoreHorizontal className={cn('h-5 w-5', isMoreActive() && 'text-primary')} />
-              <span className={cn('text-[10px] font-medium', isMoreActive() && 'text-primary')}>
+              <MoreHorizontal className={cn('h-5 w-5', isMoreActive() && !canAccessSettings && 'text-primary')} />
+              <span className={cn('text-[10px] font-medium', isMoreActive() && !canAccessSettings && 'text-primary')}>
                 More
               </span>
             </button>
           </DrawerTrigger>
           <DrawerContent>
             <DrawerHeader>
-              <DrawerTitle>All Sections</DrawerTitle>
+              <DrawerTitle>Toutes les Sections</DrawerTitle>
             </DrawerHeader>
-            <div className="px-4 pb-8 max-h-[60vh] overflow-y-auto space-y-4">
-              {MORE_NAV_ITEMS.map((group) => (
-                <div key={group.group}>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                    {group.group}
-                  </p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {group.items.map((item) => {
-                      const Icon = item.icon;
-                      const active = activeSection === item.id;
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => handleSectionChange(item.id)}
-                          className={cn(
-                            'flex flex-col items-center gap-1.5 p-3 rounded-lg transition-colors text-center',
-                            active
-                              ? 'bg-primary/10 text-primary'
-                              : 'hover:bg-muted text-foreground'
-                          )}
-                        >
-                          <Icon className="h-5 w-5" />
-                          <span className="text-xs font-medium truncate w-full">
-                            {item.label}
-                          </span>
-                        </button>
-                      );
-                    })}
+            <div className="px-4 pb-8 max-h-[70vh] overflow-y-auto space-y-4">
+              {MORE_NAV_ITEMS.map((group) => {
+                // Filter items by permission
+                const visibleItems = group.items.filter(item => {
+                  if (item.requiredPermission) {
+                    return hasPermission(item.requiredPermission);
+                  }
+                  return true;
+                });
+                if (visibleItems.length === 0) return null;
+
+                return (
+                  <div key={group.group}>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                      {group.group}
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {visibleItems.map((item) => {
+                        const Icon = item.icon;
+                        const active = activeSection === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => handleSectionChange(item.id)}
+                            className={cn(
+                              'flex flex-col items-center gap-1.5 p-3 rounded-lg transition-colors text-center',
+                              active
+                                ? 'bg-primary/10 text-primary'
+                                : 'hover:bg-muted text-foreground'
+                            )}
+                          >
+                            <Icon className="h-5 w-5" />
+                            <span className="text-xs font-medium truncate w-full">
+                              {item.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <Separator className="mt-3" />
                   </div>
-                  <Separator className="mt-3" />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </DrawerContent>
         </Drawer>
