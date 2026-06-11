@@ -239,6 +239,14 @@ export interface TranslationStrings {
       templatePendingBadge: string;
       templatesCount: string;
       referenceTemplate: string;
+      templateForType: string;
+      noTemplateForType: string;
+      noTemplateForTypeDesc: string;
+      autoSelectedTemplate: string;
+      autoSelectedTemplateDesc: string;
+      templateAlreadyExistsForType: string;
+      templateAlreadyExistsForTypeDesc: string;
+      cannotApproveTemplateExists: string;
     };
     capa: {
       title: string;

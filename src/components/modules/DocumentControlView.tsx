@@ -254,7 +254,12 @@ export function DocumentControlView() {
     setFormTemplateReferenceId('');
   };
 
-  // Approved templates available for reference (only Approved status + isTemplate=true)
+  // Approved templates available for reference — filtered by document type
+  const approvedTemplatesForType = documents.filter(d =>
+    d.isTemplate && (d.status === 'Approved' || d.status === 'Effective') && d.type === formType
+  );
+
+  // All approved templates (for summary counts etc.)
   const approvedTemplates = documents.filter(d =>
     d.isTemplate && (d.status === 'Approved' || d.status === 'Effective')
   );
@@ -313,6 +318,22 @@ export function DocumentControlView() {
   const handleAdvanceStatus = (doc: Document) => {
     const next = getNextStatus(doc.status);
     if (!next) return;
+
+    // Template singularity gate: only one approved template per type
+    if (doc.isTemplate && next === 'Approved') {
+      const existingApprovedTemplate = documents.find(d =>
+        d.isTemplate && d.type === doc.type &&
+        (d.status === 'Approved' || d.status === 'Effective') && d.id !== doc.id
+      );
+      if (existingApprovedTemplate) {
+        alert(
+          t.modules.documents.cannotApproveTemplateExists
+            .replace('{docNumber}', existingApprovedTemplate.documentNumber)
+            .replace('{type}', doc.type)
+        );
+        return;
+      }
+    }
 
     // If advancing to Approved, require electronic signature
     if (next === 'Approved') {
@@ -399,7 +420,24 @@ export function DocumentControlView() {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="doc-type">{t.common.type} *</Label>
-                <Select value={formType} onValueChange={(v) => setFormType(v as DocumentType)}>
+                <Select value={formType} onValueChange={(v) => {
+                  const newType = v as DocumentType;
+                  setFormType(newType);
+                  // Reset template reference if current one doesn't match new type
+                  if (formTemplateReferenceId && formTemplateReferenceId !== 'none') {
+                    const currentRef = documents.find(d => d.id === formTemplateReferenceId);
+                    if (currentRef && currentRef.type !== newType) {
+                      setFormTemplateReferenceId('');
+                    }
+                  }
+                  // Auto-select if exactly one approved template for this type
+                  const templatesForType = documents.filter(d =>
+                    d.isTemplate && (d.status === 'Approved' || d.status === 'Effective') && d.type === newType
+                  );
+                  if (templatesForType.length === 1) {
+                    setFormTemplateReferenceId(templatesForType[0].id);
+                  }
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder={t.modules.documents.docTypePlaceholder} />
                   </SelectTrigger>
@@ -528,13 +566,13 @@ export function DocumentControlView() {
             <div className="grid gap-2">
               <Label className="flex items-center gap-2">
                 <LayoutTemplate className="h-4 w-4" />
-                {t.modules.documents.referenceTemplate}
+                {t.modules.documents.referenceTemplate} ({formType})
               </Label>
               <Select value={formTemplateReferenceId} onValueChange={setFormTemplateReferenceId}>
                 <SelectTrigger><SelectValue placeholder={t.modules.documents.selectTemplate} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">{t.modules.documents.noTemplateNeeded}</SelectItem>
-                  {approvedTemplates.map(d => (
+                  {approvedTemplatesForType.map(d => (
                     <SelectItem key={d.id} value={d.id}>
                       <span className="flex items-center gap-1.5">
                         <LayoutTemplate className="h-3 w-3 text-green-600" />
@@ -544,13 +582,13 @@ export function DocumentControlView() {
                   ))}
                 </SelectContent>
               </Select>
-              {approvedTemplates.length === 0 && (
+              {approvedTemplatesForType.length === 0 && (
                 <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
                   <div className="text-sm">
-                    <p className="text-amber-700 dark:text-amber-400 font-medium">{t.modules.documents.noApprovedTemplates}</p>
+                    <p className="text-amber-700 dark:text-amber-400 font-medium">{t.modules.documents.noTemplateForType} ({formType})</p>
                     <p className="text-amber-600 dark:text-amber-400/80 text-xs mt-0.5">
-                      {t.modules.documents.noApprovedTemplatesDesc}
+                      {t.modules.documents.noTemplateForTypeDesc}
                     </p>
                   </div>
                 </div>
@@ -569,6 +607,17 @@ export function DocumentControlView() {
                   </div>
                 ) : null;
               })()}
+              {formTemplateReferenceId && formTemplateReferenceId !== 'none' && approvedTemplatesForType.length === 1 && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-3 flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="text-blue-700 dark:text-blue-400 font-medium">{t.modules.documents.autoSelectedTemplate}</p>
+                    <p className="text-blue-600 dark:text-blue-400/80 text-xs mt-0.5">
+                      {t.modules.documents.autoSelectedTemplateDesc}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid gap-2">
@@ -617,6 +666,17 @@ export function DocumentControlView() {
                   <p className="text-blue-700 dark:text-blue-400 font-medium">{t.modules.documents.templateMustBeApproved}</p>
                   <p className="text-blue-600 dark:text-blue-400/80 text-xs mt-0.5">
                     {t.modules.documents.templateMustBeApprovedDesc}
+                  </p>
+                </div>
+              </div>
+            )}
+            {formIsTemplate && approvedTemplatesForType.length > 0 && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2 mt-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                <div className="text-sm">
+                  <p className="text-amber-700 dark:text-amber-400 font-medium">{t.modules.documents.templateAlreadyExistsForType}</p>
+                  <p className="text-amber-600 dark:text-amber-400/80 text-xs mt-0.5">
+                    {t.modules.documents.templateAlreadyExistsForTypeDesc.replace('{type}', formType)} ({approvedTemplatesForType.map(t2 => t2.documentNumber).join(', ')}).
                   </p>
                 </div>
               </div>
