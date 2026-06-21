@@ -262,8 +262,6 @@ export function TrainingView() {
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      templateId: newTemplateId || undefined,
-      templateVersion: newTemplateVersion || undefined,
     };
     // Store extended metadata locally
     const meta: TrainingExtendedMeta = {

@@ -263,7 +263,7 @@ function WorkflowVisualizer({ flow }: { flow: StatusFlowConfig }) {
             )}>
               {status}
               {status === flow.initial_status && (
-                <span className="ml-1.5 text-[10px] text-blue-500">({t?.settings?.initialStatus || 'initial'})</span>
+                <span className="ml-1.5 text-[10px] text-blue-500">(initial)</span>
               )}
             </div>
             {idx < flow.statuses.length - 1 && (

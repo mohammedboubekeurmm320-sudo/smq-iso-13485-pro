@@ -14,8 +14,4 @@ export class BatchRecordService extends BaseService {
     return { data: (data || []).map(d => this.mapToCamel<BatchRecord>(d)), total: count || 0 };
   }
 
-  async getById(id: string) { return super.getById<BatchRecord>('batch_records', id); }
-  async create(record: Partial<BatchRecord>, userId?: string) { return super.create<BatchRecord>('batch_records', record as Record<string, unknown>, userId); }
-  async update(id: string, updates: Partial<BatchRecord>, userId?: string) { return super.update<BatchRecord>('batch_records', id, updates as Record<string, unknown>, userId); }
-  async delete(id: string, userId?: string) { return super.softDelete<BatchRecord>('batch_records', id, 'status', 'Rejected', userId); }
 }

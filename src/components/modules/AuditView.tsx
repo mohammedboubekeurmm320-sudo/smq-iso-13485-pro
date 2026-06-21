@@ -193,7 +193,7 @@ export function AuditView() {
   const capas = store.capas;
   const formTemplates = store.formTemplates;
 
-  const MODULE_TYPE: FormTemplateModule = 'AUDIT';
+  const MODULE_TYPE: FormTemplateModule = 'audit';
   const approvedTemplates = getApprovedTemplates(MODULE_TYPE);
 
   // Filters
@@ -455,8 +455,6 @@ export function AuditView() {
         correctiveActionRequired: f.carRequired,
         capaId: f.capaReference.trim() || undefined,
       })),
-      templateId: newTemplateId || undefined,
-      templateVersion: newTemplateVersion || undefined,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

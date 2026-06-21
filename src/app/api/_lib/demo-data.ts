@@ -6,7 +6,8 @@ import type {
   BatchRecord, Supplier, FormTemplate, FormInstance,
   AuditTrail, Audit, Training, Risk, DocumentPrerequisite,
   OrganizationMember, ChangeControl, Deviation, CustomFieldDefinition, ScheduledReport,
-  RecordTypeDefinition, RecordLink,
+  RecordTypeDefinitionLegacy as RecordTypeDefinition,
+  RecordLinkLegacy as RecordLink,
 } from '@/types/qms';
 import {
   mockProfiles, mockOrganizations, mockOrgMembers, mockDocuments,
@@ -170,7 +171,7 @@ class DemoStore {
     return this.recordLinks;
   }
 
-  addRecordLink(data: Partial<RecordLink> & { sourceRecordId: string; targetRecordId: string; linkType: RecordLink['linkType'] }): RecordLink {
+  addRecordLink(data: Partial<RecordLink> & { sourceRecordId: string; targetRecordId: string; linkType: string }): RecordLink {
     const newLink: RecordLink = {
       id: `rl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       sourceRecordId: data.sourceRecordId,
@@ -199,7 +200,7 @@ class DemoStore {
   addAuditTrail(entry: { auditAction: string; tableName: string; recordId?: string; oldValues?: Record<string, unknown>; newValues?: Record<string, unknown> }): void {
     const auditEntry: AuditTrail = {
       id: `at-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      auditAction: entry.auditAction as AuditTrail['auditAction'],
+      action: entry.auditAction as AuditTrail['action'],
       tableName: entry.tableName,
       recordId: entry.recordId,
       userId: 'user-001',

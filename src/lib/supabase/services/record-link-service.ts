@@ -5,7 +5,7 @@
  */
 
 import { BaseService } from './base-service';
-import type { RecordLink, RecordLinkType } from '@/types/qms';
+import type { RecordLinkLegacy as RecordLink, RecordLinkType } from '@/types/qms';
 
 export interface CreateRecordLinkPayload {
   sourceRecordId: string;
@@ -68,7 +68,7 @@ export class RecordLinkService extends BaseService {
   // -----------------------------------------------------------------------
   // Create a link
   // -----------------------------------------------------------------------
-  async create(payload: CreateRecordLinkPayload, userId?: string): Promise<RecordLink> {
+  async createRecordLink(payload: CreateRecordLinkPayload, userId?: string): Promise<RecordLink> {
     // Validate: no self-link
     if (payload.sourceRecordId === payload.targetRecordId &&
         payload.sourceRecordType === payload.targetRecordType) {
@@ -105,7 +105,7 @@ export class RecordLinkService extends BaseService {
   // -----------------------------------------------------------------------
   // Delete a link
   // -----------------------------------------------------------------------
-  async delete(id: string, userId?: string): Promise<void> {
+  async deleteRecordLink(id: string, userId?: string): Promise<void> {
     const current = await this.supabase.from('record_links').select('*').eq('id', id).single();
     if (current.error) throw new Error(current.error.message);
 

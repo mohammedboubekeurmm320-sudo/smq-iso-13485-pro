@@ -8,13 +8,8 @@ export class OrganizationService extends BaseService {
     return (data || []).map(d => this.mapToCamel<Organization>(d));
   }
 
-  async getById(id: string) { return super.getById<Organization>('organizations', id); }
-
-  async create(org: Partial<Organization>, userId?: string) {
-    return super.create<Organization>('organizations', org as Record<string, unknown>, userId);
-  }
-
-  async update(id: string, updates: Partial<Organization>, userId?: string) {
-    return super.update<Organization>('organizations', id, updates as Record<string, unknown>, userId);
-  }
+  // Note: getById / create / update are inherited from BaseService and called
+  // with the table name as the first argument (e.g.
+  // `orgService.getById<Organization>('organizations', id)`). They are not
+  // overridden here to avoid LSP violations from incompatible method signatures.
 }

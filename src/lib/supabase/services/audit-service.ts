@@ -15,8 +15,8 @@ export class AuditService extends BaseService {
     return { data: (data || []).map(d => this.mapToCamel<Audit>(d)), total: count || 0 };
   }
 
-  async getById(id: string) { return super.getById<Audit>('audits', id); }
-  async create(audit: Partial<Audit>, userId?: string) { return super.create<Audit>('audits', audit as Record<string, unknown>, userId); }
-  async update(id: string, updates: Partial<Audit>, userId?: string) { return super.update<Audit>('audits', id, updates as Record<string, unknown>, userId); }
-  async delete(id: string, userId?: string) { return super.softDelete<Audit>('audits', id, 'status', 'Completed', userId); }
+  // Note: getById / create / update / delete are inherited from BaseService
+  // and called with the table name as the first argument (e.g.
+  // `auditService.getById<Audit>('audits', id)`). They are not overridden here
+  // to avoid LSP violations from incompatible method signatures.
 }

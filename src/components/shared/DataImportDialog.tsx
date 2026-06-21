@@ -340,7 +340,7 @@ export function DataImportDialog({ open, onOpenChange, entityType: initialEntity
                   <div className="flex items-center justify-center gap-1">
                     <CheckCircle2 className="h-4 w-4 text-green-600" />
                     <span className="text-2xl font-bold text-green-600">
-                      {dryRun ? (result as Record<string, unknown>).validRows as number || result.imported : result.imported}
+                      {dryRun ? (result as unknown as Record<string, unknown>).validRows as number || result.imported : result.imported}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">{dryRun ? 'Valid' : 'Imported'}</p>
@@ -349,7 +349,7 @@ export function DataImportDialog({ open, onOpenChange, entityType: initialEntity
                   <div className="flex items-center justify-center gap-1">
                     <XCircle className="h-4 w-4 text-red-600" />
                     <span className="text-2xl font-bold text-red-600">
-                      {dryRun ? (result as Record<string, unknown>).invalidRows as number || result.skipped : result.skipped}
+                      {dryRun ? (result as unknown as Record<string, unknown>).invalidRows as number || result.skipped : result.skipped}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">{dryRun ? 'Invalid' : 'Skipped'}</p>

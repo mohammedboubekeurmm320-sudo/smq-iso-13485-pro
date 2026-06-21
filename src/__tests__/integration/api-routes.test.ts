@@ -73,6 +73,9 @@ describe('API route integration pipelines', () => {
       const now = new Date().toISOString();
       const doc: Document = {
         ...parsed,
+      // Zod infers wider types than Document's DocumentLevel / DocumentStatus
+      documentLevel: parsed.documentLevel as Document['documentLevel'],
+      status: parsed.status as Document['status'],
         id: uid('doc'),
         createdAt: now,
         updatedAt: now,
@@ -104,6 +107,9 @@ describe('API route integration pipelines', () => {
       const now = new Date().toISOString();
       const doc: Document = {
         ...parsed,
+      // Zod infers wider types than Document's DocumentLevel / DocumentStatus
+      documentLevel: parsed.documentLevel as Document['documentLevel'],
+      status: parsed.status as Document['status'],
         id: uid('doc'),
         createdAt: now,
         updatedAt: now,
@@ -499,7 +505,7 @@ describe('API route integration pipelines', () => {
         title: 'SOP With Special Keyword',
         type: 'SOP',
         version: '3.0',
-        status: 'In Review',
+        status: 'Under Review',
         description: 'Fifth filter test document',
         createdAt: '2024-01-01T00:00:00Z',
         updatedAt: '2024-01-01T00:00:00Z',
@@ -673,7 +679,7 @@ describe('API route integration pipelines', () => {
       expect(idx).not.toBe(-1);
 
       const old = store.documents[idx];
-      const updateBody = { status: 'In Review' };
+      const updateBody = { status: 'Under Review' as const };
       const updated: Document = {
         ...old,
         ...updateBody,
@@ -682,7 +688,7 @@ describe('API route integration pipelines', () => {
       };
       store.documents[idx] = updated;
 
-      expect(store.documents[idx].status).toBe('In Review');
+      expect(store.documents[idx].status).toBe('Under Review');
     });
 
     it('verify audit trail is logged for document update', () => {
@@ -702,7 +708,7 @@ describe('API route integration pipelines', () => {
 
       const idx = store.documents.findIndex(d => d.id === docId);
       const old = store.documents[idx];
-      const updateBody = { status: 'Approved' };
+      const updateBody = { status: 'Approved' as const };
       const updated: Document = {
         ...old,
         ...updateBody,
@@ -808,7 +814,7 @@ describe('API route integration pipelines', () => {
       const old = store.documents[idx];
       const updated: Document = {
         ...old,
-        status: 'In Review',
+        status: 'Under Review',
         id: old.id,
         updatedAt: new Date().toISOString(),
       };
@@ -1249,6 +1255,8 @@ describe('API route integration pipelines', () => {
       const now = new Date().toISOString();
       const doc: Document = {
         ...parsed.data,
+        documentLevel: parsed.data.documentLevel as Document['documentLevel'],
+        status: parsed.data.status as Document['status'],
         id: `doc-${Date.now()}`,
         createdAt: now,
         updatedAt: now,

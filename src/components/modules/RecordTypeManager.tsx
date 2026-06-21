@@ -12,7 +12,7 @@
  * - System type protection (read-only)
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
   DialogDescription,
@@ -28,7 +28,8 @@ import {
   ChevronRight, AlertTriangle, CheckCircle, Lock,
 } from 'lucide-react';
 import type {
-  RecordTypeDefinition, StatusFlowStep, ComplianceRef,
+  RecordTypeDefinitionLegacy as RecordTypeDefinition,
+  StatusFlowStep, ComplianceRef,
   FormFieldDefinition,
 } from '@/types/qms';
 import { useAuth } from '@/contexts/AuthContext';
@@ -74,10 +75,14 @@ const ISO_CLAUSES = [
 // ============================================================================
 
 export default function RecordTypeManager() {
-  const store = useQMSStore();
+  // Subscribe directly to store slices — avoids the `setState in useEffect`
+  // anti-pattern that triggers cascading renders (react-hooks/set-state-in-effect).
+  // Zustand selectors are stable and only re-render when the selected slice changes.
+  const recordTypes = useQMSStore(s => s.recordTypes);
+  const addRecordType = useQMSStore(s => s.addRecordType);
+  const deleteRecordType = useQMSStore(s => s.deleteRecordType);
   const { hasPermission } = useAuth();
 
-  const [recordTypes, setRecordTypes] = useState<RecordTypeDefinition[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedType, setSelectedType] = useState<RecordTypeDefinition | null>(null);
@@ -101,12 +106,6 @@ export default function RecordTypeManager() {
   const canCreate = hasPermission('recordtypes.create');
   const canUpdate = hasPermission('recordtypes.update');
   const canDelete = hasPermission('recordtypes.delete');
-
-  // Load record types
-  useEffect(() => {
-    const types = store.getRecordTypes?.() || [];
-    setRecordTypes(types);
-  }, [store]);
 
   // Filter
   const filteredTypes = recordTypes.filter(t =>
@@ -166,7 +165,7 @@ export default function RecordTypeManager() {
     }
 
     try {
-      store.addRecordType({
+      addRecordType({
         slug: formSlug,
         name: formName,
         nameEn: formNameEn || undefined,
@@ -183,8 +182,8 @@ export default function RecordTypeManager() {
         isActive: true,
       });
 
-      // Refresh
-      setRecordTypes(store.getRecordTypes?.() || []);
+      // No manual refresh needed — the Zustand selector subscription
+      // (recordTypes = useQMSStore(s => s.recordTypes)) re-renders automatically.
       setShowCreateDialog(false);
       resetForm();
     } catch (err) {
@@ -192,7 +191,7 @@ export default function RecordTypeManager() {
     }
   }, [formSlug, formName, formNameEn, formIcon, formDescription, formCodePrefix,
       formRequiresEsig, formStatusFlow, formComplianceRefs, formChangeReason,
-      recordTypes, store, resetForm]);
+      recordTypes, addRecordType, resetForm]);
 
   // Handle delete (custom only)
   const handleDelete = useCallback((type: RecordTypeDefinition) => {
@@ -200,13 +199,12 @@ export default function RecordTypeManager() {
     if (!confirm(`Supprimer le type d'enregistrement "${type.name}" ? Cette action est irréversible.`)) return;
 
     try {
-      store.deleteRecordType?.(type.id);
-      setRecordTypes(store.getRecordTypes?.() || []);
+      deleteRecordType(type.id);
       setShowDetailDialog(false);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erreur lors de la suppression');
     }
-  }, [store]);
+  }, [deleteRecordType]);
 
   // Add compliance ref
   const addComplianceRef = useCallback(() => {

@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     // Hybrid Supervision: Validate template status (§4.2.4)
     const template = store.formTemplates.find(t => t.id === body.templateId);
     if (template) {
-      const templateStatus: string | undefined = template.templateStatus || (template.isActive ? 'Approved' : 'Draft');
+      const templateStatus = template.status || (template.isActive ? 'Approved' : 'Draft');
       if (templateStatus === 'Obsolete') {
         return apiError('Cannot create instance from obsolete template', 400);
       }

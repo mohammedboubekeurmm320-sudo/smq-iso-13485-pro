@@ -15,8 +15,4 @@ export class RiskService extends BaseService {
     return { data: (data || []).map(d => this.mapToCamel<Risk>(d)), total: count || 0 };
   }
 
-  async getById(id: string) { return super.getById<Risk>('risks', id); }
-  async create(risk: Partial<Risk>, userId?: string) { return super.create<Risk>('risks', risk as Record<string, unknown>, userId); }
-  async update(id: string, updates: Partial<Risk>, userId?: string) { return super.update<Risk>('risks', id, updates as Record<string, unknown>, userId); }
-  async delete(id: string, userId?: string) { return super.softDelete<Risk>('risks', id, 'status', 'Closed', userId); }
 }

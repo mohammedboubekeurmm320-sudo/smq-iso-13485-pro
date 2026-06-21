@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getDemoStore } from '@/lib/demo-store-server';
+import type { RecordLinkLegacy } from '@/types/qms';
 
 const createLinkSchema = z.object({
   sourceRecordId: z.string().uuid(),
@@ -32,13 +33,13 @@ export async function GET(request: NextRequest) {
 
     if (recordId && recordType) {
       links = links.filter(
-        (l: Record<string, unknown>) =>
+        (l: RecordLinkLegacy) =>
           (l.sourceRecordId === recordId && l.sourceRecordType === recordType) ||
           (l.targetRecordId === recordId && l.targetRecordType === recordType)
       );
     }
     if (linkType) {
-      links = links.filter((l: Record<string, unknown>) => l.linkType === linkType);
+      links = links.filter((l: RecordLinkLegacy) => l.linkType === linkType);
     }
 
     return NextResponse.json({ data: links, total: links.length });
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
 
     // Check for duplicates
     const existing = store.getRecordLinks().find(
-      (l: Record<string, unknown>) =>
+      (l: RecordLinkLegacy) =>
         l.sourceRecordId === validated.sourceRecordId &&
         l.sourceRecordType === validated.sourceRecordType &&
         l.targetRecordId === validated.targetRecordId &&
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data: newLink }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Validation error', details: error.errors }, { status: 400 });
+      return NextResponse.json({ error: 'Validation error', details: error.issues }, { status: 400 });
     }
     console.error('POST /api/record-links error:', error);
     return NextResponse.json({ error: 'Failed to create record link' }, { status: 500 });
@@ -109,19 +110,20 @@ export async function DELETE(request: NextRequest) {
     }
 
     const store = getDemoStore();
-    const link = store.getRecordLinks().find((l: Record<string, unknown>) => l.id === id);
+    const link = store.getRecordLinks().find((l: RecordLinkLegacy) => l.id === id);
     if (!link) {
       return NextResponse.json({ error: 'Link not found' }, { status: 404 });
     }
 
     store.deleteRecordLink(id);
 
-    // Audit trail
+    // Audit trail — cast through unknown because addAuditTrail's oldValues
+    // expects Record<string, unknown> but RecordLinkLegacy has no index sig.
     store.addAuditTrail({
       auditAction: 'DELETE',
       tableName: 'record_links',
       recordId: id,
-      oldValues: link,
+      oldValues: link as unknown as Record<string, unknown>,
     });
 
     return NextResponse.json({ success: true });

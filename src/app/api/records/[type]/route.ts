@@ -7,10 +7,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getDemoStore } from '@/lib/demo-store-server';
+import type { FormInstance, FormTemplate } from '@/types/qms';
 
 const createInstanceSchema = z.object({
   templateId: z.string().min(1, 'Template ID is required'),
-  values: z.record(z.unknown()).default({}),
+  values: z.record(z.string(), z.unknown()).default({}),
   parentDocumentId: z.string().optional(),
   linkedRecordId: z.string().optional(),
   linkedRecordType: z.string().optional(),
@@ -30,11 +31,11 @@ export async function GET(
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
 
     let instances = store.getFormInstances().filter(
-      (i: Record<string, unknown>) => i.recordTypeSlug === type || i.linkedRecordType === type
+      (i: FormInstance) => (i as unknown as Record<string, unknown>).recordTypeSlug === type || i.linkedRecordType === type
     );
 
     if (status) {
-      instances = instances.filter((i: Record<string, unknown>) => i.status === status);
+      instances = instances.filter((i: FormInstance) => i.status === status);
     }
 
     const from = (page - 1) * pageSize;
@@ -67,7 +68,7 @@ export async function POST(
     const store = getDemoStore();
 
     const template = store.getFormTemplates().find(
-      (t: Record<string, unknown>) => t.id === validated.templateId
+      (t: FormTemplate) => t.id === validated.templateId
     );
     if (!template) {
       return NextResponse.json({ error: 'Template not found' }, { status: 404 });
@@ -86,7 +87,7 @@ export async function POST(
     }
 
     const existingInstances = store.getFormInstances().filter(
-      (i: Record<string, unknown>) => i.recordTypeSlug === type
+      (i: FormInstance) => (i as unknown as Record<string, unknown>).recordTypeSlug === type
     );
     const nextSeq = existingInstances.length + 1;
     const prefix = type.toUpperCase().replace(/_/g, '-').substring(0, 6);
@@ -116,7 +117,7 @@ export async function POST(
     return NextResponse.json({ data: newInstance }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Validation error', details: error.errors }, { status: 400 });
+      return NextResponse.json({ error: 'Validation error', details: error.issues }, { status: 400 });
     }
     console.error('POST /api/records/[type] error:', error);
     return NextResponse.json({ error: 'Failed to create record' }, { status: 500 });

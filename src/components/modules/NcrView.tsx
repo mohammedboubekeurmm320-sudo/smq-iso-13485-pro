@@ -140,7 +140,7 @@ export function NcrView() {
 
   // ── Template workflow (Layer 1 & 2) ──
   const { getApprovedTemplates, hasApprovedTemplate, moduleTypeLabels } = useRecordWorkflow();
-  const ncrModuleType: FormTemplateModule = 'NCR';
+  const ncrModuleType: FormTemplateModule = 'ncr';
   const approvedNcrTemplates = getApprovedTemplates(ncrModuleType);
 
   const filteredNcrs = ncrs.filter(n => {
@@ -254,8 +254,6 @@ export function NcrView() {
       templateId: formTemplateId || undefined,
       templateVersion: formTemplateId ? approvedNcrTemplates.find(t => t.id === formTemplateId)?.version : undefined,
       createdById: currentUser?.id,
-      templateId: newTemplateId || undefined,
-      templateVersion: newTemplateVersion || undefined,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

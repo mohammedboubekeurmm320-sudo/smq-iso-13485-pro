@@ -15,8 +15,4 @@ export class CapaService extends BaseService {
     return { data: (data || []).map(d => this.mapToCamel<Capa>(d)), total: count || 0 };
   }
 
-  async getById(id: string) { return super.getById<Capa>('capas', id); }
-  async create(capa: Partial<Capa>, userId?: string) { return super.create<Capa>('capas', capa as Record<string, unknown>, userId); }
-  async update(id: string, updates: Partial<Capa>, userId?: string) { return super.update<Capa>('capas', id, updates as Record<string, unknown>, userId); }
-  async delete(id: string, userId?: string) { return super.softDelete<Capa>('capas', id, 'status', 'Closed', userId); }
 }

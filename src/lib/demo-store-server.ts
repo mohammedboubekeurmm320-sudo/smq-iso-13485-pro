@@ -8,7 +8,7 @@
  */
 
 import { create } from 'zustand';
-import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation, ElectronicSignature, RecordTypeDefinition, RecordLink } from '@/types/qms';
+import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation, ElectronicSignature, RecordTypeDefinitionLegacy as RecordTypeDefinition, RecordLinkLegacy as RecordLink } from '@/types/qms';
 import { FORM_TEMPLATE_TRANSITIONS, FORM_TEMPLATE_TRANSITION_ROLES } from '@/types/qms';
 import { mockProfiles, mockOrganizations, mockOrgMembers, mockDocuments, mockCapas, mockNCRs, mockBatchRecords, mockSuppliers, mockFormTemplates, mockFormInstances, mockAudits, mockTraining, mockRisks, mockAuditTrails, mockPrerequisites, mockChangeControls, mockDeviations } from './mock-data';
 
@@ -17,12 +17,17 @@ interface ServerQMSStore {
   recordTypes: RecordTypeDefinition[];
   recordLinks: RecordLink[];
   auditTrails: AuditTrail[];
+  formTemplates: FormTemplate[];
+  formInstances: FormInstance[];
   getRecordTypes: () => RecordTypeDefinition[];
   addRecordType: (typeData: Partial<RecordTypeDefinition> & { slug: string; name: string }) => RecordTypeDefinition;
   deleteRecordType: (id: string) => void;
   getRecordLinks: () => RecordLink[];
   addRecordLink: (linkData: Partial<RecordLink> & { sourceRecordId: string; targetRecordId: string; linkType: RecordLink['linkType'] }) => RecordLink;
   deleteRecordLink: (id: string) => void;
+  getFormTemplates: () => FormTemplate[];
+  getFormInstances: () => FormInstance[];
+  addFormInstance: (data: Partial<FormInstance> & { templateId: string; referenceNumber: string; values: Record<string, unknown>; status: FormInstance['status']; isLocked: boolean }) => FormInstance;
   addAuditTrail: (entry: { auditAction: string; tableName: string; recordId?: string; oldValues?: Record<string, unknown>; newValues?: Record<string, unknown> }) => void;
 }
 
@@ -42,6 +47,8 @@ function createServerStore() {
     ],
     recordLinks: [],
     auditTrails: mockAuditTrails,
+    formTemplates: mockFormTemplates,
+    formInstances: mockFormInstances,
 
     getRecordTypes: () => get().recordTypes,
 
@@ -107,10 +114,36 @@ function createServerStore() {
       get().addAuditTrail({ auditAction: 'DELETE', tableName: 'record_links', recordId: id });
     },
 
+    getFormTemplates: () => get().formTemplates,
+
+    getFormInstances: () => get().formInstances,
+
+    addFormInstance: (data) => {
+      const newInstance: FormInstance = {
+        id: `fi-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        templateId: data.templateId,
+        templateVersion: data.templateVersion || '1.0',
+        referenceNumber: data.referenceNumber,
+        values: data.values,
+        status: data.status,
+        isLocked: data.isLocked,
+        parentDocumentId: data.parentDocumentId,
+        organizationId: 'org-001',
+        createdAt: new Date().toISOString(),
+      };
+      set(state => ({ formInstances: [newInstance, ...state.formInstances] }));
+      get().addAuditTrail({
+        auditAction: 'CREATE',
+        tableName: 'form_instances',
+        recordId: newInstance.id,
+        newValues: { referenceNumber: newInstance.referenceNumber, templateId: newInstance.templateId },
+      });
+      return newInstance;
+    },
+
     addAuditTrail: (entry) => {
       const auditEntry: AuditTrail = {
         id: `at-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        auditAction: entry.auditAction as AuditTrail['auditAction'],
         action: entry.auditAction as AuditTrail['action'],
         tableName: entry.tableName,
         recordId: entry.recordId,

@@ -7,14 +7,17 @@ import type { Document, Capa, NonConformance, Audit, Training, Risk, BatchRecord
 // Generic CSV generator
 // ============================================================================
 
-export function generateCSV<T extends Record<string, unknown>>(
+export function generateCSV<T>(
   data: T[],
   columns: { key: keyof T; header: string }[],
 ): string {
   const headerRow = columns.map(c => `"${c.header}"`).join(',');
   const rows = data.map(item =>
     columns.map(c => {
-      const val = item[c.key];
+      // Cast through `Record<string, unknown>` to read arbitrary keys off `T`
+      // without requiring `T` itself to declare an index signature (which
+      // none of the QMS entity interfaces do).
+      const val = (item as Record<string, unknown>)[c.key as string];
       if (val === null || val === undefined) return '""';
       if (Array.isArray(val)) return `"${val.join('; ')}"`;
       if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;

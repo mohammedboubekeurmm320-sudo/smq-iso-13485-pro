@@ -1,6 +1,6 @@
 // Demo Store - Zustand store for managing QMS data in memory (demo mode)
 import { create } from 'zustand';
-import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation, FormTemplateStatus, UserRole, ElectronicSignature, RecordTypeDefinition, RecordLink } from '@/types/qms';
+import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord, Supplier, FormTemplate, FormInstance, AuditTrail, Audit, Training, Risk, DocumentPrerequisite, OrganizationMember, OrgSettings, ChangeControl, Deviation, FormTemplateStatus, UserRole, ElectronicSignature, RecordTypeDefinitionLegacy as RecordTypeDefinition, RecordLinkLegacy as RecordLink, ScheduledReport } from '@/types/qms';
 import { FORM_TEMPLATE_TRANSITIONS, FORM_TEMPLATE_TRANSITION_ROLES } from '@/types/qms';
 import { mockProfiles, mockOrganizations, mockOrgMembers, mockDocuments, mockCapas, mockNCRs, mockBatchRecords, mockSuppliers, mockFormTemplates, mockFormInstances, mockAudits, mockTraining, mockRisks, mockAuditTrails, mockPrerequisites, mockChangeControls, mockDeviations } from './mock-data';
 
@@ -25,6 +25,7 @@ interface QMSStore {
   deviations: Deviation[];
   recordTypes: RecordTypeDefinition[];
   recordLinks: RecordLink[];
+  scheduledReports: ScheduledReport[];
 
   // Computed helpers
   getProfile: (id: string) => Profile | undefined;
@@ -87,6 +88,11 @@ interface QMSStore {
   addRecordLink: (link: Partial<RecordLink> & { sourceRecordId: string; targetRecordId: string; linkType: RecordLink['linkType'] }) => RecordLink;
   deleteRecordLink: (id: string) => void;
 
+  // Scheduled Reports
+  addScheduledReport: (report: Partial<ScheduledReport> & { name: string; reportType: ScheduledReport['reportType']; format: ScheduledReport['format']; frequency: ScheduledReport['frequency']; recipients: string[]; nextRunAt: string }) => ScheduledReport;
+  updateScheduledReport: (id: string, updates: Partial<ScheduledReport>) => void;
+  deleteScheduledReport: (id: string) => void;
+
   // API-compatible audit trail (used by API routes)
   addAuditTrail: (entry: { auditAction: string; tableName: string; recordId?: string; oldValues?: Record<string, unknown>; newValues?: Record<string, unknown> }) => void;
 }
@@ -126,6 +132,7 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
     { id: 'rt-general', slug: 'general', name: 'Général', nameEn: 'General', icon: 'FileText', description: 'General purpose records', statusFlow: [{ linear: ['Open', 'Under Review', 'Closed'], eSigRequired: ['Closed'], terminal: ['Closed'] }], defaultFields: [], complianceRefs: [], codePrefix: 'GEN', isSystem: true, isActive: true, requiresEsig: true, minApproverCount: 1, version: '1.0', organizationId: 'org-001', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   ],
   recordLinks: [],
+  scheduledReports: [],
 
   // Computed helpers
   getProfile: (id: string) => get().profiles.find(p => p.id === id),
@@ -653,11 +660,47 @@ export const useQMSStore = create<QMSStore>((set, get) => ({
     get().logAudit('DELETE', 'record_links', id, undefined, undefined);
   },
 
+  // Scheduled Reports — minimal in-memory implementation for demo mode.
+  addScheduledReport: (report) => {
+    const newReport: ScheduledReport = {
+      id: `sr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      name: report.name,
+      reportType: report.reportType,
+      format: report.format,
+      frequency: report.frequency,
+      status: 'active',
+      recipients: report.recipients,
+      filters: report.filters,
+      nextRunAt: report.nextRunAt,
+      organizationId: 'org-001',
+      createdById: 'user-001',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    set(state => ({ scheduledReports: [...state.scheduledReports, newReport] }));
+    get().logAudit('CREATE', 'scheduled_reports', newReport.id, undefined, { name: newReport.name });
+    return newReport;
+  },
+
+  updateScheduledReport: (id, updates) => {
+    set(state => ({
+      scheduledReports: state.scheduledReports.map(r =>
+        r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r
+      ),
+    }));
+    get().logAudit('UPDATE', 'scheduled_reports', id, undefined, updates as Record<string, unknown>);
+  },
+
+  deleteScheduledReport: (id) => {
+    set(state => ({ scheduledReports: state.scheduledReports.filter(r => r.id !== id) }));
+    get().logAudit('DELETE', 'scheduled_reports', id, undefined, undefined);
+  },
+
   // API-compatible audit trail
   addAuditTrail: (entry) => {
     const auditEntry: AuditTrail = {
       id: `at-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      auditAction: entry.auditAction as AuditTrail['auditAction'],
+      action: entry.auditAction as AuditTrail['action'],
       tableName: entry.tableName,
       recordId: entry.recordId,
       userId: 'user-001',

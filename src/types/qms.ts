@@ -17,6 +17,7 @@ export type Permission =
   | 'risk.create' | 'risk.read' | 'risk.update' | 'risk.delete'
   | 'batch.create' | 'batch.read' | 'batch.update' | 'batch.delete' | 'batch.release'
   | 'supplier.create' | 'supplier.read' | 'supplier.update' | 'supplier.delete'
+  | 'recordtypes.create' | 'recordtypes.read' | 'recordtypes.update' | 'recordtypes.delete'
   | 'reports.view' | 'reports.export'
   | 'compliance.view' | 'compliance.manage'
   | 'admin.users' | 'admin.settings' | 'admin.audit_trail';
@@ -324,6 +325,9 @@ export type RootCauseCategory = 'Man' | 'Machine' | 'Method' | 'Material' | 'Mea
 
 export interface Capa {
   id: string;
+  /** Form template reference — ISO 13485 §4.2.4 (record must be created from an approved template) */
+  templateId?: string;
+  templateVersion?: string;
   capaNumber: string;
   title: string;
   type: CapaType;
@@ -344,6 +348,8 @@ export interface Capa {
   linkedDocumentId?: string;
   linkedNcrId?: string;
   linkedAuditId?: string;
+  /** Linked CAPA (for parent/child CAPA chains) — ISO 13485 §8.5.2 */
+  linkedCapaId?: string;
   assignedTo: string;
   dueDate: string;
   createdDate: string;
@@ -365,6 +371,9 @@ export type NcrDisposition = 'Use As Is' | 'Rework' | 'Scrap' | 'Return to Suppl
 
 export interface NonConformance {
   id: string;
+  /** Form template reference — ISO 13485 §4.2.4 (record must be created from an approved template) */
+  templateId?: string;
+  templateVersion?: string;
   ncrNumber: string;
   title: string;
   type: NcrType;
@@ -434,6 +443,9 @@ export interface RawMaterial {
 
 export interface BatchRecord {
   id: string;
+  /** Form template reference — ISO 13485 §4.2.4 (record must be created from an approved template) */
+  templateId?: string;
+  templateVersion?: string;
   lotNumber: string;
   productName: string;
   productCode?: string;
@@ -464,6 +476,9 @@ export type QualificationMethod = 'On-Site Audit' | 'Questionnaire' | 'Certifica
 
 export interface Supplier {
   id: string;
+  /** Form template reference — ISO 13485 §4.2.4 (record must be created from an approved template) */
+  templateId?: string;
+  templateVersion?: string;
   supplierCode: string;
   name: string;
   category?: SupplierCategory;
@@ -513,6 +528,25 @@ export interface FormTemplateWorkflow {
   allowDraftSaves: boolean;
   lockAfterSubmission: boolean;
   eSignatureRequired: boolean;
+  /** Approvers chain for sequential/parallel workflows — agent-ctx/worklog.md (Layer 1) */
+  approvers?: WorkflowApprover[];
+}
+
+/** Approver entry in a form template workflow chain */
+export interface WorkflowApprover {
+  id: string;
+  /** User ID of the approver (Profile.id) */
+  userId: string;
+  /** Display name of the approver (denormalized for history display) */
+  userName?: string;
+  role: UserRole;
+  /** Order in the chain (1-based) for sequential workflows */
+  order?: number;
+  /** Whether this approver has signed (for instance-level tracking) */
+  status?: 'pending' | 'approved' | 'rejected';
+  comment?: string;
+  signatureHash?: string;
+  timestamp?: string;
 }
 
 export interface FormTemplateCompliance {
@@ -594,12 +628,18 @@ export interface FormInstance {
   submittedAt?: string;
   signatureHash?: string;
   parentDocumentId?: string;
+  /** Slug of the record type this instance belongs to — used by /api/records/[type] */
+  recordTypeSlug?: string;
+  /** ID of the linked module record (CAPA, NCR, etc.) — ISO 13485 §7.5.9 */
+  linkedRecordId?: string;
+  /** Slug of the linked module record type */
+  linkedRecordType?: string;
   organizationId?: string;
   createdById?: string;
   createdAt: string;
   updatedAt?: string;
-  linkedRecordType?: string;
-  linkedRecordId?: string;
+  /** Current step in a sequential/parallel approval chain — 1-based, 0 = not started */
+  currentApprovalStep?: number;
   signatures?: ElectronicSignature[];
   approvalHistory?: FormInstanceApprovalEntry[];
 }
@@ -701,6 +741,9 @@ export interface AuditFinding {
 
 export interface Audit {
   id: string;
+  /** Form template reference — ISO 13485 §4.2.4 (record must be created from an approved template) */
+  templateId?: string;
+  templateVersion?: string;
   auditNumber: string;
   title: string;
   type: AuditType;
@@ -725,6 +768,9 @@ export type TrainingStatus = 'Planned' | 'In Progress' | 'Completed' | 'Overdue'
 
 export interface Training {
   id: string;
+  /** Form template reference — ISO 13485 §4.2.4 (record must be created from an approved template) */
+  templateId?: string;
+  templateVersion?: string;
   title: string;
   description?: string;
   type: TrainingType;
@@ -748,9 +794,26 @@ export type RiskStatus = 'Open' | 'Mitigated' | 'Accepted' | 'Closed';
 
 export interface Risk {
   id: string;
+  /** Form template reference — ISO 13485 §4.2.4 (record must be created from an approved template) */
+  templateId?: string;
+  templateVersion?: string;
   riskNumber: string;
   title: string;
   category?: RiskCategory;
+  /** Description of the hazard — ISO 14971 §5.4 */
+  hazardDescription?: string;
+  /** Person responsible for the risk — ISO 14971 §5.5 */
+  riskOwner?: string;
+  /** Regulatory clause reference (e.g., 'ISO 14971 §5.5') */
+  regulatoryReference?: string;
+  /** Type of risk control — ISO 14971 §6.2 (e.g., 'inherent_safe_design', 'protective_measures', 'information_for_safety') */
+  controlType?: string;
+  /** Method used to verify risk control effectiveness — ISO 14971 §8 */
+  verificationMethod?: string;
+  /** Acceptability decision (e.g., 'acceptable', 'ALARP', 'unacceptable') */
+  riskAcceptability?: string;
+  /** Notes on risk priority and justification */
+  priorityNotes?: string;
   probability: number; // 1-5
   impact: number; // 1-5
   detectability: number; // 1-5
@@ -758,6 +821,15 @@ export interface Risk {
   riskLevel: RiskLevel;
   mitigation?: string;
   residualRisk?: string;
+  /** Residual risk factors after mitigation — ISO 14971 §6.3 */
+  residualProbability?: number;
+  residualImpact?: number;
+  residualDetectability?: number;
+  residualRpn?: number;
+  /** Linked document (e.g., risk assessment form) — ISO 13485 §4.2.4 */
+  linkedDocumentId?: string;
+  /** Linked CAPA (for risk mitigation action) — ISO 13485 §8.5.2 */
+  linkedCapaId?: string;
   status: RiskStatus;
   organizationId?: string;
   createdAt: string;
@@ -788,6 +860,9 @@ export type ChangeControlCategory = 'Process' | 'Equipment' | 'Facility' | 'Docu
 
 export interface ChangeControl {
   id: string;
+  /** Form template reference — ISO 13485 §4.2.4 (record must be created from an approved template) */
+  templateId?: string;
+  templateVersion?: string;
   ccNumber: string;
   title: string;
   type: ChangeControlType;
@@ -836,6 +911,9 @@ export type DeviationProductStage = 'Raw Material' | 'In-Process' | 'Finished Pr
 
 export interface Deviation {
   id: string;
+  /** Form template reference — ISO 13485 §4.2.4 (record must be created from an approved template) */
+  templateId?: string;
+  templateVersion?: string;
   devNumber: string;
   title: string;
   type: DeviationType;
@@ -931,6 +1009,42 @@ export interface StatusFlowConfig {
   initial_status: string;
 }
 
+/**
+ * Compliance reference — links a record type to a specific clause of a
+ * regulatory standard (ISO 13485, ISO 14971, 21 CFR Part 11, ...).
+ *
+ * Stored as JSONB in `record_type_definitions.compliance_refs`.
+ */
+export interface ComplianceRef {
+  /** Clause identifier, e.g., '8.5.2' or '§7.5.6' */
+  clause: string;
+  /** Standard family, e.g., 'ISO 13485', 'ISO 14971', '21 CFR Part 11' */
+  standard: string;
+  /** Human-readable description of what this clause requires */
+  description?: string;
+}
+
+/**
+ * Status flow step definition — the original (camelCase) shape used by the
+ * demo store and the standalone `RecordTypeManager` component. Stored as
+ * JSONB in `record_type_definitions.status_flow`.
+ */
+export interface StatusFlowStep {
+  /** Linear progression steps */
+  linear: string[];
+  /** Branch states (e.g., Rejected, Disqualified) with return paths */
+  branches?: Record<string, string[]>;
+  /** States that require e-signature to transition to */
+  eSigRequired?: string[];
+  /** States that are terminal (no further transitions) */
+  terminal?: string[];
+}
+
+/**
+ * `RecordTypeDefinition` (snake_case) — the row shape returned by the
+ * Supabase `record_type_definitions` table. Used by `SettingsView.tsx`
+ * and the SQL migration layer.
+ */
 export interface RecordTypeDefinition {
   id: string;
   org_id: string;
@@ -946,6 +1060,51 @@ export interface RecordTypeDefinition {
   updated_at: string;
 }
 
+/**
+ * `RecordTypeDefinitionLegacy` (camelCase) — the application-side shape used
+ * by the demo store (`src/lib/demo-store.ts`), the standalone
+ * `RecordTypeManager` component, and the Supabase `RecordTypeService` which
+ * maps SQL snake_case rows to this camelCase shape via `mapToCamel()`.
+ *
+ * Kept for backward compatibility with the agent-ctx architecture
+ * (see agent-ctx/3-a-module-enhancer.md and the original commit 0ac9066).
+ */
+export interface RecordTypeDefinitionLegacy {
+  id: string;
+  /** URL-safe slug — unique per organization */
+  slug: string;
+  /** Display name (French) */
+  name: string;
+  /** Display name (English) */
+  nameEn?: string;
+  /** Lucide icon name for navigation/UI */
+  icon: string;
+  description?: string;
+  /** Configurable status flow — replaces hardcoded MODULE_STATUS_FLOWS */
+  statusFlow: StatusFlowStep[];
+  /** Default form fields inherited by templates created for this type */
+  defaultFields: FormFieldDefinition[];
+  /** ISO 13485 / regulatory clause references for compliance mapping */
+  complianceRefs: ComplianceRef[];
+  /** Code prefix for auto-numbering (e.g., 'ETL' → ETL-2025-001) */
+  codePrefix?: string;
+  /** System types (true) cannot be deleted/deactivated — ISO 13485 §4.1 */
+  isSystem: boolean;
+  isActive: boolean;
+  /** Whether all transitions require e-signature */
+  requiresEsig: boolean;
+  /** Minimum number of approvers for Layer 1 template approval */
+  minApproverCount: number;
+  effectiveDate?: string;
+  previousVersionId?: string;
+  version: string;
+  changeReason?: string;
+  organizationId: string;
+  createdById?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RecordLink {
   id: string;
   org_id: string;
@@ -956,6 +1115,25 @@ export interface RecordLink {
   link_type: RecordLinkType;
   created_by: string | null;
   created_at: string;
+}
+
+/**
+ * `RecordLinkLegacy` (camelCase) — the application-side shape used by the
+ * demo store and the `/api/record-links` route. The Supabase
+ * `RecordLinkService` maps SQL snake_case rows to this camelCase shape via
+ * `mapToCamel()`.
+ */
+export interface RecordLinkLegacy {
+  id: string;
+  sourceRecordId: string;
+  sourceRecordType: string;
+  targetRecordId: string;
+  targetRecordType: string;
+  linkType: string;
+  description?: string;
+  organizationId: string;
+  createdById?: string;
+  createdAt: string;
 }
 
 export interface CreateRecordTypeDefinitionDTO {

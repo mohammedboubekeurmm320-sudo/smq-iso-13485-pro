@@ -1,29 +1,46 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
+import { updateSession } from '@/lib/supabase/supabase-auth';
 
 /**
- * Next.js Middleware — Rate Limiting for API Routes
+ * Next.js Middleware — Supabase session refresh + API rate limiting.
  *
- * Applies token bucket rate limiting to all /api/* routes:
- * - Auth routes: 10 req/min per IP
- * - Write operations (POST/PUT/DELETE/PATCH): 30 req/min per IP
- * - Read operations (GET/HEAD): 100 req/min per IP
+ * Two responsibilities, in order:
+ *   1. `updateSession()` — refreshes the Supabase auth session on every
+ *      request and syncs cookies (no-op in demo mode; see
+ *      `src/lib/supabase/supabase-auth.ts`). This is required for SSR auth
+ *      to work in Supabase mode, as specified in agent-ctx/3+4-supabase-integration.md.
+ *   2. Rate limiting — applies token bucket throttling to all /api/* routes:
+ *        - Auth routes: 10 req/min per IP
+ *        - Write operations (POST/PUT/DELETE/PATCH): 30 req/min per IP
+ *        - Read operations (GET/HEAD): 100 req/min per IP
+ *      On success: adds X-RateLimit-* headers to the response.
+ *      On failure: returns 429 Too Many Requests with Retry-After header.
  *
- * On success: Adds X-RateLimit-* headers to the response.
- * On failure: Returns 429 Too Many Requests with Retry-After header.
+ * The matcher covers every route except Next.js internals and static assets,
+ * so that Supabase sessions are refreshed on page navigations as well as
+ * API calls. Rate limiting is enforced only for /api/*.
  */
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
+  // 1) Refresh Supabase session (no-op in demo mode). When Supabase is
+  //    configured, this also rewrites the response cookies. We must propagate
+  //    that response onward so cookies survive to the browser.
+  const supabaseResponse = await updateSession(request);
+
   const { pathname } = request.nextUrl;
 
-  // Only apply rate limiting to API routes
+  // 2) Rate-limit only API routes. Non-API routes have already been handled
+  //    by updateSession and can be returned as-is.
   if (!pathname.startsWith('/api/')) {
-    return NextResponse.next();
+    return supabaseResponse;
   }
 
   // Extract client IP from common headers or fallback
-  const forwarded = request.headers.get('x-forwarded-for');
-  const realIp = request.headers.get('x-real-ip');
+  const forwarded = supabaseResponse.headers.get('x-forwarded-for')
+    ?? request.headers.get('x-forwarded-for');
+  const realIp = supabaseResponse.headers.get('x-real-ip')
+    ?? request.headers.get('x-real-ip');
   const clientIp = forwarded?.split(',')[0]?.trim() || realIp || 'unknown';
 
   // Determine rate limit configuration based on method and route
@@ -45,7 +62,8 @@ export function middleware(request: NextRequest) {
   const retryAfterSeconds = Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1000));
 
   if (!result.success) {
-    // Rate limit exceeded — return 429
+    // Rate limit exceeded — return 429. Preserve the Supabase cookies set by
+    // updateSession by copying them onto the error response.
     const response = NextResponse.json(
       {
         error: 'Too Many Requests',
@@ -62,23 +80,26 @@ export function middleware(request: NextRequest) {
         },
       }
     );
+    // Copy any auth cookies that updateSession may have set on its response
+    supabaseResponse.cookies.getAll().forEach(c => response.cookies.set(c));
     return response;
   }
 
-  // Request allowed — proceed and add rate limit headers
-  const response = NextResponse.next();
+  // Request allowed — propagate rate limit headers onto the Supabase response.
+  supabaseResponse.headers.set('X-RateLimit-Limit', String(config.limit));
+  supabaseResponse.headers.set('X-RateLimit-Remaining', String(result.remaining));
+  supabaseResponse.headers.set('X-RateLimit-Reset', String(Math.ceil(result.resetAt / 1000)));
 
-  response.headers.set('X-RateLimit-Limit', String(config.limit));
-  response.headers.set('X-RateLimit-Remaining', String(result.remaining));
-  response.headers.set('X-RateLimit-Reset', String(Math.ceil(result.resetAt / 1000)));
-
-  return response;
+  return supabaseResponse;
 }
 
 /**
- * Configure the middleware to only run on API routes.
- * This is more efficient than checking inside the middleware function.
+ * Middleware matcher — runs on everything except Next.js internals and static
+ * assets. This ensures Supabase sessions are refreshed on page navigations,
+ * while rate-limiting logic is gated by the `/api/` check inside the handler.
  */
 export const config = {
-  matcher: '/api/:path*',
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|manifest|robots\\.txt)$).*)',
+  ],
 };

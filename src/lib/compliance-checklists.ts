@@ -510,7 +510,7 @@ export function buildComplianceData(params: {
     totalBatchCount: batchRecords.length,
     qualifiedSupplierCount: suppliers.filter(s => s.status === 'Qualified').length,
     totalSupplierCount: suppliers.length,
-    inReviewDocCount: documents.filter(d => d.status === 'In Review').length,
+    inReviewDocCount: documents.filter(d => d.status === 'Under Review').length,
     recordDocCount: documents.filter(d => d.type === 'Record' || d.type === 'Form').length,
     validationDocCount: documents.filter(d => d.type === 'Validation Protocol').length,
     batchWithProductCodeCount: batchRecords.filter(b => !!b.productCode).length,

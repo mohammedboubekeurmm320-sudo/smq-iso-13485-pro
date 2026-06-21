@@ -77,9 +77,11 @@ import {
 
 const statusColors: Record<DocumentStatus, string> = {
   'Draft': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  'In Review': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  'Under Review': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   'Approved': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  'Effective': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
   'Obsolete': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  'Withdrawn': 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
 };
 
 const levelLabels: Record<DocumentLevel, string> = {
@@ -103,7 +105,7 @@ const classificationKeys: Record<DocumentClassification, 'classificationInternal
   'Confidential': 'classificationConfidential',
 };
 
-const statusFlow: DocumentStatus[] = ['Draft', 'In Review', 'Approved', 'Obsolete'];
+const statusFlow: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'];
 
 const WIZARD_STEPS = [
   { id: 0, labelKey: 'stepIdentification' as const, icon: FileText },
@@ -119,7 +121,7 @@ function getNextStatus(current: DocumentStatus): DocumentStatus | null {
 }
 
 const documentTypes: DocumentType[] = ['SOP', 'WI', 'Form', 'Policy', 'Specification', 'Technical', 'Risk Analysis', 'Validation Protocol', 'Record', 'Manual', 'Instruction', 'Register', 'Master Batch', 'Procedure', 'Process Map', 'Organigram'];
-const documentStatuses: DocumentStatus[] = ['Draft', 'In Review', 'Approved', 'Obsolete'];
+const documentStatuses: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'];
 const documentClassifications: DocumentClassification[] = ['Internal', 'External', 'Regulatory', 'Confidential'];
 const documentLevels: DocumentLevel[] = [1, 2, 3, 4];
 
@@ -346,7 +348,7 @@ export function DocumentControlView() {
     store.updateDocument(doc.id, {
       status: next,
       effectiveDate: (next as DocumentStatus) === 'Approved' ? new Date().toISOString() : undefined,
-      lastReviewed: (next as DocumentStatus) === 'In Review' ? new Date().toISOString() : undefined,
+      lastReviewed: (next as DocumentStatus) === 'Under Review' ? new Date().toISOString() : undefined,
     });
 
     if (selectedDoc?.id === doc.id) {
@@ -354,7 +356,7 @@ export function DocumentControlView() {
         ...doc,
         status: next,
         effectiveDate: (next as DocumentStatus) === 'Approved' ? new Date().toISOString() : doc.effectiveDate,
-        lastReviewed: (next as DocumentStatus) === 'In Review' ? new Date().toISOString() : doc.lastReviewed,
+        lastReviewed: (next as DocumentStatus) === 'Under Review' ? new Date().toISOString() : doc.lastReviewed,
       });
     }
   };
@@ -827,7 +829,7 @@ export function DocumentControlView() {
   const summaryCounts = {
     total: documents.length,
     approved: documents.filter(d => d.status === 'Approved').length,
-    inReview: documents.filter(d => d.status === 'In Review').length,
+    inReview: documents.filter(d => d.status === 'Under Review').length,
     draft: documents.filter(d => d.status === 'Draft').length,
     obsolete: documents.filter(d => d.status === 'Obsolete').length,
     templates: documents.filter(d => d.isTemplate).length,

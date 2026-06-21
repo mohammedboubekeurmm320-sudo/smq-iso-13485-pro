@@ -15,11 +15,7 @@ export class DocumentService extends BaseService {
     return { data: (data || []).map(d => this.mapToCamel<Document>(d)), total: count || 0 };
   }
 
-  async getById(id: string) { return super.getById<Document>('documents', id); }
-
-  async create(doc: Partial<Document>, userId?: string) { return super.create<Document>('documents', doc as Record<string, unknown>, userId); }
-
-  async update(id: string, updates: Partial<Document>, userId?: string) { return super.update<Document>('documents', id, updates as Record<string, unknown>, userId); }
-
-  async delete(id: string, userId?: string) { return super.softDelete<Document>('documents', id, 'status', 'Obsolete', userId); }
+  // Note: getById / create / update / delete are inherited from BaseService
+  // and called with the table name as the first argument (e.g.
+  // `docService.getById<Document>('documents', id)`).
 }

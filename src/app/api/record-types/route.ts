@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getDemoStore } from '@/lib/demo-store-server';
+import type { RecordTypeDefinitionLegacy } from '@/types/qms';
 
 // Zod schema for creating a custom record type
 const createRecordTypeSchema = z.object({
@@ -17,7 +18,7 @@ const createRecordTypeSchema = z.object({
   description: z.string().max(500).optional(),
   statusFlow: z.array(z.object({
     linear: z.array(z.string()),
-    branches: z.record(z.array(z.string())).optional(),
+    branches: z.record(z.string(), z.array(z.string())).optional(),
     eSigRequired: z.array(z.string()).optional(),
     terminal: z.array(z.string()).optional(),
   })).min(1, 'At least one status flow step is required'),
@@ -43,16 +44,16 @@ export async function GET(request: NextRequest) {
 
     let types = store.getRecordTypes();
 
-    if (isActive === 'true') types = types.filter((t: Record<string, unknown>) => t.isActive === true);
-    if (isActive === 'false') types = types.filter((t: Record<string, unknown>) => t.isActive === false);
-    if (isSystem === 'true') types = types.filter((t: Record<string, unknown>) => t.isSystem === true);
-    if (isSystem === 'false') types = types.filter((t: Record<string, unknown>) => t.isSystem === false);
+    if (isActive === 'true') types = types.filter((t: RecordTypeDefinitionLegacy) => t.isActive === true);
+    if (isActive === 'false') types = types.filter((t: RecordTypeDefinitionLegacy) => t.isActive === false);
+    if (isSystem === 'true') types = types.filter((t: RecordTypeDefinitionLegacy) => t.isSystem === true);
+    if (isSystem === 'false') types = types.filter((t: RecordTypeDefinitionLegacy) => t.isSystem === false);
 
     // System types first, then alphabetical
-    types.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+    types.sort((a: RecordTypeDefinitionLegacy, b: RecordTypeDefinitionLegacy) => {
       if (a.isSystem && !b.isSystem) return -1;
       if (!a.isSystem && b.isSystem) return 1;
-      return (a.name as string).localeCompare(b.name as string);
+      return a.name.localeCompare(b.name);
     });
 
     return NextResponse.json({ data: types, total: types.length });
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
     const store = getDemoStore();
 
     // Check slug availability
-    const existing = store.getRecordTypes().find((t: Record<string, unknown>) => t.slug === validated.slug);
+    const existing = store.getRecordTypes().find((t: RecordTypeDefinitionLegacy) => t.slug === validated.slug);
     if (existing) {
       return NextResponse.json(
         { error: `Slug "${validated.slug}" already exists. Choose a different slug.` },
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data: newType }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Validation error', details: error.errors }, { status: 400 });
+      return NextResponse.json({ error: 'Validation error', details: error.issues }, { status: 400 });
     }
     console.error('POST /api/record-types error:', error);
     return NextResponse.json({ error: 'Failed to create record type' }, { status: 500 });

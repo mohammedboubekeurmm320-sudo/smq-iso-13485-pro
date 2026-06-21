@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Capa, CapaStatus, CapaType, CapaPriority, CapaSource, RootCauseCategory, SignatureType, FormTemplateModule } from '@/types/qms';
+import type { Capa, CapaStatus, CapaType, CapaPriority, CapaSource, RootCauseCategory, SignatureType, FormTemplateModule, FormTemplateModuleType } from '@/types/qms';
 import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { TemplateSelector } from '@/components/shared/TemplateSelector';
@@ -89,6 +89,8 @@ function getNextStatus(current: CapaStatus): CapaStatus | null {
 export function CapaView() {
   const { currentUser, hasPermission } = useAuth();
   const store = useQMSStore();
+  const { hasApprovedTemplate } = useRecordWorkflow();
+  const capaModuleType: FormTemplateModuleType = 'capa';
   const capas = store.capas;
   const profiles = store.profiles;
   const documents = store.documents;
@@ -244,9 +246,8 @@ export function CapaView() {
       dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
       createdDate: new Date().toISOString(),
       linkedDocumentId: formLinkedDocId && formLinkedDocId !== 'none' ? formLinkedDocId : undefined,
-      linkedCapaId: formLinkedCapaId && formLinkedCapaId !== 'none' ? formLinkedCapaId : undefined,
-      templateId: newTemplateId || undefined,
-      templateVersion: newTemplateVersion || undefined,
+      // TODO: wire up linkedCapaId selector in the form — field is on the
+      // Capa interface (linkedCapaId) but no `formLinkedCapaId` state exists yet.
       createdById: currentUser?.id,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),

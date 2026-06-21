@@ -321,7 +321,7 @@ export function RiskView() {
   const capas = store.capas;
   const formTemplates = store.formTemplates;
 
-  const MODULE_TYPE: FormTemplateModule = 'RISK';
+  const MODULE_TYPE: FormTemplateModule = 'risk';
   const approvedTemplates = getApprovedTemplates(MODULE_TYPE);
 
   // Filters
@@ -431,8 +431,6 @@ export function RiskView() {
       mitigation: wizardForm.mitigationMeasures.trim() || undefined,
       residualRisk: `Residual RPN: ${residualRpn} (${residualRiskLevel}) — Control: ${wizardForm.controlType}`,
       status: 'Open',
-      templateId: newTemplateId || undefined,
-      templateVersion: newTemplateVersion || undefined,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

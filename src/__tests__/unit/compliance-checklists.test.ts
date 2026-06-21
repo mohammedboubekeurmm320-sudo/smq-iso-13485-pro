@@ -36,6 +36,7 @@ function fullComplianceData(): ComplianceData {
     capaWithRootCauseCount: 5,
     changeControlOpenCount: 1,
     deviationOpenCount: 0,
+    customRecordTypeCounts: {},
   };
 }
 
@@ -65,6 +66,7 @@ function zeroComplianceData(): ComplianceData {
     capaWithRootCauseCount: 0,
     changeControlOpenCount: 0,
     deviationOpenCount: 0,
+    customRecordTypeCounts: {},
   };
 }
 
@@ -94,6 +96,7 @@ function emptyComplianceData(): ComplianceData {
     capaWithRootCauseCount: 0,
     changeControlOpenCount: 0,
     deviationOpenCount: 0,
+    customRecordTypeCounts: {},
   };
 }
 
@@ -123,6 +126,7 @@ function partialComplianceData(): ComplianceData {
     capaWithRootCauseCount: 3,
     changeControlOpenCount: 3,
     deviationOpenCount: 2,
+    customRecordTypeCounts: {},
   };
 }
 
@@ -1141,7 +1145,7 @@ describe('buildComplianceData', () => {
       { status: 'Approved', type: 'SOP' },
       { status: 'Draft', type: 'SOP' },
       { status: 'Approved', type: 'Form' },
-      { status: 'In Review', type: 'SOP' },
+      { status: 'Under Review', type: 'SOP' },
       { status: 'Rejected', type: 'SOP' },
     ];
     const result = buildComplianceData({
@@ -1160,11 +1164,11 @@ describe('buildComplianceData', () => {
     expect(result.totalDocCount).toBe(5);
   });
 
-  it('counts inReviewDocCount correctly — only "In Review" status', () => {
+  it('counts inReviewDocCount correctly — only "Under Review" status', () => {
     const documents = [
-      { status: 'In Review', type: 'SOP' },
+      { status: 'Under Review', type: 'SOP' },
       { status: 'Approved', type: 'SOP' },
-      { status: 'In Review', type: 'Form' },
+      { status: 'Under Review', type: 'Form' },
     ];
     const result = buildComplianceData({
       documents,
@@ -1478,7 +1482,7 @@ describe('buildComplianceData', () => {
       documents: [
         { status: 'Approved', type: 'SOP' },
         { status: 'Approved', type: 'Record' },
-        { status: 'In Review', type: 'Form' },
+        { status: 'Under Review', type: 'Form' },
         { status: 'Draft', type: 'Validation Protocol' },
       ],
       capas: [

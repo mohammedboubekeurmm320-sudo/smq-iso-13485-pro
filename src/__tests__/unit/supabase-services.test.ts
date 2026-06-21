@@ -730,7 +730,7 @@ describe('BaseService', () => {
         expect(mocks.mockFrom).toHaveBeenCalledWith('audit_trails');
         expect(auditInsert).toHaveBeenCalledWith(
           expect.objectContaining({
-            action: 'CREATE',
+            audit_action: 'CREATE',
             table_name: 'documents',
             record_id: 'new-1',
             user_id: 'user-42',
@@ -927,7 +927,7 @@ describe('BaseService', () => {
 
         expect(auditInsert).toHaveBeenCalledWith(
           expect.objectContaining({
-            action: 'UPDATE',
+            audit_action: 'UPDATE',
             table_name: 'documents',
             record_id: 'doc-1',
             user_id: 'user-99',
@@ -1028,7 +1028,7 @@ describe('BaseService', () => {
 
         expect(auditInsert).toHaveBeenCalledWith(
           expect.objectContaining({
-            action: 'UPDATE',
+            audit_action: 'UPDATE',
             user_id: 'user-55',
           }),
         );
@@ -1057,7 +1057,7 @@ describe('BaseService', () => {
 
         expect(auditInsert).toHaveBeenCalledWith(
           expect.objectContaining({
-            action: 'UPDATE',
+            audit_action: 'UPDATE',
           }),
         );
       });
@@ -1088,7 +1088,7 @@ describe('BaseService', () => {
 
         expect(mocks.mockFrom).toHaveBeenCalledWith('audit_trails');
         expect(auditInsert).toHaveBeenCalledWith({
-          action: 'CREATE',
+          audit_action: 'CREATE',
           table_name: 'documents',
           record_id: 'rec-123',
           user_id: 'user-1',

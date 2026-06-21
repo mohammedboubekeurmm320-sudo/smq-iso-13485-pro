@@ -15,8 +15,4 @@ export class DeviationService extends BaseService {
     return { data: (data || []).map(d => this.mapToCamel<Deviation>(d)), total: count || 0 };
   }
 
-  async getById(id: string) { return super.getById<Deviation>('deviations', id); }
-  async create(deviation: Partial<Deviation>, userId?: string) { return super.create<Deviation>('deviations', deviation as Record<string, unknown>, userId); }
-  async update(id: string, updates: Partial<Deviation>, userId?: string) { return super.update<Deviation>('deviations', id, updates as Record<string, unknown>, userId); }
-  async delete(id: string, userId?: string) { return super.softDelete<Deviation>('deviations', id, 'status', 'Closed', userId); }
 }

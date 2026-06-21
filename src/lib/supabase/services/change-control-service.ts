@@ -15,8 +15,4 @@ export class ChangeControlService extends BaseService {
     return { data: (data || []).map(d => this.mapToCamel<ChangeControl>(d)), total: count || 0 };
   }
 
-  async getById(id: string) { return super.getById<ChangeControl>('change_controls', id); }
-  async create(cc: Partial<ChangeControl>, userId?: string) { return super.create<ChangeControl>('change_controls', cc as Record<string, unknown>, userId); }
-  async update(id: string, updates: Partial<ChangeControl>, userId?: string) { return super.update<ChangeControl>('change_controls', id, updates as Record<string, unknown>, userId); }
-  async delete(id: string, userId?: string) { return super.softDelete<ChangeControl>('change_controls', id, 'status', 'Rejected', userId); }
 }

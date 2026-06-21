@@ -11,7 +11,7 @@
 
 import { BaseService } from './base-service';
 import type {
-  RecordTypeDefinition,
+  RecordTypeDefinitionLegacy as RecordTypeDefinition,
   FormFieldDefinition,
   StatusFlowStep,
   ComplianceRef,
@@ -79,9 +79,8 @@ export class RecordTypeService extends BaseService {
   // -----------------------------------------------------------------------
   // Get by ID
   // -----------------------------------------------------------------------
-  async getById(id: string): Promise<RecordTypeDefinition | null> {
-    return super.getById<RecordTypeDefinition>('record_type_definitions', id);
-  }
+  // Note: getById is inherited from BaseService — call as
+  // `service.getById<RecordTypeDefinition>('record_type_definitions', id)`.
 
   // -----------------------------------------------------------------------
   // Get by slug
@@ -102,7 +101,7 @@ export class RecordTypeService extends BaseService {
   // -----------------------------------------------------------------------
   // Create custom record type
   // -----------------------------------------------------------------------
-  async create(payload: CreateRecordTypePayload, userId?: string): Promise<RecordTypeDefinition> {
+  async createRecordType(payload: CreateRecordTypePayload, userId?: string): Promise<RecordTypeDefinition> {
     // Validate: slug must be URL-safe
     if (!/^[a-z][a-z0-9_]*$/.test(payload.slug)) {
       throw new Error('Slug must be lowercase alphanumeric with underscores, starting with a letter.');
@@ -152,9 +151,9 @@ export class RecordTypeService extends BaseService {
   // -----------------------------------------------------------------------
   // Update record type (system types have limited updates)
   // -----------------------------------------------------------------------
-  async update(id: string, payload: UpdateRecordTypePayload, userId?: string): Promise<RecordTypeDefinition> {
+  async updateRecordType(id: string, payload: UpdateRecordTypePayload, userId?: string): Promise<RecordTypeDefinition> {
     // Get current record to check if system
-    const current = await this.getById(id);
+    const current = await super.getById<RecordTypeDefinition>('record_type_definitions', id);
     if (!current) throw new Error('Record type not found.');
 
     if (current.isSystem) {
@@ -199,8 +198,8 @@ export class RecordTypeService extends BaseService {
   // -----------------------------------------------------------------------
   // Delete (only custom, only if no templates/instances)
   // -----------------------------------------------------------------------
-  async delete(id: string, userId?: string): Promise<void> {
-    const current = await this.getById(id);
+  async deleteRecordType(id: string, userId?: string): Promise<void> {
+    const current = await super.getById<RecordTypeDefinition>('record_type_definitions', id);
     if (!current) throw new Error('Record type not found.');
 
     if (current.isSystem) {

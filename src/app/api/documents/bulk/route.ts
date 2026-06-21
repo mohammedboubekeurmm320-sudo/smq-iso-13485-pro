@@ -3,7 +3,7 @@ import { getDemoStore } from '../../_lib/demo-data';
 import { apiSuccess, apiError } from '../../_lib/response';
 import type { DocumentStatus } from '@/types/qms';
 
-const VALID_STATUSES: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn', 'In Review'];
+const VALID_STATUSES: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'];
 
 export async function POST(request: NextRequest) {
   try {

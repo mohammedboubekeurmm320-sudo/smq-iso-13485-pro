@@ -391,8 +391,6 @@ export function OosOotView() {
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      templateId: newTemplateId || undefined,
-      templateVersion: newTemplateVersion || undefined,
     };
     store.addNCR(newNcr);
     resetCreateForm();

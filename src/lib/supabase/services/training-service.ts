@@ -15,8 +15,4 @@ export class TrainingService extends BaseService {
     return { data: (data || []).map(d => this.mapToCamel<Training>(d)), total: count || 0 };
   }
 
-  async getById(id: string) { return super.getById<Training>('training', id); }
-  async create(training: Partial<Training>, userId?: string) { return super.create<Training>('training', training as Record<string, unknown>, userId); }
-  async update(id: string, updates: Partial<Training>, userId?: string) { return super.update<Training>('training', id, updates as Record<string, unknown>, userId); }
-  async delete(id: string, userId?: string) { return super.softDelete<Training>('training', id, 'status', 'Completed', userId); }
 }

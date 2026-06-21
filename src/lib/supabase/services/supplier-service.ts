@@ -15,8 +15,4 @@ export class SupplierService extends BaseService {
     return { data: (data || []).map(d => this.mapToCamel<Supplier>(d)), total: count || 0 };
   }
 
-  async getById(id: string) { return super.getById<Supplier>('suppliers', id); }
-  async create(supplier: Partial<Supplier>, userId?: string) { return super.create<Supplier>('suppliers', supplier as Record<string, unknown>, userId); }
-  async update(id: string, updates: Partial<Supplier>, userId?: string) { return super.update<Supplier>('suppliers', id, updates as Record<string, unknown>, userId); }
-  async delete(id: string, userId?: string) { return super.softDelete<Supplier>('suppliers', id, 'status', 'Disqualified', userId); }
 }

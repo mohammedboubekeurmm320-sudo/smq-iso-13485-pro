@@ -100,7 +100,7 @@ export function ChangeControlView() {
   const capas = store.capas;
   const formTemplates = store.formTemplates;
 
-  const MODULE_TYPE: FormTemplateModule = 'CHANGE_CONTROL';
+  const MODULE_TYPE: FormTemplateModule = 'change_control';
   const approvedTemplates = getApprovedTemplates(MODULE_TYPE);
 
   // Filters
@@ -267,7 +267,7 @@ export function ChangeControlView() {
   };
 
   const handleCreate = () => {
-    const prereqResult = store.checkPrerequisites('CHANGE_CONTROL', 'org-001');
+    const prereqResult = store.checkPrerequisites('change_control', 'org-001');
     if (!prereqResult.met) {
       setPrereqError(`Prerequisite not met: ${prereqResult.missing.map(p => p.description).join(', ')}`);
       return;
@@ -309,8 +309,6 @@ export function ChangeControlView() {
       approver: formApprover || undefined,
       dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
       createdById: currentUser?.id,
-      templateId: newTemplateId || undefined,
-      templateVersion: newTemplateVersion || undefined,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

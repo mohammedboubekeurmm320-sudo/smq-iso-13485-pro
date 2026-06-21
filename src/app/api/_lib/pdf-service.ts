@@ -13,7 +13,7 @@ import type {
   AuditTrail,
 } from '@/types/qms';
 import { formatDate } from '@/lib/utils';
-import { getOrganizationName } from './demo-data';
+import { getDemoStore } from './demo-data';
 
 // ============================================================================
 // Types
@@ -39,7 +39,7 @@ function computeDocumentMetrics(documents: Document[]) {
   const total = documents.length;
   const approved = documents.filter(d => d.status === 'Approved').length;
   const draft = documents.filter(d => d.status === 'Draft').length;
-  const inReview = documents.filter(d => d.status === 'In Review').length;
+  const inReview = documents.filter(d => d.status === 'Under Review').length;
   const obsolete = documents.filter(d => d.status === 'Obsolete').length;
 
   const now = new Date();
@@ -212,7 +212,7 @@ function tableRow(cells: string[]): string {
 // ============================================================================
 
 export function generateManagementReviewHTML(data: ManagementReviewData): string {
-  const orgName = getOrganizationName();
+  const orgName = getDemoStore().getOrganizationName('org-001');
   const generatedAt = new Date().toISOString();
   const complianceScore = computeComplianceScore(data);
 

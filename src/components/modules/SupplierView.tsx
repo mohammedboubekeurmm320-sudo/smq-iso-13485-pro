@@ -263,8 +263,6 @@ export function SupplierView() {
       organizationId: 'org-001',
       createdById: currentUser?.id,
       createdAt: new Date().toISOString(),
-      templateId: newTemplateId || undefined,
-      templateVersion: newTemplateVersion || undefined,
     };
     store.addSupplier(newSupplier);
     resetForm();

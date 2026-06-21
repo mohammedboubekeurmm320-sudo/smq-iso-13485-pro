@@ -21,7 +21,7 @@ import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
 import type {
   FormTemplate,
-  RecordTypeDefinition,
+  RecordTypeDefinitionLegacy as RecordTypeDefinition,
   StatusFlowStep,
 } from '@/types/qms';
 
@@ -33,12 +33,12 @@ import type {
 export interface StatusFlowDefinition {
   /** Linear progression steps */
   linear: string[];
-  /** Branch states (e.g., Rejected, Disqualified) */
-  branches?: Record<string, string[]>;
-  /** States that require e-signature to transition to */
-  eSigRequired?: string[];
-  /** States that are terminal (no further transitions) */
-  terminal?: string[];
+  /** Branch states (e.g., Rejected, Disqualified) — defaulted to {} by builders */
+  branches: Record<string, string[]>;
+  /** States that require e-signature to transition to — defaulted to [] by builders */
+  eSigRequired: string[];
+  /** States that are terminal (no further transitions) — defaulted to [] by builders */
+  terminal: string[];
 }
 
 /** Transition guard result */
@@ -69,6 +69,9 @@ export interface UseRecordWorkflowReturn {
   getStatusFlow: (moduleType: string) => StatusFlowDefinition;
   /** Get label for a module type */
   getModuleTypeLabel: (moduleType: string) => string;
+  /** Map of all module type slugs → human-readable labels (for components
+   *  that need to look up multiple labels without N callback calls). */
+  moduleTypeLabels: Record<string, string>;
   /** All loaded record type definitions */
   recordTypes: RecordTypeDefinition[];
   /** Whether record types are still loading */
@@ -83,16 +86,19 @@ export interface UseRecordWorkflowReturn {
 const FALLBACK_STATUS_FLOWS: Record<string, StatusFlowDefinition> = {
   capa: {
     linear: ['Open', 'Investigation', 'Implementation', 'Effectiveness Check', 'Closed'],
+    branches: {},
     eSigRequired: ['Closed'],
     terminal: ['Closed'],
   },
   ncr: {
     linear: ['Open', 'Under Investigation', 'Pending Disposition', 'Closed'],
+    branches: {},
     eSigRequired: ['Closed'],
     terminal: ['Closed'],
   },
   deviation: {
     linear: ['Open', 'Under Investigation', 'Pending QA Review', 'Approved', 'Closed'],
+    branches: {},
     eSigRequired: ['Approved', 'Closed'],
     terminal: ['Closed'],
   },
@@ -104,6 +110,7 @@ const FALLBACK_STATUS_FLOWS: Record<string, StatusFlowDefinition> = {
   },
   audit: {
     linear: ['Planned', 'In Progress', 'Completed'],
+    branches: {},
     eSigRequired: ['Completed'],
     terminal: ['Completed'],
   },
@@ -115,6 +122,7 @@ const FALLBACK_STATUS_FLOWS: Record<string, StatusFlowDefinition> = {
   },
   training: {
     linear: ['Planned', 'In Progress', 'Completed'],
+    branches: {},
     eSigRequired: ['Completed'],
     terminal: ['Completed'],
   },
@@ -132,11 +140,13 @@ const FALLBACK_STATUS_FLOWS: Record<string, StatusFlowDefinition> = {
   },
   oos_oot: {
     linear: ['Open', 'Under Investigation', 'Pending Disposition', 'Closed'],
+    branches: {},
     eSigRequired: ['Closed'],
     terminal: ['Closed'],
   },
   general: {
     linear: ['Open', 'Under Review', 'Closed'],
+    branches: {},
     eSigRequired: ['Closed'],
     terminal: ['Closed'],
   },
@@ -263,8 +273,9 @@ export function useRecordWorkflow(): UseRecordWorkflowReturn {
 
         for (const step of rt.statusFlow) {
           merged.linear.push(...step.linear);
-          if (step.branches) {
-            Object.assign(merged.branches, step.branches);
+          const stepBranches = step.branches;
+          if (stepBranches) {
+            Object.assign(merged.branches, stepBranches);
           }
           if (step.eSigRequired) {
             merged.eSigRequired.push(...step.eSigRequired);
@@ -427,6 +438,7 @@ export function useRecordWorkflow(): UseRecordWorkflowReturn {
     hasApprovedTemplate,
     getStatusFlow,
     getModuleTypeLabel,
+    moduleTypeLabels: SYSTEM_MODULE_LABELS,
     recordTypes,
     isLoadingRecordTypes,
   }), [
@@ -445,4 +457,4 @@ export function useRecordWorkflow(): UseRecordWorkflowReturn {
 export const MODULE_STATUS_FLOWS = FALLBACK_STATUS_FLOWS;
 
 /** @deprecated Use useRecordWorkflow().getModuleTypeLabel() instead */
-export { SYSTEM_MODULE_LABELS as MODULE_TYPE_LABELS };
+export { SYSTEM_MODULE_LABELS as MODULE_TYPE_LABELS_DEPRECATED };

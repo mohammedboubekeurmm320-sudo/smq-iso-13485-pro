@@ -138,7 +138,7 @@ describe('documentSchema', () => {
   });
 
   it('accepts all valid status enum values', () => {
-    const statuses = ['Draft', 'In Review', 'Approved', 'Obsolete'] as const;
+    const statuses = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'] as const;
     for (const status of statuses) {
       expect(() => documentSchema.parse({ ...validDocument, status })).not.toThrow();
     }

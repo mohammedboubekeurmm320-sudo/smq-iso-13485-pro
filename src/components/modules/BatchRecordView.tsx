@@ -343,8 +343,6 @@ export function BatchRecordView() {
       createdAt: new Date().toISOString(),
       steps,
       rawMaterials: rawMaterials.length > 0 ? rawMaterials : undefined,
-      templateId: newTemplateId || undefined,
-      templateVersion: newTemplateVersion || undefined,
     };
     store.addBatchRecord(newBatch);
     resetForm();

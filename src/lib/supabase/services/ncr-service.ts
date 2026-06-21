@@ -15,8 +15,4 @@ export class NcrService extends BaseService {
     return { data: (data || []).map(d => this.mapToCamel<NonConformance>(d)), total: count || 0 };
   }
 
-  async getById(id: string) { return super.getById<NonConformance>('non_conformances', id); }
-  async create(ncr: Partial<NonConformance>, userId?: string) { return super.create<NonConformance>('non_conformances', ncr as Record<string, unknown>, userId); }
-  async update(id: string, updates: Partial<NonConformance>, userId?: string) { return super.update<NonConformance>('non_conformances', id, updates as Record<string, unknown>, userId); }
-  async delete(id: string, userId?: string) { return super.softDelete<NonConformance>('non_conformances', id, 'status', 'Closed', userId); }
 }
