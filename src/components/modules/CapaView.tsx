@@ -246,6 +246,8 @@ export function CapaView() {
       dueDate: formDueDate ? new Date(formDueDate).toISOString() : new Date().toISOString(),
       createdDate: new Date().toISOString(),
       linkedDocumentId: formLinkedDocId && formLinkedDocId !== 'none' ? formLinkedDocId : undefined,
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
       // TODO: wire up linkedCapaId selector in the form — field is on the
       // Capa interface (linkedCapaId) but no `formLinkedCapaId` state exists yet.
       createdById: currentUser?.id,

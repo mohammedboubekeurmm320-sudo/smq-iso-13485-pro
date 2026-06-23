@@ -69,6 +69,9 @@ export interface TranslationStrings {
     settings: string;
     records: string;
     governance: string;
+    recordTypes: string;
+    customRecords: string;
+    scheduledReports: string;
   };
   // Section titles — used in AppLayout header
   sections: {
@@ -90,6 +93,9 @@ export interface TranslationStrings {
     compliance: string;
     'user-management': string;
     settings: string;
+    'record-types': string;
+    'custom-records': string;
+    'scheduled-reports': string;
   };
   // Dashboard
   dashboard: {

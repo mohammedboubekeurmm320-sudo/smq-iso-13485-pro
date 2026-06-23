@@ -46,11 +46,11 @@ import {
 // ============================================================================
 
 const DEFAULT_STATUS_FLOW: StatusFlowConfig = {
-  statuses: ['Draft', 'In Review', 'Approved', 'Effective', 'Obsolete'],
+  statuses: ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete'],
   transitions: [
-    { from: 'Draft', to: 'In Review', required_role: ['admin', 'quality_manager'] },
-    { from: 'In Review', to: 'Approved', required_role: ['admin', 'quality_manager'] },
-    { from: 'In Review', to: 'Draft', required_role: ['admin', 'quality_manager'] },
+    { from: 'Draft', to: 'Under Review', required_role: ['admin', 'quality_manager'] },
+    { from: 'Under Review', to: 'Approved', required_role: ['admin', 'quality_manager'] },
+    { from: 'Under Review', to: 'Draft', required_role: ['admin', 'quality_manager'] },
     { from: 'Approved', to: 'Effective', required_role: ['admin'] },
     { from: 'Effective', to: 'Obsolete', required_role: ['admin'] },
   ],
@@ -634,7 +634,7 @@ function RecordTypeManager() {
 
             {/* Description */}
             <div className="grid gap-2">
-              <Label>{t.settings?.recordTypes?.description || 'Description'}</Label>
+              <Label>{t.settings?.recordTypes?.descriptionField || 'Description'}</Label>
               <Textarea
                 value={createForm.description || ''}
                 onChange={(e) => setCreateForm(prev => ({ ...prev, description: e.target.value }))}

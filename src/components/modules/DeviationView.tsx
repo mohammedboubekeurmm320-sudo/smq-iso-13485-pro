@@ -260,6 +260,8 @@ export function DeviationView() {
       quantityAffected: form.quantityAffected ? parseInt(form.quantityAffected) : undefined,
       linkedCapaId: form.linkedCapaId && form.linkedCapaId !== 'none' ? form.linkedCapaId : undefined,
       linkedDocumentId: form.linkedDocumentId && form.linkedDocumentId !== 'none' ? form.linkedDocumentId : undefined,
+      templateId: newTemplateId || undefined,
+      templateVersion: newTemplateVersion || undefined,
       assignedTo: form.assignedTo,
       dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : new Date().toISOString(),
       createdById: currentUser?.id,

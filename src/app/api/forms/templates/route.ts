@@ -45,12 +45,12 @@ export async function POST(request: NextRequest) {
       ...parsed.data,
       id: `ft-${Date.now()}`,
       createdAt: now,
-      templateStatus,
+      status: templateStatus,
       isActive: templateStatus === 'Approved',
       approvedAt: templateStatus === 'Approved' ? now : undefined,
     } as import('@/types/qms').FormTemplate;
     store.formTemplates.push(item);
-    store.logAudit('CREATE', 'FormTemplate', item.id, undefined, { title: item.title, version: item.version, templateStatus });
+    store.logAudit('CREATE', 'FormTemplate', item.id, undefined, { title: item.title, version: item.version, status: templateStatus });
     return apiSuccess(item, 201);
   } catch (error) {
     return apiError('Failed to create form template', 500, error instanceof Error ? error.message : undefined);

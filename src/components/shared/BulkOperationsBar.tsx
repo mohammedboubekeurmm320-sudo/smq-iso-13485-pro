@@ -35,7 +35,7 @@ interface BulkOperationsBarProps {
   entityType: string;
 }
 
-const validStatuses = ['Draft', 'In Review', 'Approved', 'Obsolete'];
+const validStatuses = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'];
 
 export function BulkOperationsBar({
   selectedIds,

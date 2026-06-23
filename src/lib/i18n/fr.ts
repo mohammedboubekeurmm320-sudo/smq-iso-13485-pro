@@ -67,6 +67,9 @@ export const fr: TranslationStrings = {
     settings: 'Paramètres',
     records: 'Enregistrements',
     governance: 'Pilotage',
+    recordTypes: 'Types d\'Enregistrements',
+    customRecords: 'Enregistrements Personnalisés',
+    scheduledReports: 'Rapports Planifiés',
   },
   sections: {
     dashboard: 'Tableau de Bord',
@@ -87,6 +90,9 @@ export const fr: TranslationStrings = {
     compliance: 'Conformité',
     'user-management': 'Gestion Utilisateurs',
     settings: 'Paramètres',
+    'record-types': 'Types d\'Enregistrements',
+    'custom-records': 'Enregistrements Personnalisés',
+    'scheduled-reports': 'Rapports Planifiés',
   },
   dashboard: {
     welcome: 'Bienvenue',

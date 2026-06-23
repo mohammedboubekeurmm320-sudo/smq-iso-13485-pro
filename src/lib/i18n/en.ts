@@ -67,6 +67,9 @@ export const en: TranslationStrings = {
     settings: 'Settings',
     records: 'Records',
     governance: 'Governance',
+    recordTypes: 'Record Types',
+    customRecords: 'Custom Records',
+    scheduledReports: 'Scheduled Reports',
   },
   sections: {
     dashboard: 'Dashboard',
@@ -87,6 +90,9 @@ export const en: TranslationStrings = {
     compliance: 'Compliance',
     'user-management': 'User Management',
     settings: 'Settings',
+    'record-types': 'Record Types',
+    'custom-records': 'Custom Records',
+    'scheduled-reports': 'Scheduled Reports',
   },
   dashboard: {
     welcome: 'Welcome',
