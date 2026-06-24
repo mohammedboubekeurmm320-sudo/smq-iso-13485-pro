@@ -2,17 +2,27 @@ import { NextRequest } from 'next/server';
 import { getDemoStore } from '../_lib/demo-data';
 import { apiSuccess, apiError, apiPaginated } from '../_lib/response';
 import { changeControlSchema } from '../_lib/validation';
+import { getService } from '../_lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
-    const store = getDemoStore();
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
     const status = searchParams.get('status');
     const priority = searchParams.get('priority');
     const search = searchParams.get('search');
+    const filters = { status: status || undefined, priority: priority || undefined, search: search || undefined };
 
+    // Try Supabase first, fall back to demo store
+    const svc = await getService('changeControl', request);
+    if (svc) {
+      const result = await svc.list(page, pageSize, filters);
+      return apiPaginated(result.data, result.total, page, pageSize);
+    }
+
+    // Demo mode
+    const store = getDemoStore();
     let filtered = [...store.changeControls];
     if (status) filtered = filtered.filter(c => c.status === status);
     if (priority) filtered = filtered.filter(c => c.priority === priority);
@@ -36,6 +46,14 @@ export async function POST(request: NextRequest) {
     const parsed = changeControlSchema.safeParse(body);
     if (!parsed.success) return apiError('Validation failed', 400, parsed.error.flatten());
 
+    // Try Supabase first
+    const svc = await getService('changeControl', request);
+    if (svc) {
+      const created = await svc.create('change_controls', parsed.data);
+      return apiSuccess(created, 201);
+    }
+
+    // Demo mode
     const now = new Date().toISOString();
     const item = { ...parsed.data, id: `cc-${Date.now()}`, createdAt: now, updatedAt: now } as import('@/types/qms').ChangeControl;
     store.changeControls.push(item);

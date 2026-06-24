@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
 import { getDemoStore } from '../_lib/demo-data';
-import { apiSuccess, apiError, apiPaginated } from '../_lib/response';
+import { apiError, apiPaginated } from '../_lib/response';
+import { getService } from '../_lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
-    const store = getDemoStore();
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '50');
@@ -13,7 +13,23 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const filters = {
+      action: action || undefined,
+      tableName: tableName || undefined,
+      userId: userId || undefined,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+    };
 
+    // Try Supabase first, fall back to demo store
+    const svc = await getService('auditTrail', request);
+    if (svc) {
+      const result = await svc.list(page, pageSize, filters);
+      return apiPaginated(result.data, result.total, page, pageSize);
+    }
+
+    // Demo mode
+    const store = getDemoStore();
     let filtered = [...store.auditTrails];
 
     if (action) filtered = filtered.filter(a => a.action === action);

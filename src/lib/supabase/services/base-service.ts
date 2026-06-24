@@ -72,7 +72,7 @@ export abstract class BaseService {
   // -----------------------------------------------------------------------
   // Common queries
   // -----------------------------------------------------------------------
-  protected async getAll<T>(tableName: string, page = 1, pageSize = 20): Promise<{ data: T[]; total: number }> {
+  public async getAll<T>(tableName: string, page = 1, pageSize = 20): Promise<{ data: T[]; total: number }> {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
@@ -88,7 +88,7 @@ export abstract class BaseService {
     };
   }
 
-  protected async getById<T>(tableName: string, id: string): Promise<T | null> {
+  public async getById<T>(tableName: string, id: string): Promise<T | null> {
     let query = this.supabase.from(tableName).select('*').eq('id', id);
     if (this.orgId) query = query.eq('organization_id', this.orgId);
 
@@ -97,7 +97,7 @@ export abstract class BaseService {
     return this.mapToCamel<T>(data);
   }
 
-  protected async create<T>(tableName: string, record: Record<string, unknown>, userId?: string): Promise<T> {
+  public async create<T>(tableName: string, record: Record<string, unknown>, userId?: string): Promise<T> {
     const snakeRecord = this.mapToSnake({ ...record, organizationId: this.orgId });
     const { data, error } = await this.supabase.from(tableName).insert(snakeRecord).select().single();
     if (error) throw new Error(error.message);
@@ -107,7 +107,7 @@ export abstract class BaseService {
     return result;
   }
 
-  protected async update<T>(tableName: string, id: string, updates: Record<string, unknown>, userId?: string): Promise<T> {
+  public async update<T>(tableName: string, id: string, updates: Record<string, unknown>, userId?: string): Promise<T> {
     // Get old values for audit
     const old = await this.getById<T>(tableName, id);
     const snakeUpdates = this.mapToSnake(updates);
@@ -123,7 +123,7 @@ export abstract class BaseService {
     return result;
   }
 
-  protected async softDelete<T>(tableName: string, id: string, statusField = 'status', statusValue = 'Obsolete', userId?: string): Promise<T> {
+  public async softDelete<T>(tableName: string, id: string, statusField = 'status', statusValue = 'Obsolete', userId?: string): Promise<T> {
     return this.update<T>(tableName, id, { [statusField]: statusValue }, userId);
   }
 }
