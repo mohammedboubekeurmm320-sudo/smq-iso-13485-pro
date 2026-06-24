@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 interface ElectronicSignatureModalProps {
   open: boolean;
   onClose: () => void;
-  onSign: (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => void;
+  onSign: (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType; reason?: string }) => void;
   recordTitle: string;
   recordId: string;
   signatureType: SignatureType;
@@ -79,6 +79,7 @@ export function ElectronicSignatureModal({
       signatureHash,
       signedAt: new Date().toISOString(),
       signatureType,
+      reason: reason || undefined,
     });
 
     // Reset and close

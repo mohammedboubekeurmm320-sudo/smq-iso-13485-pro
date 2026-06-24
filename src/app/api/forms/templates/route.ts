@@ -2,18 +2,28 @@ import { NextRequest } from 'next/server';
 import { getDemoStore } from '../../_lib/demo-data';
 import { apiSuccess, apiError, apiPaginated } from '../../_lib/response';
 import { formTemplateSchema } from '../../_lib/validation';
+import { getService } from '../../_lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
-    const store = getDemoStore();
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
     const isActive = searchParams.get('isActive');
+    const filters = { isActive: isActive !== null && isActive !== undefined ? isActive === 'true' : undefined };
 
+    // Try Supabase first, fall back to demo store
+    const svc = await getService('form', request);
+    if (svc) {
+      const result = await svc.listTemplates(page, pageSize, filters);
+      return apiPaginated(result.data, result.total, page, pageSize);
+    }
+
+    // Demo mode
+    const store = getDemoStore();
     let filtered = [...store.formTemplates];
-    if (isActive !== null && isActive !== undefined) {
-      filtered = filtered.filter(t => t.isActive === (isActive === 'true'));
+    if (filters.isActive !== undefined) {
+      filtered = filtered.filter(t => t.isActive === filters.isActive);
     }
 
     const total = filtered.length;
@@ -31,7 +41,14 @@ export async function POST(request: NextRequest) {
     const parsed = formTemplateSchema.safeParse(body);
     if (!parsed.success) return apiError('Validation failed', 400, parsed.error.flatten());
 
-    // Hybrid Supervision: Check linked document status
+    // Try Supabase first
+    const svc = await getService('form', request);
+    if (svc) {
+      const created = await svc.createTemplate(parsed.data as Partial<import('@/types/qms').FormTemplate>);
+      return apiSuccess(created, 201);
+    }
+
+    // Demo mode — Hybrid Supervision: Check linked document status
     let templateStatus: import('@/types/qms').FormTemplateStatus = 'Draft';
     if (body.documentId) {
       const linkedDoc = store.documents.find(d => d.id === body.documentId);

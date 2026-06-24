@@ -585,6 +585,10 @@ export interface FormTemplate {
   reviewComment?: string;
   signatures?: ElectronicSignature[];
   instances?: FormInstance[];
+  /** SQL: current_approval_step — for sequential workflow tracking */
+  currentApprovalStep?: number;
+  /** SQL: previous_version_id — template version chaining */
+  previousVersionId?: string;
 }
 
 /** Allowed status transitions for form templates (state machine) */

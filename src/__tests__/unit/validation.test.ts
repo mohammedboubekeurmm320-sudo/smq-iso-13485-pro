@@ -1028,7 +1028,7 @@ describe('formTemplateSchema', () => {
     expect(result.isActive).toBe(true);
   });
 
-  it('parses a template with all field types', () => {
+  it('parses a template with the 8 original field types', () => {
     const fieldTypes = ['text', 'number', 'date', 'select', 'checkbox', 'textarea', 'signature', 'table'] as const;
     const fields = fieldTypes.map((type, i) => ({
       id: `field-${i}`,
@@ -1040,13 +1040,15 @@ describe('formTemplateSchema', () => {
     expect(result.fields).toHaveLength(8);
   });
 
-  it('fails when documentId is missing', () => {
+  it('parses when documentId is missing (optional)', () => {
     const { documentId, ...without } = validTemplate;
-    expect(() => formTemplateSchema.parse(without)).toThrow();
+    const result = formTemplateSchema.parse(without);
+    expect(result.documentId).toBeUndefined();
   });
 
-  it('fails when documentId is empty string', () => {
-    expect(() => formTemplateSchema.parse({ ...validTemplate, documentId: '' })).toThrow();
+  it('parses when documentId is empty string (allowed)', () => {
+    const result = formTemplateSchema.parse({ ...validTemplate, documentId: '' });
+    expect(result.documentId).toBe('');
   });
 
   it('fails when title is missing', () => {
@@ -1059,11 +1061,23 @@ describe('formTemplateSchema', () => {
     expect(() => formTemplateSchema.parse(without)).toThrow();
   });
 
-  it('fails with invalid field type enum value', () => {
+  it('parses all 11 field types including rating, file, repeater', () => {
+    const fieldTypes = ['text', 'number', 'date', 'select', 'checkbox', 'textarea', 'signature', 'table', 'rating', 'file', 'repeater'] as const;
+    const fields = fieldTypes.map((type, i) => ({
+      id: `field-${i}`,
+      name: `field_${type}`,
+      label: `Field ${type}`,
+      type,
+    }));
+    const result = formTemplateSchema.parse({ ...validTemplate, fields });
+    expect(result.fields).toHaveLength(11);
+  });
+
+  it('fails with truly invalid field type', () => {
     expect(() =>
       formTemplateSchema.parse({
         ...validTemplate,
-        fields: [{ id: 'f-1', name: 'test', label: 'Test', type: 'file' }],
+        fields: [{ id: 'f-1', name: 'test', label: 'Test', type: 'nonexistent' }],
       })
     ).toThrow();
   });

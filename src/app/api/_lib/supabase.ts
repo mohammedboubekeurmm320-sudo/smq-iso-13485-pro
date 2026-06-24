@@ -14,6 +14,7 @@ import { RiskService } from '@/lib/supabase/services/risk-service';
 import { AuditTrailService } from '@/lib/supabase/services/audit-trail-service';
 import { DeviationService } from '@/lib/supabase/services/deviation-service';
 import { ChangeControlService } from '@/lib/supabase/services/change-control-service';
+import { FormService } from '@/lib/supabase/services/form-service';
 import type { BaseService } from '@/lib/supabase/services/base-service';
 
 /** True when NEXT_PUBLIC_SUPABASE_URL is set (live mode with real DB). */
@@ -31,6 +32,7 @@ type ServiceMap = {
   auditTrail: AuditTrailService;
   deviation: DeviationService;
   changeControl: ChangeControlService;
+  form: FormService;
 };
 
 const SERVICE_CLASSES: Record<keyof ServiceMap, new (orgId?: string) => BaseService & ServiceMap[keyof ServiceMap]> = {
@@ -45,6 +47,7 @@ const SERVICE_CLASSES: Record<keyof ServiceMap, new (orgId?: string) => BaseServ
   auditTrail: AuditTrailService,
   deviation: DeviationService,
   changeControl: ChangeControlService,
+  form: FormService,
 } as unknown as Record<keyof ServiceMap, new (orgId?: string) => BaseService & ServiceMap[keyof ServiceMap]>;
 
 /**

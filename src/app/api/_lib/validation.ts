@@ -203,20 +203,40 @@ export const supplierSchema = z.object({
 // ============================================================================
 
 export const formTemplateSchema = z.object({
-  documentId: z.string().min(1),
+  documentId: z.string().min(1).optional().or(z.literal('')),
   title: z.string().min(1),
   version: z.string().default('1.0'),
+  description: z.string().optional(),
+  moduleType: z.enum(['capa', 'ncr', 'deviation', 'change_control', 'audit', 'risk', 'training', 'supplier', 'batch_record', 'oos_oot', 'general']).optional(),
+  status: z.enum(['Draft', 'Under_Review', 'Approved', 'Obsolete']).optional(),
   fields: z.array(z.object({
     id: z.string(),
     name: z.string(),
     label: z.string(),
-    type: z.enum(['text', 'number', 'date', 'select', 'checkbox', 'textarea', 'signature', 'table']),
+    type: z.enum(['text', 'number', 'date', 'select', 'checkbox', 'textarea', 'signature', 'table', 'rating', 'file', 'repeater']),
     required: z.boolean().optional(),
     options: z.array(z.string()).optional(),
     placeholder: z.string().optional(),
     defaultValue: z.string().optional(),
     validation: z.object({ min: z.number().optional(), max: z.number().optional(), pattern: z.string().optional() }).optional(),
   })),
+  workflow: z.object({
+    workflowType: z.enum(['single', 'sequential', 'parallel']),
+    requiresApproval: z.boolean(),
+    allowDraftSaves: z.boolean(),
+    lockAfterSubmission: z.boolean(),
+    eSignatureRequired: z.boolean(),
+    approvalRoles: z.array(z.string()).optional(),
+    minApprovers: z.number().optional(),
+  }).optional(),
+  compliance: z.object({
+    regulatoryReference: z.string(),
+    retentionPeriod: z.string(),
+    dataClassification: z.enum(['Internal', 'Confidential', 'Regulatory', 'GxP Critical']),
+    auditTrailEnabled: z.boolean(),
+    printFriendlyLayout: z.boolean(),
+    cfrPart11Compliance: z.boolean(),
+  }).optional(),
   isActive: z.boolean().default(true),
   organizationId: z.string().optional(),
   createdById: z.string().optional(),
@@ -239,6 +259,12 @@ export const formInstanceSchema = z.object({
   parentDocumentId: z.string().optional(),
   organizationId: z.string().optional(),
   createdById: z.string().optional(),
+  recordTypeSlug: z.string().optional(),
+  linkedRecordId: z.string().optional(),
+  linkedRecordType: z.string().optional(),
+  currentApprovalStep: z.number().optional(),
+  signatures: z.array(z.record(z.string(), z.unknown())).optional(),
+  approvalHistory: z.array(z.unknown()).optional(),
 });
 
 // ============================================================================

@@ -3,7 +3,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
 import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
 import { cn, formatDate } from '@/lib/utils';
 import type { FormTemplate, FormInstance, FormFieldDefinition, FormInstanceStatus, SignatureType, FormTemplateWorkflow, FormTemplateCompliance, FormTemplateStatus, FormTemplateModuleType } from '@/types/qms';
@@ -104,8 +103,6 @@ const TEMPLATE_STATUS_STEPS: FormTemplateStatus[] = ['Draft', 'Under_Review', 'A
 export function FormView() {
   const { currentUser, hasPermission } = useAuth();
   const store = useQMSStore();
-  const { getModuleTypeLabel } = useRecordWorkflow();
-  const workflowModuleLabels = moduleTypeLabels;
   const templates = store.formTemplates;
   const instances = store.formInstances;
   const documents = store.documents;
@@ -380,7 +377,7 @@ export function FormView() {
     if (updated) setSelectedTemplate(updated);
   };
 
-  const handleTemplateEsigSign = (data: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
+  const handleTemplateEsigSign = (data: { signatureHash: string; signedAt: string; signatureType: SignatureType; reason?: string }) => {
     if (!pendingTemplateAction) return;
     const { templateId, targetStatus } = pendingTemplateAction;
     const result = store.transitionFormTemplateStatus(
@@ -389,6 +386,7 @@ export function FormView() {
       currentUser?.id || '',
       currentUser?.role || 'operator',
       data.signatureHash,
+      data.reason,
     );
     if (!result.success) {
       alert(result.error || 'Template transition failed');
@@ -450,7 +448,7 @@ export function FormView() {
     setShowEsigModal(true);
   };
 
-  const handleEsigSign = (data: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
+  const handleEsigSign = (data: { signatureHash: string; signedAt: string; signatureType: SignatureType; reason?: string }) => {
     if (!pendingInstanceAction) return;
     const { instanceId, action } = pendingInstanceAction;
     const targetStatus = action === 'approve' ? 'Approved' as const : 'Rejected' as const;
@@ -460,6 +458,7 @@ export function FormView() {
       currentUser?.id || '',
       currentUser?.role || 'operator',
       data.signatureHash,
+      data.reason,
     );
     if (!result.success) {
       alert(result.error || 'Instance transition failed');
@@ -695,7 +694,7 @@ export function FormView() {
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs">
-                              {workflowModuleLabels[template.moduleType || 'GENERAL'] || template.moduleType || 'General'}
+                              {moduleTypeLabels[template.moduleType || 'general'] || template.moduleType || 'General'}
                             </Badge>
                           </TableCell>
                           <TableCell>

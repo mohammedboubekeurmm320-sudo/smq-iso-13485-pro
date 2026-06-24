@@ -2,16 +2,26 @@ import { NextRequest } from 'next/server';
 import { getDemoStore } from '../../_lib/demo-data';
 import { apiSuccess, apiError, apiPaginated } from '../../_lib/response';
 import { formInstanceSchema } from '../../_lib/validation';
+import { getService } from '../../_lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
-    const store = getDemoStore();
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
     const status = searchParams.get('status');
     const templateId = searchParams.get('templateId');
+    const filters = { status: status || undefined, templateId: templateId || undefined };
 
+    // Try Supabase first, fall back to demo store
+    const svc = await getService('form', request);
+    if (svc) {
+      const result = await svc.listInstances(page, pageSize, filters);
+      return apiPaginated(result.data, result.total, page, pageSize);
+    }
+
+    // Demo mode
+    const store = getDemoStore();
     let filtered = [...store.formInstances];
     if (status) filtered = filtered.filter(f => f.status === status);
     if (templateId) filtered = filtered.filter(f => f.templateId === templateId);
@@ -31,7 +41,14 @@ export async function POST(request: NextRequest) {
     const parsed = formInstanceSchema.safeParse(body);
     if (!parsed.success) return apiError('Validation failed', 400, parsed.error.flatten());
 
-    // Hybrid Supervision: Validate template status (§4.2.4)
+    // Try Supabase first
+    const svc = await getService('form', request);
+    if (svc) {
+      const created = await svc.createInstance(parsed.data as Partial<import('@/types/qms').FormInstance>);
+      return apiSuccess(created, 201);
+    }
+
+    // Demo mode — Hybrid Supervision: Validate template status (§4.2.4)
     const template = store.formTemplates.find(t => t.id === body.templateId);
     if (template) {
       const templateStatus = template.status || (template.isActive ? 'Approved' : 'Draft');
