@@ -131,7 +131,7 @@ interface InterviewRow {
 
 interface FindingRow {
   id: string;
-  severity: string;
+  severity: AuditFinding['severity'];
   referenceClause: string;
   description: string;
   objectiveEvidence: string;
@@ -318,6 +318,7 @@ export function AuditView() {
     setFormNextAuditDate('');
     setNewTemplateId('');
     setNewTemplateVersion('');
+    setFormTemplateId('');
   };
 
   const resetFindingForm = () => {
@@ -450,7 +451,7 @@ export function AuditView() {
       findings: formFindings.filter(f => f.description.trim()).map((f, idx) => ({
         id: `finding-${Date.now()}-${idx}`,
         description: f.description.trim(),
-        severity: f.severity as AuditFinding['severity'],
+        severity: findingSeverity,
         referenceClause: f.referenceClause.trim() || undefined,
         correctiveActionRequired: f.carRequired,
         capaId: f.capaReference.trim() || undefined,
@@ -484,12 +485,15 @@ export function AuditView() {
     }
   };
 
-  const handleSignatureConfirm = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
+  const handleSignatureConfirm = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType; reason?: string }) => {
     if (!pendingCompleteAudit) return;
 
     store.updateAudit(pendingCompleteAudit.id, {
       status: 'Completed',
       completedDate: new Date().toISOString(),
+      completedSignatureHash: signatureData.signatureHash,
+      completedSignedAt: signatureData.signedAt,
+      completedSignedById: currentUser?.id,
     });
 
     if (selectedAudit?.id === pendingCompleteAudit.id) {

@@ -9,7 +9,7 @@ import { z } from 'zod';
 export const documentSchema = z.object({
   documentNumber: z.string().min(1),
   title: z.string().min(1),
-  type: z.enum(['SOP', 'WI', 'Form', 'Policy', 'Specification', 'Technical', 'Risk Analysis', 'Validation Protocol', 'Record']),
+  type: z.string().min(1),
   version: z.string().default('1.0'),
   status: z.enum(['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn']).default('Draft'),
   effectiveDate: z.string().optional(),
@@ -31,6 +31,18 @@ export const documentSchema = z.object({
   authorId: z.string().optional(),
   organizationId: z.string().optional(),
   createdById: z.string().optional(),
+  isTemplate: z.boolean().optional(),
+  templateReferenceId: z.string().optional(),
+  templateReferenceVersion: z.string().optional(),
+  code: z.string().optional(),
+  isoClause: z.string().optional(),
+  triggers: z.array(z.string()).optional(),
+  childCodes: z.array(z.string()).optional(),
+  isPrerequisite: z.boolean().optional(),
+  reviewCycleMonths: z.number().optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
+  templateId: z.string().optional(),
+  templateVersion: z.string().optional(),
 });
 
 // ============================================================================
@@ -124,6 +136,11 @@ export const auditSchema = z.object({
     capaId: z.string().optional(),
   })).optional(),
   organizationId: z.string().optional(),
+  templateId: z.string().optional(),
+  templateVersion: z.string().optional(),
+  completedSignatureHash: z.string().optional(),
+  completedSignedAt: z.string().optional(),
+  completedSignedById: z.string().optional(),
 });
 
 // ============================================================================

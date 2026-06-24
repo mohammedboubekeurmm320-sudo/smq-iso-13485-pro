@@ -67,7 +67,7 @@ describe('API route integration pipelines', () => {
       const validData = {
         documentNumber: 'SOP-INT-002',
         title: 'Store Insert Test',
-        type: 'WI' as const,
+        type: 'WI',
       };
       const parsed = documentSchema.parse(validData);
       const now = new Date().toISOString();
@@ -76,6 +76,7 @@ describe('API route integration pipelines', () => {
       // Zod infers wider types than Document's DocumentLevel / DocumentStatus
       documentLevel: parsed.documentLevel as Document['documentLevel'],
       status: parsed.status as Document['status'],
+            type: parsed.type as Document['type'],
         id: uid('doc'),
         createdAt: now,
         updatedAt: now,
@@ -101,7 +102,7 @@ describe('API route integration pipelines', () => {
       const validData = {
         documentNumber: 'SOP-INT-003',
         title: 'Audit Trail Test Doc',
-        type: 'Policy' as const,
+        type: 'Policy',
       };
       const parsed = documentSchema.parse(validData);
       const now = new Date().toISOString();
@@ -110,6 +111,7 @@ describe('API route integration pipelines', () => {
       // Zod infers wider types than Document's DocumentLevel / DocumentStatus
       documentLevel: parsed.documentLevel as Document['documentLevel'],
       status: parsed.status as Document['status'],
+            type: parsed.type as Document['type'],
         id: uid('doc'),
         createdAt: now,
         updatedAt: now,

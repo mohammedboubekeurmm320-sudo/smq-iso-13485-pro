@@ -760,6 +760,10 @@ export interface Audit {
   scope?: string;
   scheduledDate: string;
   completedDate?: string;
+  /** E-signature stored when audit is completed */
+  completedSignatureHash?: string;
+  completedSignedAt?: string;
+  completedSignedById?: string;
   leadAuditor: string;
   auditees?: string[];
   findings?: AuditFinding[];
