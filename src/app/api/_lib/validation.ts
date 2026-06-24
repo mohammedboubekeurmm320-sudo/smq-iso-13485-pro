@@ -89,13 +89,15 @@ export const ncrSchema = z.object({
   measuredValue: z.number().optional(),
   measuredUnit: z.string().optional(),
   specLimit: z.string().optional(),
-  phase1Conclusion: z.enum(['Error Found', 'No Error Found', 'Pending']).optional(),
+  phase1Conclusion: z.enum(['Assignable Cause Found', 'No Assignable Cause Found', 'Error Found', 'No Error Found', 'Pending']).optional(),
   phase2Required: z.boolean().default(false),
   phase2Conclusion: z.enum(['Confirmed OOS', 'Invalidated', 'Pending']).optional(),
   rejectLot: z.boolean().default(false),
   assignedTo: z.string().optional(),
   createdDate: z.string().min(1),
   createdById: z.string().optional(),
+  templateId: z.string().optional(),
+  templateVersion: z.string().optional(),
   organizationId: z.string().optional(),
 });
 

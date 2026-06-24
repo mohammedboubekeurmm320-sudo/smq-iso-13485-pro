@@ -281,11 +281,15 @@ export function NcrView() {
   };
 
   // Electronic signature callback for closing NCR
-  const handleSignatureConfirm = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
+  const handleSignatureConfirm = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType; reason?: string }) => {
     if (!pendingCloseNcr) return;
 
     store.updateNCR(pendingCloseNcr.id, {
       status: 'Closed',
+      closedSignatureHash: signatureData.signatureHash,
+      closedSignedAt: signatureData.signedAt,
+      closedById: currentUser?.id,
+      closedReason: signatureData.reason,
     });
 
     if (selectedNcr?.id === pendingCloseNcr.id) {

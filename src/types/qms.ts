@@ -392,7 +392,7 @@ export interface NonConformance {
   measuredValue?: number;
   measuredUnit?: string;
   specLimit?: string;
-  phase1Conclusion?: 'Error Found' | 'No Error Found' | 'Pending';
+  phase1Conclusion?: 'Assignable Cause Found' | 'No Assignable Cause Found' | 'Error Found' | 'No Error Found' | 'Pending';
   phase2Required: boolean;
   phase2Conclusion?: 'Confirmed OOS' | 'Invalidated' | 'Pending';
   rejectLot: boolean;
@@ -406,6 +406,11 @@ export interface NonConformance {
   organizationId?: string;
   createdAt: string;
   updatedAt: string;
+  /** E-signature hash stored when NCR is closed */
+  closedSignatureHash?: string;
+  closedSignedAt?: string;
+  closedById?: string;
+  closedReason?: string;
 }
 
 // ============================================================================
