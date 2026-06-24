@@ -123,6 +123,15 @@ export interface TranslationStrings {
     capaStatus: string;
     riskProfile: string;
     recentActivity: string;
+    openDeviations: string;
+    deviationStatus: string;
+    openChangeControls: string;
+    changeControlStatus: string;
+    pendingQA: string;
+    inImplementation: string;
+    requested: string;
+    avgRPN: string;
+    avgPerformance: string;
   };
   // Setup
   setup: {

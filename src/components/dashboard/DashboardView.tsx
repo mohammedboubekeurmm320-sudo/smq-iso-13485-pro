@@ -110,6 +110,8 @@ export function DashboardView() {
   const batchRecords = store.batchRecords;
   const suppliers = store.suppliers;
   const risks = store.risks;
+  const deviations = store.deviations;
+  const changeControls = store.changeControls;
   const auditTrails = store.auditTrails;
 
   // KPI calculations
@@ -123,6 +125,10 @@ export function DashboardView() {
   const releasedBatches = batchRecords.filter(b => b.status === 'Released').length;
   const qualifiedSuppliers = suppliers.filter(s => s.status === 'Qualified').length;
   const highRisks = risks.filter(r => r.riskLevel === 'High' || r.riskLevel === 'Critical').length;
+  const openDeviations = deviations.filter(d => d.status !== 'Closed').length;
+  const pendingQADeviations = deviations.filter(d => d.status === 'Pending QA Review').length;
+  const openChangeControls = changeControls.filter(cc => cc.status !== 'Completed' && cc.status !== 'Rejected').length;
+  const inImplChangeControls = changeControls.filter(cc => cc.status === 'In Implementation').length;
 
   // Industry configuration
   const industryType = orgSettings?.industry_type || 'medical_device';
@@ -179,15 +185,40 @@ export function DashboardView() {
     { name: 'Critical', value: risks.filter(r => r.riskLevel === 'Critical').length, color: 'hsl(280, 67%, 58%)' },
   ].filter(d => d.value > 0);
 
-  // Monthly trend data (mock)
-  const monthlyTrend = [
-    { month: 'Jan', capas: 2, ncrs: 1, audits: 1 },
-    { month: 'Feb', capas: 3, ncrs: 2, audits: 0 },
-    { month: 'Mar', capas: 1, ncrs: 3, audits: 1 },
-    { month: 'Apr', capas: 4, ncrs: 1, audits: 2 },
-    { month: 'May', capas: 2, ncrs: 2, audits: 1 },
-    { month: 'Jun', capas: 1, ncrs: 1, audits: 1 },
-  ];
+  // Chart data - Deviation status distribution
+  const deviationStatusData = [
+    { name: 'Open', value: deviations.filter(d => d.status === 'Open').length },
+    { name: 'Under Investigation', value: deviations.filter(d => d.status === 'Under Investigation').length },
+    { name: 'Pending QA Review', value: deviations.filter(d => d.status === 'Pending QA Review').length },
+    { name: 'Approved', value: deviations.filter(d => d.status === 'Approved').length },
+    { name: 'Closed', value: deviations.filter(d => d.status === 'Closed').length },
+  ].filter(d => d.value > 0);
+
+  // Chart data - Change Control status distribution
+  const ccStatusData = [
+    { name: 'Requested', value: changeControls.filter(cc => cc.status === 'Requested').length },
+    { name: 'Under Review', value: changeControls.filter(cc => cc.status === 'Under Review').length },
+    { name: 'Approved', value: changeControls.filter(cc => cc.status === 'Approved').length },
+    { name: 'In Implementation', value: changeControls.filter(cc => cc.status === 'In Implementation').length },
+    { name: 'Completed', value: changeControls.filter(cc => cc.status === 'Completed').length },
+    { name: 'Rejected', value: changeControls.filter(cc => cc.status === 'Rejected').length },
+  ].filter(d => d.value > 0);
+
+  // Monthly trend data — computed dynamically from store records
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const now = new Date();
+  const trendMonths: { month: string; capas: number; ncrs: number; audits: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = d.toISOString().slice(0, 7); // "YYYY-MM"
+    trendMonths.push({
+      month: MONTHS[d.getMonth()],
+      capas: capas.filter(c => c.createdAt && c.createdAt.startsWith(key)).length,
+      ncrs: ncrs.filter(n => n.createdAt && n.createdAt.startsWith(key)).length,
+      audits: audits.filter(a => a.createdAt && a.createdAt.startsWith(key)).length,
+    });
+  }
+  const monthlyTrend = trendMonths;
 
   // Recent activity from audit trail
   const recentActivity = auditTrails.slice(0, 8);
@@ -447,6 +478,49 @@ export function DashboardView() {
         </Card>
       </div>
 
+      {/* Deviations & Change Controls row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                  <AlertOctagon className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">{t.dashboard.openDeviations}</p>
+                  <p className="text-xl font-bold">{openDeviations}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-orange-600 font-medium">{pendingQADeviations} {t.dashboard.pendingQA}</p>
+                <p className="text-xs text-muted-foreground">{deviations.length} {t.modules.deviation.title.toLowerCase()}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                  <Target className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">{t.dashboard.openChangeControls}</p>
+                  <p className="text-xl font-bold">{openChangeControls}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-blue-600 font-medium">{inImplChangeControls} {t.dashboard.inImplementation}</p>
+                <p className="text-xs text-muted-foreground">{changeControls.filter(cc => cc.status === 'Requested').length} {t.dashboard.requested}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Monthly Trend */}
@@ -504,7 +578,7 @@ export function DashboardView() {
       </div>
 
       {/* Bottom row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
         {/* NCR by Type */}
         <Card>
           <CardHeader>
@@ -550,6 +624,56 @@ export function DashboardView() {
                   <Tooltip />
                   <Legend className="text-xs" />
                 </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Deviation Status Distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t.dashboard.deviationStatus}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-48 md:h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={deviationStatusData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={40}
+                    outerRadius={65}
+                    paddingAngle={4}
+                    dataKey="value"
+                  >
+                    {deviationStatusData.map((_entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend className="text-xs" />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Change Control Status Distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t.dashboard.changeControlStatus}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-48 md:h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={ccStatusData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="name" className="text-xs" />
+                  <YAxis className="text-xs" allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="hsl(217, 91%, 60%)" radius={[4, 4, 0, 0]} />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
