@@ -1,0 +1,1487 @@
+'use client';
+
+import React, { useState } from 'react';
+import { useQMSStore } from '@/lib/demo-store';
+import { useAuth } from '@/contexts/AuthContext';
+import type { Document, DocumentType, DocumentStatus, DocumentLevel, DocumentClassification, SignatureType, ElectronicSignature } from '@/types/qms';
+import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+import { cn, formatDate } from '@/lib/utils';
+import { useTranslation } from '@/lib/i18n';
+import {
+  FileText,
+  Plus,
+  Search,
+  Eye,
+  MoreVertical,
+  Edit,
+  Trash2,
+  CheckCircle2,
+  ArrowRight,
+  Clock,
+  AlertCircle,
+  XCircle,
+  ChevronLeft,
+  ChevronRight,
+  ShieldCheck,
+  GitBranch,
+  Layers,
+  History,
+  Link2,
+  ClipboardCheck,
+  Tag,
+  FileSearch,
+  UserCheck,
+  ListChecks,
+  Calendar,
+  BookOpen,
+  LayoutTemplate,
+  AlertTriangle,
+} from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const statusColors: Record<DocumentStatus, string> = {
+  'Draft': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  'Under Review': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  'Approved': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  'Effective': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  'Obsolete': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  'Withdrawn': 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+};
+
+const levelLabels: Record<DocumentLevel, string> = {
+  1: 'N1',
+  2: 'N2',
+  3: 'N3',
+  4: 'N4',
+};
+
+const levelColors: Record<DocumentLevel, string> = {
+  1: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  2: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+  3: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
+  4: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+};
+
+const classificationKeys: Record<DocumentClassification, 'classificationInternal' | 'classificationExternal' | 'classificationRegulatory' | 'classificationConfidential'> = {
+  'Internal': 'classificationInternal',
+  'External': 'classificationExternal',
+  'Regulatory': 'classificationRegulatory',
+  'Confidential': 'classificationConfidential',
+};
+
+const statusFlow: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'];
+
+const WIZARD_STEPS = [
+  { id: 0, labelKey: 'stepIdentification' as const, icon: FileText },
+  { id: 1, labelKey: 'stepClassification' as const, icon: Tag },
+  { id: 2, labelKey: 'stepDescription' as const, icon: FileSearch },
+  { id: 3, labelKey: 'stepReviewApproval' as const, icon: UserCheck },
+  { id: 4, labelKey: 'stepSummary' as const, icon: ListChecks },
+];
+
+function getNextStatus(current: DocumentStatus): DocumentStatus | null {
+  const idx = statusFlow.indexOf(current);
+  return idx < statusFlow.length - 1 ? statusFlow[idx + 1] : null;
+}
+
+const documentTypes: DocumentType[] = ['SOP', 'WI', 'Form', 'Policy', 'Specification', 'Technical', 'Risk Analysis', 'Validation Protocol', 'Record', 'Manual', 'Instruction', 'Register', 'Master Batch', 'Procedure', 'Process Map', 'Organigram'];
+const documentStatuses: DocumentStatus[] = ['Draft', 'Under Review', 'Approved', 'Effective', 'Obsolete', 'Withdrawn'];
+const documentClassifications: DocumentClassification[] = ['Internal', 'External', 'Regulatory', 'Confidential'];
+const documentLevels: DocumentLevel[] = [1, 2, 3, 4];
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
+export function DocumentControlView() {
+  const { currentUser, hasPermission } = useAuth();
+  const store = useQMSStore();
+  const t = useTranslation();
+  const documents = store.documents;
+  const profiles = store.profiles;
+
+  // Filters
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  // Dialogs
+  const [showNewDocDialog, setShowNewDocDialog] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
+  const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [pendingStatusAdvance, setPendingStatusAdvance] = useState<Document | null>(null);
+
+  // Wizard state
+  const [wizardStep, setWizardStep] = useState(0);
+
+  // Step 1 - Document Identification
+  const [formDocNumber, setFormDocNumber] = useState('');
+  const [formTitle, setFormTitle] = useState('');
+  const [formType, setFormType] = useState<DocumentType>('SOP');
+
+  // Step 2 - Classification & Level
+  const [formClassification, setFormClassification] = useState<DocumentClassification>('Internal');
+  const [formLevel, setFormLevel] = useState<DocumentLevel>(2);
+  const [formDepartment, setFormDepartment] = useState('');
+  const [formRetentionPeriod, setFormRetentionPeriod] = useState('');
+
+  // Step 3 - Description & Scope
+  const [formDescription, setFormDescription] = useState('');
+  const [formScope, setFormScope] = useState('');
+  const [formParentDocId, setFormParentDocId] = useState('');
+
+  // Step 4 - Review & Approval Setup
+  const [formApprover, setFormApprover] = useState('');
+  const [formEffectiveDate, setFormEffectiveDate] = useState('');
+  const [formNextReview, setFormNextReview] = useState('');
+  const [formRegulatoryRef, setFormRegulatoryRef] = useState('');
+
+  // Template-related state
+  const [formIsTemplate, setFormIsTemplate] = useState(false);
+  const [formTemplateReferenceId, setFormTemplateReferenceId] = useState('');
+
+  const filteredDocs = documents.filter(doc => {
+    const matchesSearch = searchTerm === '' ||
+      doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      doc.documentNumber.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = typeFilter === 'all' || doc.type === typeFilter;
+    const matchesStatus = statusFilter === 'all' || doc.status === statusFilter;
+    return matchesSearch && matchesType && matchesStatus;
+  });
+
+  const getUserName = (userId?: string) => {
+    if (!userId) return '-';
+    const profile = profiles.find(p => p.id === userId);
+    return profile?.fullName || profile?.email || userId;
+  };
+
+  const getParentDocument = (parentId?: string) => {
+    if (!parentId) return null;
+    return documents.find(d => d.id === parentId) || null;
+  };
+
+  const getChildDocuments = (docId: string) => {
+    return documents.filter(d => d.parentDocumentId === docId);
+  };
+
+  // ── Step validation ──
+  const isStepValid = (step: number): boolean => {
+    switch (step) {
+      case 0:
+        return formDocNumber.trim() !== '' && formTitle.trim() !== '' && formType.trim() !== '';
+      case 1:
+        return formClassification.trim() !== '' && formLevel !== undefined;
+      case 2:
+        return formDescription.trim() !== '';
+      case 3:
+        return formApprover !== '' && formEffectiveDate !== '';
+      case 4:
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  // ── Navigation ──
+  const goToStep = (step: number) => {
+    if (step >= 0 && step < WIZARD_STEPS.length) {
+      setWizardStep(step);
+    }
+  };
+
+  const goNext = () => {
+    if (wizardStep < WIZARD_STEPS.length - 1 && isStepValid(wizardStep)) {
+      setWizardStep(wizardStep + 1);
+    }
+  };
+
+  const goPrev = () => {
+    if (wizardStep > 0) {
+      setWizardStep(wizardStep - 1);
+    }
+  };
+
+  const resetForm = () => {
+    setWizardStep(0);
+    setFormDocNumber('');
+    setFormTitle('');
+    setFormType('SOP');
+    setFormDescription('');
+    setFormDepartment('');
+    setFormClassification('Internal');
+    setFormLevel(2);
+    setFormScope('');
+    setFormRetentionPeriod('');
+    setFormParentDocId('');
+    setFormApprover('');
+    setFormEffectiveDate('');
+    setFormNextReview('');
+    setFormRegulatoryRef('');
+    setFormIsTemplate(false);
+    setFormTemplateReferenceId('');
+  };
+
+  // Approved templates available for reference — filtered by document type
+  const approvedTemplatesForType = documents.filter(d =>
+    d.isTemplate && (d.status === 'Approved' || d.status === 'Effective') && d.type === formType
+  );
+
+  // All approved templates (for summary counts etc.)
+  const approvedTemplates = documents.filter(d =>
+    d.isTemplate && (d.status === 'Approved' || d.status === 'Effective')
+  );
+
+  // Create document that actually saves to the store
+  const handleCreate = () => {
+    if (!formDocNumber.trim() || !formTitle.trim()) return;
+
+    // Resolve template reference details
+    let templateReferenceVersion: string | undefined;
+    if (formTemplateReferenceId) {
+      const templateDoc = approvedTemplates.find(d => d.id === formTemplateReferenceId);
+      templateReferenceVersion = templateDoc?.version;
+    }
+
+    const newDoc: Document = {
+      id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      documentNumber: formDocNumber.trim(),
+      title: formTitle.trim(),
+      type: formType,
+      version: '1.0',
+      status: 'Draft',
+      description: formDescription.trim() || undefined,
+      department: formDepartment.trim() || undefined,
+      classification: formClassification,
+      documentLevel: formLevel,
+      scope: formScope.trim() || undefined,
+      retentionPeriod: formRetentionPeriod.trim() || undefined,
+      parentDocumentId: formParentDocId || undefined,
+      effectiveDate: formEffectiveDate ? new Date(formEffectiveDate).toISOString() : undefined,
+      nextReview: formNextReview ? new Date(formNextReview).toISOString() : undefined,
+      references: formRegulatoryRef.trim() || undefined,
+      isTemplate: formIsTemplate || undefined,
+      templateReferenceId: formTemplateReferenceId || undefined,
+      templateReferenceVersion: templateReferenceVersion || undefined,
+      owner: currentUser?.fullName || currentUser?.email,
+      createdById: currentUser?.id,
+      authorId: currentUser?.id,
+      organizationId: 'org-001',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      signatures: [],
+    };
+    store.addDocument(newDoc);
+    resetForm();
+    setShowNewDocDialog(false);
+  };
+
+  // Open detail dialog
+  const openDetail = (doc: Document) => {
+    setSelectedDoc(doc);
+    setShowDetailDialog(true);
+  };
+
+  // Status advancement
+  const handleAdvanceStatus = (doc: Document) => {
+    const next = getNextStatus(doc.status);
+    if (!next) return;
+
+    // Template singularity gate: only one approved template per type
+    if (doc.isTemplate && next === 'Approved') {
+      const existingApprovedTemplate = documents.find(d =>
+        d.isTemplate && d.type === doc.type &&
+        (d.status === 'Approved' || d.status === 'Effective') && d.id !== doc.id
+      );
+      if (existingApprovedTemplate) {
+        alert(
+          t.modules.documents.cannotApproveTemplateExists
+            .replace('{docNumber}', existingApprovedTemplate.documentNumber)
+            .replace('{type}', doc.type)
+        );
+        return;
+      }
+    }
+
+    // If advancing to Approved, require electronic signature
+    if (next === 'Approved') {
+      setPendingStatusAdvance(doc);
+      setShowSignatureModal(true);
+      return;
+    }
+
+    // For other status transitions, just update directly
+    store.updateDocument(doc.id, {
+      status: next,
+      effectiveDate: (next as DocumentStatus) === 'Approved' ? new Date().toISOString() : undefined,
+      lastReviewed: (next as DocumentStatus) === 'Under Review' ? new Date().toISOString() : undefined,
+    });
+
+    if (selectedDoc?.id === doc.id) {
+      setSelectedDoc({
+        ...doc,
+        status: next,
+        effectiveDate: (next as DocumentStatus) === 'Approved' ? new Date().toISOString() : doc.effectiveDate,
+        lastReviewed: (next as DocumentStatus) === 'Under Review' ? new Date().toISOString() : doc.lastReviewed,
+      });
+    }
+  };
+
+  // Electronic signature callback
+  const handleSignatureConfirm = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
+    if (!pendingStatusAdvance) return;
+
+    const doc = pendingStatusAdvance;
+    const newSignature: ElectronicSignature = {
+      id: `sig-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      documentId: doc.id,
+      signedById: currentUser?.id || 'unknown',
+      signerName: currentUser?.fullName || currentUser?.email || 'Unknown',
+      signerRole: 'Approver',
+      signatureType: signatureData.signatureType,
+      signatureHash: signatureData.signatureHash,
+      revoked: false,
+      createdAt: signatureData.signedAt,
+    };
+
+    const existingSignatures = doc.signatures || [];
+    store.updateDocument(doc.id, {
+      status: 'Approved',
+      effectiveDate: new Date().toISOString(),
+      signatures: [...existingSignatures, newSignature],
+    });
+
+    if (selectedDoc?.id === doc.id) {
+      setSelectedDoc({
+        ...doc,
+        status: 'Approved',
+        effectiveDate: new Date().toISOString(),
+        signatures: [...existingSignatures, newSignature],
+      });
+    }
+
+    setPendingStatusAdvance(null);
+    setShowSignatureModal(false);
+  };
+
+  const handleSignatureCancel = () => {
+    setPendingStatusAdvance(null);
+    setShowSignatureModal(false);
+  };
+
+  // ── Render: Wizard Step Content ──
+  const renderStepContent = () => {
+    switch (wizardStep) {
+      // ── Step 1: Document Identification ──
+      case 0:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="doc-number">{t.modules.documents.documentNumber} *</Label>
+              <Input
+                id="doc-number"
+                value={formDocNumber}
+                onChange={(e) => setFormDocNumber(e.target.value)}
+                placeholder="SOP-QMS-XXX"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="doc-type">{t.common.type} *</Label>
+                <Select value={formType} onValueChange={(v) => {
+                  const newType = v as DocumentType;
+                  setFormType(newType);
+                  // Reset template reference if current one doesn't match new type
+                  if (formTemplateReferenceId && formTemplateReferenceId !== 'none') {
+                    const currentRef = documents.find(d => d.id === formTemplateReferenceId);
+                    if (currentRef && currentRef.type !== newType) {
+                      setFormTemplateReferenceId('');
+                    }
+                  }
+                  // Auto-select if exactly one approved template for this type
+                  const templatesForType = documents.filter(d =>
+                    d.isTemplate && (d.status === 'Approved' || d.status === 'Effective') && d.type === newType
+                  );
+                  if (templatesForType.length === 1) {
+                    setFormTemplateReferenceId(templatesForType[0].id);
+                  }
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t.modules.documents.docTypePlaceholder} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {documentTypes.map(type => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="doc-title-inline">{t.common.title} *</Label>
+                <Input
+                  id="doc-title-inline"
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  placeholder={t.modules.documents.docTitlePlaceholder}
+                />
+              </div>
+            </div>
+            <div className="bg-muted/30 rounded-md p-3 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-muted-foreground">
+                {t.modules.documents.namingConventionNote}
+              </p>
+            </div>
+          </div>
+        );
+
+      // ── Step 2: Classification & Level ──
+      case 1:
+        return (
+          <div className="grid gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>{t.modules.documents.classification} *</Label>
+                <Select value={formClassification} onValueChange={(v) => setFormClassification(v as DocumentClassification)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {documentClassifications.map(c => (
+                      <SelectItem key={c} value={c}>{t.modules.documents[classificationKeys[c]]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>{t.modules.documents.documentLevel} *</Label>
+                <Select value={String(formLevel)} onValueChange={(v) => setFormLevel(Number(v) as DocumentLevel)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {documentLevels.map(l => (
+                      <SelectItem key={l} value={String(l)}>{levelLabels[l]} — Level {l}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="doc-department">{t.common.department}</Label>
+                <Input
+                  id="doc-department"
+                  value={formDepartment}
+                  onChange={(e) => setFormDepartment(e.target.value)}
+                  placeholder="Quality, Production..."
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="doc-retention">{t.modules.documents.retentionPeriod}</Label>
+                <Input
+                  id="doc-retention"
+                  value={formRetentionPeriod}
+                  onChange={(e) => setFormRetentionPeriod(e.target.value)}
+                  placeholder={t.modules.documents.retentionPlaceholder}
+                />
+              </div>
+            </div>
+            {/* Document Level Legend */}
+            <div className="bg-muted/30 rounded-md p-3 space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t.modules.documents.documentLevelHierarchy}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {documentLevels.map(l => (
+                  <div key={l} className="flex items-center gap-2">
+                    <Badge className={cn('text-xs font-mono', levelColors[l])} variant="secondary">
+                      {levelLabels[l]}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {l === 1 && t.modules.documents.levelN1}
+                      {l === 2 && t.modules.documents.levelN2}
+                      {l === 3 && t.modules.documents.levelN3}
+                      {l === 4 && t.modules.documents.levelN4}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+
+      // ── Step 3: Description & Scope ──
+      case 2:
+        return (
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="doc-description">{t.common.description} *</Label>
+              <Textarea
+                id="doc-description"
+                value={formDescription}
+                onChange={(e) => setFormDescription(e.target.value)}
+                placeholder="Document description and purpose"
+                rows={4}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="doc-scope">{t.common.scope}</Label>
+              <Textarea
+                id="doc-scope"
+                value={formScope}
+                onChange={(e) => setFormScope(e.target.value)}
+                placeholder="Document scope and applicability"
+                rows={3}
+              />
+            </div>
+
+            {/* Reference Template Selector — Only Approved/Effective templates */}
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-2">
+                <LayoutTemplate className="h-4 w-4" />
+                {t.modules.documents.referenceTemplate} ({formType})
+              </Label>
+              <Select value={formTemplateReferenceId} onValueChange={setFormTemplateReferenceId}>
+                <SelectTrigger><SelectValue placeholder={t.modules.documents.selectTemplate} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t.modules.documents.noTemplateNeeded}</SelectItem>
+                  {approvedTemplatesForType.map(d => (
+                    <SelectItem key={d.id} value={d.id}>
+                      <span className="flex items-center gap-1.5">
+                        <LayoutTemplate className="h-3 w-3 text-green-600" />
+                        {d.documentNumber} — {d.title} (v{d.version})
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {approvedTemplatesForType.length === 0 && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="text-amber-700 dark:text-amber-400 font-medium">{t.modules.documents.noTemplateForType} ({formType})</p>
+                    <p className="text-amber-600 dark:text-amber-400/80 text-xs mt-0.5">
+                      {t.modules.documents.noTemplateForTypeDesc}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {formTemplateReferenceId && formTemplateReferenceId !== 'none' && (() => {
+                const templateDoc = approvedTemplates.find(d => d.id === formTemplateReferenceId);
+                return templateDoc ? (
+                  <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md p-3 flex items-start gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm">
+                      <p className="text-green-700 dark:text-green-400 font-medium">{t.modules.documents.createdFromTemplate}</p>
+                      <p className="text-green-600 dark:text-green-400/80 text-xs mt-0.5">
+                        {t.modules.documents.createdFromTemplateNote} — {templateDoc.documentNumber} v{templateDoc.version}
+                      </p>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+              {formTemplateReferenceId && formTemplateReferenceId !== 'none' && approvedTemplatesForType.length === 1 && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-3 flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="text-blue-700 dark:text-blue-400 font-medium">{t.modules.documents.autoSelectedTemplate}</p>
+                    <p className="text-blue-600 dark:text-blue-400/80 text-xs mt-0.5">
+                      {t.modules.documents.autoSelectedTemplateDesc}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label>{t.modules.documents.parentDocument}</Label>
+              <Select value={formParentDocId} onValueChange={setFormParentDocId}>
+                <SelectTrigger><SelectValue placeholder={t.modules.documents.selectParent} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t.modules.documents.noneTopLevel}</SelectItem>
+                  {documents.filter(d => d.status === 'Approved').map(d => (
+                    <SelectItem key={d.id} value={d.id}>{d.documentNumber} — {d.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {formParentDocId && formParentDocId !== 'none' && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-3 flex items-start gap-2">
+                <GitBranch className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                <div className="text-sm">
+                  <p className="text-blue-700 dark:text-blue-400 font-medium">{t.modules.documents.linkedToParent}</p>
+                  <p className="text-blue-600 dark:text-blue-400/80 text-xs mt-0.5">
+                    {t.modules.documents.linkedToParentNote}
+                    {documents.find(d => d.id === formParentDocId)?.documentNumber || 'selected parent'}.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Is Template checkbox */}
+            <div className="flex items-center gap-3 p-3 border rounded-md bg-muted/20">
+              <input
+                type="checkbox"
+                id="is-template"
+                checked={formIsTemplate}
+                onChange={(e) => setFormIsTemplate(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="is-template" className="text-sm font-medium flex items-center gap-2 cursor-pointer">
+                <LayoutTemplate className="h-4 w-4 text-blue-500" />
+                {t.modules.documents.isTemplate}
+              </label>
+            </div>
+            {formIsTemplate && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-3 flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                <div className="text-sm">
+                  <p className="text-blue-700 dark:text-blue-400 font-medium">{t.modules.documents.templateMustBeApproved}</p>
+                  <p className="text-blue-600 dark:text-blue-400/80 text-xs mt-0.5">
+                    {t.modules.documents.templateMustBeApprovedDesc}
+                  </p>
+                </div>
+              </div>
+            )}
+            {formIsTemplate && approvedTemplatesForType.length > 0 && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2 mt-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                <div className="text-sm">
+                  <p className="text-amber-700 dark:text-amber-400 font-medium">{t.modules.documents.templateAlreadyExistsForType}</p>
+                  <p className="text-amber-600 dark:text-amber-400/80 text-xs mt-0.5">
+                    {t.modules.documents.templateAlreadyExistsForTypeDesc.replace('{type}', formType)} ({approvedTemplatesForType.map(t2 => t2.documentNumber).join(', ')}).
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      // ── Step 4: Review & Approval Setup ──
+      case 3:
+        return (
+          <div className="grid gap-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>{t.modules.documents.approver} *</Label>
+                <Select value={formApprover} onValueChange={setFormApprover}>
+                  <SelectTrigger><SelectValue placeholder={t.modules.documents.selectApprover} /></SelectTrigger>
+                  <SelectContent>
+                    {profiles.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.fullName || p.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="effective-date">{t.modules.documents.effectiveDate} *</Label>
+                <Input
+                  id="effective-date"
+                  type="date"
+                  value={formEffectiveDate}
+                  onChange={(e) => setFormEffectiveDate(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="next-review-date">{t.modules.documents.nextReviewDate}</Label>
+                <Input
+                  id="next-review-date"
+                  type="date"
+                  value={formNextReview}
+                  onChange={(e) => setFormNextReview(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="regulatory-ref">{t.modules.documents.regulatoryReferences}</Label>
+                <Input
+                  id="regulatory-ref"
+                  value={formRegulatoryRef}
+                  onChange={(e) => setFormRegulatoryRef(e.target.value)}
+                  placeholder="e.g., ISO 13485 §4.2, 21 CFR 820"
+                />
+              </div>
+            </div>
+            <div className="bg-muted/30 rounded-md p-3 flex items-start gap-2">
+              <ShieldCheck className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-muted-foreground">{t.modules.documents.electronicSignatureRequired}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {t.modules.documents.electronicSignatureNote}
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+
+      // ── Step 5: Summary & Submit ──
+      case 4:
+        return (
+          <div className="grid gap-4">
+            <div className="bg-muted/30 rounded-lg p-4 space-y-3 max-h-[400px] overflow-y-auto">
+              <h4 className="font-semibold text-sm flex items-center gap-2">
+                <ListChecks className="h-4 w-4 text-primary" />
+                {t.modules.documents.reviewSummary}
+              </h4>
+
+              {/* Step 1 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t.modules.documents.stepIdentification}</p>
+                <p className="text-sm"><span className="font-medium">{t.modules.documents.documentNumber}:</span> <span className="font-mono">{formDocNumber || '—'}</span></p>
+                <p className="text-sm"><span className="font-medium">{t.common.title}:</span> {formTitle || '—'}</p>
+                <p className="text-sm"><span className="font-medium">{t.common.type}:</span> {formType}</p>
+              </div>
+
+              {/* Step 2 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t.modules.documents.stepClassification}</p>
+                <p className="text-sm"><span className="font-medium">{t.modules.documents.classification}:</span> {t.modules.documents[classificationKeys[formClassification]]}</p>
+                <p className="text-sm">
+                  <span className="font-medium">{t.modules.documents.documentLevel}:</span>{' '}
+                  <Badge className={cn('text-xs font-mono', levelColors[formLevel])} variant="secondary">{levelLabels[formLevel]}</Badge>
+                </p>
+                <p className="text-sm"><span className="font-medium">{t.common.department}:</span> {formDepartment || '—'}</p>
+                <p className="text-sm"><span className="font-medium">{t.modules.documents.retentionPeriod}:</span> {formRetentionPeriod || '—'}</p>
+              </div>
+
+              {/* Step 3 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t.modules.documents.stepDescription}</p>
+                <p className="text-sm"><span className="font-medium">{t.common.description}:</span> {formDescription || '—'}</p>
+                {formScope && <p className="text-sm"><span className="font-medium">{t.common.scope}:</span> {formScope}</p>}
+                <p className="text-sm">
+                  <span className="font-medium">{t.modules.documents.parentDocument}:</span>{' '}
+                  {formParentDocId && formParentDocId !== 'none'
+                    ? (() => {
+                        const parent = documents.find(d => d.id === formParentDocId);
+                        return parent ? `${parent.documentNumber} — ${parent.title}` : formParentDocId;
+                      })()
+                    : t.modules.documents.noneTopLevel}
+                </p>
+                <p className="text-sm">
+                  <span className="font-medium">{t.modules.documents.referenceTemplate}:</span>{' '}
+                  {formTemplateReferenceId && formTemplateReferenceId !== 'none'
+                    ? (() => {
+                        const tpl = approvedTemplates.find(d => d.id === formTemplateReferenceId);
+                        return tpl ? `${tpl.documentNumber} — ${tpl.title} (v${tpl.version})` : formTemplateReferenceId;
+                      })()
+                    : t.modules.documents.noTemplateNeeded}
+                </p>
+                <p className="text-sm">
+                  <span className="font-medium">{t.modules.documents.isTemplate}:</span>{' '}
+                  {formIsTemplate ? (
+                    <Badge className="ml-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs" variant="secondary">
+                      <LayoutTemplate className="h-3 w-3 mr-1" />
+                      {t.modules.documents.templateBadge}
+                    </Badge>
+                  ) : '—'}
+                </p>
+              </div>
+
+              {/* Step 4 Summary */}
+              <div className="border rounded-md p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t.modules.documents.stepReviewApproval}</p>
+                <p className="text-sm"><span className="font-medium">{t.modules.documents.approver}:</span> {formApprover ? getUserName(formApprover) : '—'}</p>
+                <p className="text-sm"><span className="font-medium">{t.modules.documents.effectiveDate}:</span> {formEffectiveDate || '—'}</p>
+                <p className="text-sm"><span className="font-medium">{t.modules.documents.nextReviewDate}:</span> {formNextReview || '—'}</p>
+                {formRegulatoryRef && <p className="text-sm"><span className="font-medium">{t.modules.documents.regulatoryReferences}:</span> {formRegulatoryRef}</p>}
+              </div>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  // Summary counts
+  const summaryCounts = {
+    total: documents.length,
+    approved: documents.filter(d => d.status === 'Approved').length,
+    inReview: documents.filter(d => d.status === 'Under Review').length,
+    draft: documents.filter(d => d.status === 'Draft').length,
+    obsolete: documents.filter(d => d.status === 'Obsolete').length,
+    templates: documents.filter(d => d.isTemplate).length,
+    approvedTemplates: approvedTemplates.length,
+  };
+
+  return (
+    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <FileText className="h-6 w-6 text-primary" />
+            {t.modules.documents.documentControl}
+          </h1>
+          <p className="text-muted-foreground mt-1">{t.modules.documents.documentControl} <Badge variant="outline" className="ml-2 text-xs">ISO 13485 §4.2</Badge></p>
+        </div>
+        {hasPermission('documents.create') && (
+          <Button onClick={() => { resetForm(); setShowNewDocDialog(true); }}>
+            <Plus className="h-4 w-4 mr-2" />
+            {t.modules.documents.newDocument}
+          </Button>
+        )}
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">{t.common.total}</span>
+            </div>
+            <span className="text-2xl font-bold">{summaryCounts.total}</span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              <span className="text-sm text-muted-foreground">{t.statuses.approved}</span>
+            </div>
+            <span className="text-2xl font-bold text-green-600">{summaryCounts.approved}</span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-amber-500" />
+              <span className="text-sm text-muted-foreground">{t.statuses.inReview}</span>
+            </div>
+            <span className="text-2xl font-bold text-amber-600">{summaryCounts.inReview}</span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2">
+              <Edit className="h-4 w-4 text-gray-500" />
+              <span className="text-sm text-muted-foreground">{t.statuses.draft}</span>
+            </div>
+            <span className="text-2xl font-bold text-gray-600">{summaryCounts.draft}</span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2">
+              <XCircle className="h-4 w-4 text-red-500" />
+              <span className="text-sm text-muted-foreground">{t.statuses.obsolete}</span>
+            </div>
+            <span className="text-2xl font-bold text-red-600">{summaryCounts.obsolete}</span>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2">
+              <LayoutTemplate className="h-4 w-4 text-blue-500" />
+              <span className="text-sm text-muted-foreground">{t.modules.documents.templatesCount}</span>
+            </div>
+            <span className="text-2xl font-bold text-blue-600">{summaryCounts.approvedTemplates}/{summaryCounts.templates}</span>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder={t.modules.documents.searchDocuments}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t.common.allTypes}</SelectItem>
+            {documentTypes.map(type => (
+              <SelectItem key={type} value={type}>{type}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t.common.allStatuses}</SelectItem>
+            {documentStatuses.map(status => (
+              <SelectItem key={status} value={status}>{status}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Document Table */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[140px]">{t.modules.documents.docNumber}</TableHead>
+                  <TableHead>{t.common.title}</TableHead>
+                  <TableHead className="w-[80px]">{t.modules.documents.level}</TableHead>
+                  <TableHead className="w-[90px]">{t.common.type}</TableHead>
+                  <TableHead className="w-[70px]">{t.common.version}</TableHead>
+                  <TableHead className="w-[110px]">{t.common.status}</TableHead>
+                  <TableHead className="w-[120px]">{t.common.department}</TableHead>
+                  <TableHead className="w-[100px]">{t.modules.documents.effective}</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredDocs.map((doc) => {
+                  const childDocs = getChildDocuments(doc.id);
+                  const parentDoc = getParentDocument(doc.parentDocumentId);
+                  return (
+                    <TableRow key={doc.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => openDetail(doc)}>
+                      <TableCell className="font-mono text-xs">{doc.documentNumber}</TableCell>
+                      <TableCell>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-medium truncate">{doc.title}</p>
+                            {doc.isTemplate && (
+                              <Badge className={cn(
+                                'text-[10px] px-1.5 py-0 flex-shrink-0',
+                                (doc.status === 'Approved' || doc.status === 'Effective')
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                              )} variant="secondary">
+                                <LayoutTemplate className="h-2.5 w-2.5 mr-0.5" />
+                                {(doc.status === 'Approved' || doc.status === 'Effective')
+                                  ? t.modules.documents.templateApprovedBadge
+                                  : t.modules.documents.templatePendingBadge}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            {doc.description && (
+                              <p className="text-xs text-muted-foreground truncate max-w-xs">{doc.description}</p>
+                            )}
+                          </div>
+                          {/* Parent/child link indicators */}
+                          {(parentDoc || childDocs.length > 0) && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <Link2 className="h-3 w-3 text-muted-foreground" />
+                              {parentDoc && (
+                                <span className="text-xs text-muted-foreground">↑ {parentDoc.documentNumber}</span>
+                              )}
+                              {childDocs.length > 0 && (
+                                <span className="text-xs text-muted-foreground">
+                                  {parentDoc ? ' · ' : ''}↓ {childDocs.length}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {/* Template reference indicator */}
+                          {doc.templateReferenceId && (() => {
+                            const refTemplate = documents.find(d => d.id === doc.templateReferenceId);
+                            return refTemplate ? (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <LayoutTemplate className="h-3 w-3 text-green-500" />
+                                <span className="text-xs text-green-600 dark:text-green-400">
+                                  {t.modules.documents.createdFromTemplate}: {refTemplate.documentNumber} (v{doc.templateReferenceVersion || refTemplate.version})
+                                </span>
+                              </div>
+                            ) : null;
+                          })()}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {doc.documentLevel && (
+                          <Badge className={cn('text-xs font-mono', levelColors[doc.documentLevel])} variant="secondary">
+                            {levelLabels[doc.documentLevel]}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">{doc.type}</Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        <div className="flex items-center gap-1">
+                          <History className="h-3 w-3 text-muted-foreground" />
+                          {doc.version}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={cn('text-xs', statusColors[doc.status])} variant="secondary">
+                          {doc.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{doc.department || '-'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatDate(doc.effectiveDate, true)}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}>
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDetail(doc); }}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              {t.common.viewDetails}
+                            </DropdownMenuItem>
+                            {hasPermission('documents.update') && doc.status !== 'Obsolete' && (
+                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDetail(doc); }}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                {t.common.edit}
+                              </DropdownMenuItem>
+                            )}
+                            {hasPermission('documents.approve') && getNextStatus(doc.status) && doc.status !== 'Obsolete' && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleAdvanceStatus(doc); }}>
+                                  {getNextStatus(doc.status) === 'Approved' ? (
+                                    <ShieldCheck className="mr-2 h-4 w-4" />
+                                  ) : (
+                                    <ArrowRight className="mr-2 h-4 w-4" />
+                                  )}
+                                  {t.common.advanceTo} {getNextStatus(doc.status)}
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {hasPermission('documents.delete') && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  {t.common.delete}
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {filteredDocs.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                      {t.modules.documents.noDocsFound}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Create Document Dialog — Wizard */}
+      <Dialog open={showNewDocDialog} onOpenChange={setShowNewDocDialog}>
+        <DialogContent className="sm:max-w-[720px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              {t.modules.documents.createNewDocument}
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Wizard Step Indicator */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              {WIZARD_STEPS.map((step, idx) => (
+                <div key={step.id} className="flex items-center flex-1 last:flex-initial">
+                  <button
+                    type="button"
+                    onClick={() => idx < wizardStep && goToStep(idx)}
+                    disabled={idx > wizardStep}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                      idx < wizardStep && 'text-green-700 dark:text-green-400 cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/20',
+                      idx === wizardStep && 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20',
+                      idx > wizardStep && 'text-gray-400 dark:text-gray-600 cursor-not-allowed',
+                    )}
+                  >
+                    {idx < wizardStep ? (
+                      <CheckCircle2 className="h-4 w-4" />
+                    ) : (
+                      <span className={cn(
+                        'flex items-center justify-center h-5 w-5 rounded-full text-xs border',
+                        idx === wizardStep ? 'border-blue-500 text-blue-600' : 'border-gray-300 text-gray-400',
+                      )}>{idx + 1}</span>
+                    )}
+                    <span className="hidden sm:inline">{t.modules.documents[step.labelKey]}</span>
+                  </button>
+                  {idx < WIZARD_STEPS.length - 1 && (
+                    <div className={cn('flex-1 h-0.5 mx-2', idx < wizardStep ? 'bg-green-300' : 'bg-gray-200')} />
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+              <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${((wizardStep + 1) / WIZARD_STEPS.length) * 100}%` }} />
+            </div>
+          </div>
+
+          {/* Step Content */}
+          <div className="py-2 min-h-[280px]">
+            {renderStepContent()}
+          </div>
+
+          {/* Navigation Buttons */}
+          <div className="flex items-center justify-between pt-4 border-t">
+            <Button variant="outline" onClick={() => { resetForm(); setShowNewDocDialog(false); }} disabled={false}>{t.common.cancel}</Button>
+            <div className="flex gap-2">
+              {wizardStep > 0 && (
+                <Button variant="outline" onClick={goPrev}>
+                  <ChevronLeft className="h-4 w-4 mr-1" />{t.common.previous}
+                </Button>
+              )}
+              {wizardStep < WIZARD_STEPS.length - 1 ? (
+                <Button onClick={goNext} disabled={!isStepValid(wizardStep)} className="bg-blue-600 hover:bg-blue-700 text-white">
+                  {t.common.next}<ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              ) : (
+                <Button onClick={handleCreate} disabled={!isStepValid(wizardStep)} className="bg-green-600 hover:bg-green-700 text-white">
+                  {t.common.create}
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Document Detail Dialog */}
+      <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
+          {selectedDoc && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <span className="font-mono text-sm text-muted-foreground">{selectedDoc.documentNumber}</span>
+                  {selectedDoc.title}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                {/* Status & Level Badges */}
+                <div className="flex flex-wrap gap-2">
+                  <Badge className={cn(statusColors[selectedDoc.status])} variant="secondary">{selectedDoc.status}</Badge>
+                  <Badge variant="outline">{selectedDoc.type}</Badge>
+                  {selectedDoc.documentLevel && (
+                    <Badge className={cn(levelColors[selectedDoc.documentLevel])} variant="secondary">
+                      <Layers className="h-3 w-3 mr-1" />
+                      {levelLabels[selectedDoc.documentLevel]}
+                    </Badge>
+                  )}
+                  {selectedDoc.isTemplate && (
+                    <Badge className={cn(
+                      'text-xs',
+                      (selectedDoc.status === 'Approved' || selectedDoc.status === 'Effective')
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    )} variant="secondary">
+                      <LayoutTemplate className="h-3 w-3 mr-1" />
+                      {(selectedDoc.status === 'Approved' || selectedDoc.status === 'Effective')
+                        ? t.modules.documents.templateApprovedBadge
+                        : t.modules.documents.templatePendingBadge}
+                    </Badge>
+                  )}
+                  {selectedDoc.classification && (
+                    <Badge variant="outline">{selectedDoc.classification ? t.modules.documents[classificationKeys[selectedDoc.classification]] : '-'}</Badge>
+                  )}
+                  <Badge variant="outline" className="font-mono">
+                    <History className="h-3 w-3 mr-1" />
+                    v{selectedDoc.version}
+                  </Badge>
+                </div>
+
+                {/* Status Flow */}
+                <div className="flex items-center gap-1 p-3 bg-muted/50 rounded-lg overflow-x-auto">
+                  {statusFlow.map((s, i) => (
+                    <React.Fragment key={s}>
+                      <div className={cn(
+                        'px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap',
+                        s === selectedDoc.status ? 'bg-primary text-primary-foreground' :
+                        statusFlow.indexOf(s) < statusFlow.indexOf(selectedDoc.status) ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                        'bg-muted text-muted-foreground'
+                      )}>
+                        {s}
+                      </div>
+                      {i < statusFlow.length - 1 && <ArrowRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
+                    </React.Fragment>
+                  ))}
+                </div>
+
+                {/* Key Information */}
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">{t.modules.documents.documentNumber}:</span>{' '}
+                    <span className="font-mono font-medium">{selectedDoc.documentNumber}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{t.common.version}:</span>{' '}
+                    <span className="font-medium">{selectedDoc.version}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{t.common.type}:</span>{' '}
+                    <span className="font-medium">{selectedDoc.type}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{t.common.department}:</span>{' '}
+                    <span className="font-medium">{selectedDoc.department || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{t.modules.documents.classification}:</span>{' '}
+                    <span className="font-medium">{selectedDoc.classification ? t.modules.documents[classificationKeys[selectedDoc.classification]] : '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{t.modules.documents.retentionPeriod}:</span>{' '}
+                    <span className="font-medium">{selectedDoc.retentionPeriod || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{t.common.owner}:</span>{' '}
+                    <span className="font-medium">{selectedDoc.owner || getUserName(selectedDoc.createdById)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{t.common.createdAt}:</span>{' '}
+                    <span className="font-medium">{getUserName(selectedDoc.createdById)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{t.common.createdAt}:</span>{' '}
+                    <span className="font-medium">{formatDate(selectedDoc.createdAt)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{t.common.updatedAt}:</span>{' '}
+                    <span className="font-medium">{formatDate(selectedDoc.updatedAt)}</span>
+                  </div>
+                  {selectedDoc.effectiveDate && (
+                    <div>
+                      <span className="text-muted-foreground">{t.modules.documents.effectiveDate}:</span>{' '}
+                      <span className="font-medium">{formatDate(selectedDoc.effectiveDate)}</span>
+                    </div>
+                  )}
+                  {selectedDoc.expirationDate && (
+                    <div>
+                      <span className="text-muted-foreground">{t.modules.documents.expirationDate}:</span>{' '}
+                      <span className="font-medium">{formatDate(selectedDoc.expirationDate)}</span>
+                    </div>
+                  )}
+                  {selectedDoc.lastReviewed && (
+                    <div>
+                      <span className="text-muted-foreground">Last Reviewed:</span>{' '}
+                      <span className="font-medium">{formatDate(selectedDoc.lastReviewed)}</span>
+                    </div>
+                  )}
+                  {selectedDoc.nextReview && (
+                    <div>
+                      <span className="text-muted-foreground">Next Review:</span>{' '}
+                      <span className="font-medium">{formatDate(selectedDoc.nextReview)}</span>
+                    </div>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* Description */}
+                {selectedDoc.description && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-1">{t.common.description}</h4>
+                    <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDoc.description}</p>
+                  </div>
+                )}
+
+                {/* Scope */}
+                {selectedDoc.scope && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-1">{t.common.scope}</h4>
+                    <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDoc.scope}</p>
+                  </div>
+                )}
+
+                {/* References */}
+                {selectedDoc.references && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-1">{t.modules.documents.regulatoryReferences}</h4>
+                    <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedDoc.references}</p>
+                  </div>
+                )}
+
+                {/* Parent/Child Document Links */}
+                {(getParentDocument(selectedDoc.parentDocumentId) || getChildDocuments(selectedDoc.id).length > 0) && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                      <GitBranch className="h-4 w-4" />
+                      Document Hierarchy / Hiérarchie des documents
+                    </h4>
+                    <div className="bg-muted/30 p-3 rounded-md space-y-2">
+                      {getParentDocument(selectedDoc.parentDocumentId) && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-muted-foreground">Parent:</span>
+                          <Badge variant="outline" className="font-mono text-xs cursor-pointer" onClick={() => openDetail(getParentDocument(selectedDoc.parentDocumentId)!)}>
+                            ↑ {getParentDocument(selectedDoc.parentDocumentId)!.documentNumber}
+                          </Badge>
+                          <span className="text-muted-foreground truncate">{getParentDocument(selectedDoc.parentDocumentId)!.title}</span>
+                        </div>
+                      )}
+                      {getChildDocuments(selectedDoc.id).length > 0 && (
+                        <div>
+                          <span className="text-sm text-muted-foreground">Child documents:</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {getChildDocuments(selectedDoc.id).map(child => (
+                              <Badge key={child.id} variant="outline" className="font-mono text-xs cursor-pointer" onClick={() => openDetail(child)}>
+                                ↓ {child.documentNumber}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Electronic Signatures */}
+                {selectedDoc.signatures && selectedDoc.signatures.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                      <ShieldCheck className="h-4 w-4" />
+                      Electronic Signatures / Signatures électroniques
+                    </h4>
+                    <div className="space-y-2">
+                      {selectedDoc.signatures.map((sig) => (
+                        <div key={sig.id} className="bg-muted/30 p-3 rounded-md flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1">
+                              <ShieldCheck className="h-3 w-3 text-green-500" />
+                              <span className="font-medium">{sig.signerName}</span>
+                            </div>
+                            <Badge variant="outline" className="text-xs">{sig.signatureType}</Badge>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-muted-foreground font-mono">{sig.signatureHash.substring(0, 20)}...</span>
+                            <span className="text-xs text-muted-foreground">{formatDate(sig.createdAt)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Template Reference Traceability */}
+                {selectedDoc.templateReferenceId && (() => {
+                  const refTemplate = documents.find(d => d.id === selectedDoc.templateReferenceId);
+                  return (
+                    <div>
+                      <h4 className="font-medium text-sm mb-2 flex items-center gap-1">
+                        <LayoutTemplate className="h-4 w-4 text-green-500" />
+                        {t.modules.documents.createdFromTemplate}
+                      </h4>
+                      <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-3 rounded-md space-y-2">
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">{t.modules.documents.documentNumber}:</span>{' '}
+                            <span className="font-mono font-medium">{refTemplate?.documentNumber || selectedDoc.templateReferenceId}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">{t.common.version}:</span>{' '}
+                            <span className="font-medium">v{selectedDoc.templateReferenceVersion || refTemplate?.version || '?'}</span>
+                          </div>
+                          {refTemplate && (
+                            <>
+                              <div>
+                                <span className="text-muted-foreground">{t.common.title}:</span>{' '}
+                                <span className="font-medium">{refTemplate.title}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">{t.common.status}:</span>{' '}
+                                <Badge className={cn('text-xs ml-1', statusColors[refTemplate.status])} variant="secondary">{refTemplate.status}</Badge>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        <p className="text-xs text-green-600 dark:text-green-400/80">
+                          {t.modules.documents.createdFromTemplateNote}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Template Warning — Draft/Under Review template */}
+                {selectedDoc.isTemplate && selectedDoc.status !== 'Approved' && selectedDoc.status !== 'Effective' && selectedDoc.status !== 'Obsolete' && (
+                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm">
+                      <p className="text-amber-700 dark:text-amber-400 font-medium">{t.modules.documents.templateMustBeApproved}</p>
+                      <p className="text-amber-600 dark:text-amber-400/80 text-xs mt-0.5">
+                        {t.modules.documents.templateMustBeApprovedDesc}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Advance Status Button */}
+                {hasPermission('documents.approve') && getNextStatus(selectedDoc.status) && selectedDoc.status !== 'Obsolete' && (
+                  <Button className="w-full" onClick={() => handleAdvanceStatus(selectedDoc)}>
+                    {getNextStatus(selectedDoc.status) === 'Approved' ? (
+                      <>
+                        <ShieldCheck className="h-4 w-4 mr-2" />
+                        Approve with Electronic Signature
+                      </>
+                    ) : (
+                      <>
+                        Advance to {getNextStatus(selectedDoc.status)}
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Electronic Signature Modal */}
+      <ElectronicSignatureModal
+        open={showSignatureModal}
+        onClose={handleSignatureCancel}
+        onSign={handleSignatureConfirm}
+        recordTitle={pendingStatusAdvance ? `${pendingStatusAdvance.documentNumber} — ${pendingStatusAdvance.title}` : ''}
+        recordId={pendingStatusAdvance?.id || ''}
+        signatureType="approval"
+      />
+    </div>
+  );
+}

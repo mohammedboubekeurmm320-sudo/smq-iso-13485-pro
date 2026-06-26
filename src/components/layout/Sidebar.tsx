@@ -1,0 +1,357 @@
+'use client';
+
+import React from 'react';
+import { cn } from '@/lib/utils';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { useQMSStore } from '@/lib/demo-store';
+import { useTranslation } from '@/lib/i18n';
+import type { ActiveSection, IndustryType } from '@/types/qms';
+import { INDUSTRY_CONFIG } from '@/types/qms';
+import {
+  LayoutDashboard,
+  FileText,
+  GitBranch,
+  AlertTriangle,
+  Shield,
+  ClipboardCheck,
+  BarChart3,
+  GraduationCap,
+  ArrowLeftRight,
+  AlertOctagon,
+  Package,
+  Truck,
+  FlaskConical,
+  FileSpreadsheet,
+  PieChart,
+  CheckCircle2,
+  Settings,
+  Users,
+  ChevronDown,
+  ChevronRight,
+  X,
+  CalendarClock,
+  Layers,
+  FolderOpen,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
+
+interface SidebarProps {
+  activeSection: ActiveSection;
+  onSectionChange: (section: ActiveSection) => void;
+  collapsed: boolean;
+  onToggle: () => void;
+  /** Whether this is the mobile overlay version */
+  isMobile?: boolean;
+  /** Close handler for mobile */
+  onClose?: () => void;
+}
+
+interface NavItem {
+  id: ActiveSection;
+  labelKey: string;
+  icon: React.ElementType;
+  module?: string;
+  showBadge?: boolean;
+  getBadgeCount?: (store: ReturnType<typeof useQMSStore.getState>) => number;
+}
+
+interface NavGroup {
+  labelKey?: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    items: [
+      { id: 'dashboard' as ActiveSection, labelKey: 'nav.dashboard', icon: LayoutDashboard },
+    ],
+  },
+  {
+    labelKey: 'nav.documents',
+    items: [
+      { id: 'documents' as ActiveSection, labelKey: 'nav.documents', icon: FileText, module: 'documents', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.documents.filter(d => d.status === 'Under Review').length },
+      { id: 'document-hierarchy' as ActiveSection, labelKey: 'nav.documentHierarchy', icon: GitBranch, module: 'hierarchy' },
+    ],
+  },
+  {
+    labelKey: 'nav.records',
+    items: [
+      { id: 'ncr' as ActiveSection, labelKey: 'nav.ncr', icon: AlertTriangle, module: 'ncr', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.ncrs.filter(n => n.status === 'Open' || n.status === 'Under Investigation').length },
+      { id: 'capa' as ActiveSection, labelKey: 'nav.capa', icon: Shield, module: 'capa', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.capas.filter(c => c.status !== 'Closed').length },
+      { id: 'audits' as ActiveSection, labelKey: 'nav.audits', icon: ClipboardCheck, module: 'audits' },
+      { id: 'risks' as ActiveSection, labelKey: 'nav.risks', icon: BarChart3, module: 'risks' },
+      { id: 'training' as ActiveSection, labelKey: 'nav.training', icon: GraduationCap, module: 'training', showBadge: true, getBadgeCount: (s: ReturnType<typeof useQMSStore.getState>) => s.training.filter(t => t.status === 'Overdue').length },
+      { id: 'change-control' as ActiveSection, labelKey: 'nav.changeControl', icon: ArrowLeftRight, module: 'change_control' },
+      { id: 'deviations' as ActiveSection, labelKey: 'nav.deviations', icon: AlertOctagon, module: 'deviations' },
+      { id: 'batch-records' as ActiveSection, labelKey: 'nav.batchRecords', icon: Package, module: 'batch_records' },
+      { id: 'suppliers' as ActiveSection, labelKey: 'nav.suppliers', icon: Truck, module: 'suppliers' },
+      { id: 'oos-oot' as ActiveSection, labelKey: 'nav.oosOot', icon: FlaskConical, module: 'oos_oot' },
+      { id: 'forms' as ActiveSection, labelKey: 'nav.forms', icon: FileSpreadsheet, module: 'forms' },
+      { id: 'record-types' as ActiveSection, labelKey: 'nav.recordTypes', icon: Layers, module: 'forms' },
+      { id: 'custom-records' as ActiveSection, labelKey: 'nav.customRecords', icon: FolderOpen, module: 'forms' },
+    ],
+  },
+  {
+    labelKey: 'nav.governance',
+    items: [
+      { id: 'reports' as ActiveSection, labelKey: 'nav.reports', icon: PieChart, module: 'reports' },
+      { id: 'compliance' as ActiveSection, labelKey: 'nav.compliance', icon: CheckCircle2, module: 'compliance' },
+      { id: 'scheduled-reports' as ActiveSection, labelKey: 'nav.scheduledReports', icon: CalendarClock, module: 'reports' },
+    ],
+  },
+];
+
+const SETTINGS_ITEMS: NavItem[] = [
+  { id: 'settings', labelKey: 'nav.settings', icon: Settings },
+  { id: 'user-management', labelKey: 'nav.userManagement', icon: Users },
+];
+
+// Helper to resolve nested key from translation object
+function resolveTranslationKey(obj: Record<string, unknown>, keyPath: string): string {
+  const keys = keyPath.split('.');
+  let current: unknown = obj;
+  for (const key of keys) {
+    if (current && typeof current === 'object' && key in (current as Record<string, unknown>)) {
+      current = (current as Record<string, unknown>)[key];
+    } else {
+      return keyPath; // fallback to key path
+    }
+  }
+  return typeof current === 'string' ? current : keyPath;
+}
+
+export function Sidebar({ activeSection, onSectionChange, collapsed, onToggle, isMobile, onClose }: SidebarProps) {
+  const { orgSettings } = useOrganization();
+  const store = useQMSStore();
+  const t = useTranslation();
+
+  const activeModules = orgSettings?.active_modules || [];
+
+  const isItemVisible = (module?: string) => {
+    if (!module) return true;
+    // Core modules are always visible
+    const coreModules = ['documents', 'capa', 'ncr', 'audits', 'training', 'reports', 'compliance'];
+    if (coreModules.includes(module)) return true;
+    // 'documents' core includes document-hierarchy visibility
+    if (module === 'documents') return true;
+    return activeModules.includes(module);
+  };
+
+  const handleSectionChange = (section: ActiveSection) => {
+    onSectionChange(section);
+    if (isMobile && onClose) {
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        'flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300',
+        // Mobile: full height using dvh for browser bar handling, desktop: h-screen
+        isMobile ? 'h-[100dvh] w-72' : 'h-screen',
+        !isMobile && (collapsed ? 'w-16' : 'w-64')
+      )}
+    >
+      {/* Logo / Org Name + Mobile Close */}
+      <div className="flex items-center h-16 px-4 border-b border-sidebar-border flex-shrink-0">
+        {(!collapsed || isMobile) && (
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+              <Shield className="w-4 h-4 text-primary-foreground" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-sm font-semibold text-sidebar-foreground truncate">QMS SaaS Pro</h1>
+              <p className="text-xs text-muted-foreground truncate">{INDUSTRY_CONFIG[orgSettings?.industry_type as IndustryType]?.primaryStandard || 'QMS'}</p>
+            </div>
+          </div>
+        )}
+        {collapsed && !isMobile && (
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center mx-auto">
+            <Shield className="w-4 h-4 text-primary-foreground" />
+          </div>
+        )}
+        {/* Mobile close button */}
+        {isMobile && onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto flex-shrink-0 h-8 w-8"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+
+      {/* Navigation — uses native scroll on mobile for touch */}
+      {isMobile ? (
+        <nav className="flex-1 overflow-y-auto py-2 overscroll-contain -webkit-overflow-scrolling-touch">
+          <div className="space-y-1 px-2">
+            {NAV_GROUPS.map((group, groupIdx) => {
+              const visibleItems = group.items.filter(item => isItemVisible(item.module));
+              if (visibleItems.length === 0) return null;
+
+              return (
+                <div key={groupIdx}>
+                  {group.labelKey && (
+                    <div className="px-3 py-2">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        {resolveTranslationKey(t as unknown as Record<string, unknown>, group.labelKey)}
+                      </span>
+                    </div>
+                  )}
+                  {visibleItems.map((item) => {
+                    const isActive = activeSection === item.id;
+                    const badgeCount = item.showBadge && item.getBadgeCount ? item.getBadgeCount(store) : 0;
+                    const Icon = item.icon;
+                    const label = resolveTranslationKey(t as unknown as Record<string, unknown>, item.labelKey);
+
+                    return (
+                      <Button
+                        key={item.id}
+                        variant="ghost"
+                        onClick={() => handleSectionChange(item.id)}
+                        className={cn(
+                          'w-full justify-start gap-3 h-10 px-3 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                          isActive && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                        )}
+                      >
+                        <Icon className={cn('h-5 w-5 flex-shrink-0', isActive && 'text-primary')} />
+                        <span className="truncate text-sm">{label}</span>
+                        {badgeCount > 0 && (
+                          <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] text-xs px-1.5">
+                            {badgeCount}
+                          </Badge>
+                        )}
+                      </Button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </nav>
+      ) : (
+        <ScrollArea className="flex-1 py-2">
+          <nav className="space-y-1 px-2">
+            {NAV_GROUPS.map((group, groupIdx) => {
+              const visibleItems = group.items.filter(item => isItemVisible(item.module));
+              if (visibleItems.length === 0) return null;
+
+              return (
+                <div key={groupIdx}>
+                  {group.labelKey && !collapsed && (
+                    <div className="px-3 py-2">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        {resolveTranslationKey(t as unknown as Record<string, unknown>, group.labelKey)}
+                      </span>
+                    </div>
+                  )}
+                  {group.labelKey && collapsed && (
+                    <Separator className="my-2" />
+                  )}
+                  {visibleItems.map((item) => {
+                    const isActive = activeSection === item.id;
+                    const badgeCount = item.showBadge && item.getBadgeCount ? item.getBadgeCount(store) : 0;
+                    const Icon = item.icon;
+                    const label = resolveTranslationKey(t as unknown as Record<string, unknown>, item.labelKey);
+
+                    return (
+                      <Button
+                        key={item.id}
+                        variant="ghost"
+                        onClick={() => onSectionChange(item.id)}
+                        className={cn(
+                          'w-full justify-start gap-3 h-9 px-3 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                          isActive && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+                          collapsed && 'justify-center px-0'
+                        )}
+                      >
+                        <Icon className={cn('h-4 w-4 flex-shrink-0', isActive && 'text-primary')} />
+                        {!collapsed && (
+                          <>
+                            <span className="truncate text-sm">{label}</span>
+                            {badgeCount > 0 && (
+                              <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] text-xs px-1.5">
+                                {badgeCount}
+                              </Badge>
+                            )}
+                          </>
+                        )}
+                        {collapsed && badgeCount > 0 && (
+                          <span className="absolute -top-1 -right-1 h-4 min-w-[16px] rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center px-1">
+                            {badgeCount}
+                          </span>
+                        )}
+                      </Button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </nav>
+        </ScrollArea>
+      )}
+
+      {/* Settings section at bottom */}
+      <div className="border-t border-sidebar-border py-2 px-2 flex-shrink-0">
+        {!collapsed && !isMobile && (
+          <div className="px-3 py-2">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+              <Settings className="w-3 h-3" />
+              {t.nav.settings}
+            </span>
+          </div>
+        )}
+        {(isMobile || !collapsed) && (
+          <div className={cn(isMobile && 'px-3 py-2')}>
+            {isMobile && (
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                <Settings className="w-3 h-3" />
+                {t.nav.settings}
+              </span>
+            )}
+          </div>
+        )}
+        {SETTINGS_ITEMS.filter(item => isItemVisible(item.module)).map((item) => {
+          const isActive = activeSection === item.id;
+          const Icon = item.icon;
+          const label = resolveTranslationKey(t as unknown as Record<string, unknown>, item.labelKey);
+
+          return (
+            <Button
+              key={item.id}
+              variant="ghost"
+              onClick={() => handleSectionChange(item.id)}
+              className={cn(
+                'w-full justify-start gap-3 h-9 px-3 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                isActive && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+                !isMobile && collapsed && 'justify-center px-0',
+                isMobile && 'h-10'
+              )}
+            >
+              <Icon className={cn('h-4 w-4 flex-shrink-0', isActive && 'text-primary')} />
+              {(!collapsed || isMobile) && <span className="truncate text-sm">{label}</span>}
+            </Button>
+          );
+        })}
+
+        {/* Collapse toggle — desktop only */}
+        {!isMobile && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggle}
+            className="w-full mt-1 justify-center h-8"
+          >
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
