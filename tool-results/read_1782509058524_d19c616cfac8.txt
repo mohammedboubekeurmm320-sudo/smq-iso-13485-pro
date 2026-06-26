@@ -1,0 +1,1822 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useMemo } from 'react';
+     4→import { useQMSStore } from '@/lib/demo-store';
+     5→import { useAuth } from '@/contexts/AuthContext';
+     6→import { ElectronicSignatureModal } from '@/components/shared/ElectronicSignatureModal';
+     7→import { TemplateSelector } from '@/components/shared/TemplateSelector';
+     8→import { cn, formatDate } from '@/lib/utils';
+     9→import type { NonConformance, NcrStatus, NcrDisposition, SignatureType, FormTemplateModule } from '@/types/qms';
+    10→import { useRecordWorkflow } from '@/hooks/useRecordWorkflow';
+    11→import {
+    12→  FlaskConical, Search, Eye, ArrowRight, CheckCircle2,
+    13→  AlertTriangle, XCircle, AlertCircle, ChevronRight, Plus,
+    14→  ShieldCheck, ClipboardCheck, Beaker, Ban, Gavel,
+    15→  ChevronLeft, FileText, Activity, Wrench, Scale,
+    16→  BookOpen, ListChecks, Trash2, Info,
+    17→} from 'lucide-react';
+    18→import { Card, CardContent } from '@/components/ui/card';
+    19→import { Button } from '@/components/ui/button';
+    20→import { Input } from '@/components/ui/input';
+    21→import { Badge } from '@/components/ui/badge';
+    22→import { Label } from '@/components/ui/label';
+    23→import { Textarea } from '@/components/ui/textarea';
+    24→import { Separator } from '@/components/ui/separator';
+    25→import { Checkbox } from '@/components/ui/checkbox';
+    26→import {
+    27→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    28→} from '@/components/ui/select';
+    29→import {
+    30→  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+    31→} from '@/components/ui/table';
+    32→import {
+    33→  Dialog, DialogContent, DialogHeader, DialogTitle,
+    34→} from '@/components/ui/dialog';
+    35→
+    36→// ─── Color Maps ────────────────────────────────────────────────────────────────
+    37→
+    38→const phase1ConclusionColors: Record<string, string> = {
+    39→  'Assignable Cause Found': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    40→  'No Assignable Cause Found': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    41→  'Requires Phase II': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    42→  'Error Found': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    43→  'No Error Found': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    44→  'Pending': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    45→};
+    46→
+    47→const phase2ConclusionColors: Record<string, string> = {
+    48→  'Confirmed OOS': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    49→  'Invalidated': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    50→  'Error Found': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    51→  'No Error Found': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    52→  'Pending': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    53→};
+    54→
+    55→const ncrStatusColors: Record<string, string> = {
+    56→  'Open': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    57→  'Under Investigation': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    58→  'Pending Disposition': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    59→  'Closed': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    60→};
+    61→
+    62→const dispositionColors: Record<string, string> = {
+    63→  'Use As Is': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    64→  'Rework': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    65→  'Scrap': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    66→  'Return to Supplier': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+    67→  'Concession': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    68→  'Pending': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    69→};
+    70→
+    71→// ─── Types ─────────────────────────────────────────────────────────────────────
+    72→
+    73→type OosOotType = 'OOS' | 'OOT';
+    74→
+    75→interface ContainmentAction {
+    76→  id: string;
+    77→  action: string;
+    78→  responsible: string;
+    79→  completionDate: string;
+    80→}
+    81→
+    82→interface WizardFormData {
+    83→  // Step 1 - Identification
+    84→  title: string;
+    85→  type: OosOotType;
+    86→  productCode: string;
+    87→  lotNumber: string;
+    88→  sampleId: string;
+    89→  analyticalMethod: string;
+    90→  specification: string;
+    91→  measuredValue: string;
+    92→  unit: string;
+    93→  specReference: string;
+    94→  // Step 2 - Analytical Data
+    95→  specLimit: string;
+    96→  detectionSource: string;
+    97→  // Step 3 - Phase I
+    98→  labInvestigation: string;
+    99→  analystError: boolean;
+   100→  calculationError: boolean;
+   101→  instrumentMalfunction: boolean;
+   102→  samplePrepError: boolean;
+   103→  environmentalConditions: boolean;
+   104→  methodDeviation: boolean;
+   105→  assignableCauseDesc: string;
+   106→  phase1Conclusion: string;
+   107→  // Step 4 - Phase II
+   108→  extendedInvestigation: string;
+   109→  rootCauseMethod: string;
+   110→  rootCauseStatement: string;
+   111→  phase2Conclusion: string;
+   112→  // Step 5 - Disposition & Impact
+   113→  lotDisposition: string;
+   114→  dispositionDecision: string;
+   115→  dispositionJustification: string;
+   116→  concession: boolean;
+   117→  reworkInstructions: string;
+   118→  concessionAuthorizedBy: string;
+   119→  scrapDocRef: string;
+   120→  // Step 6 - Actions & CAPA
+   121→  containmentActions: ContainmentAction[];
+   122→  correctiveActionSummary: string;
+   123→  linkedCapaRef: string;
+   124→  lessonsLearned: string;
+   125→}
+   126→
+   127→const WIZARD_STEPS = [
+   128→  { id: 1, label: 'Identification', icon: FileText },
+   129→  { id: 2, label: 'Analytical Data', icon: Beaker },
+   130→  { id: 3, label: 'Phase I Investigation', icon: ClipboardCheck },
+   131→  { id: 4, label: 'Phase II Investigation', icon: Search },
+   132→  { id: 5, label: 'Disposition & Impact', icon: Scale },
+   133→  { id: 6, label: 'Actions & CAPA', icon: Wrench },
+   134→  { id: 7, label: 'Review & Submit', icon: CheckCircle2 },
+   135→];
+   136→
+   137→const initialWizardData: WizardFormData = {
+   138→  title: '',
+   139→  type: 'OOS',
+   140→  productCode: '',
+   141→  lotNumber: '',
+   142→  sampleId: '',
+   143→  analyticalMethod: '',
+   144→  specification: '',
+   145→  measuredValue: '',
+   146→  unit: '',
+   147→  specReference: '',
+   148→  specLimit: '',
+   149→  detectionSource: '',
+   150→  labInvestigation: '',
+   151→  analystError: false,
+   152→  calculationError: false,
+   153→  instrumentMalfunction: false,
+   154→  samplePrepError: false,
+   155→  environmentalConditions: false,
+   156→  methodDeviation: false,
+   157→  assignableCauseDesc: '',
+   158→  phase1Conclusion: '',
+   159→  extendedInvestigation: '',
+   160→  rootCauseMethod: '',
+   161→  rootCauseStatement: '',
+   162→  phase2Conclusion: '',
+   163→  lotDisposition: '',
+   164→  dispositionDecision: '',
+   165→  dispositionJustification: '',
+   166→  concession: false,
+   167→  reworkInstructions: '',
+   168→  concessionAuthorizedBy: '',
+   169→  scrapDocRef: '',
+   170→  containmentActions: [],
+   171→  correctiveActionSummary: '',
+   172→  linkedCapaRef: '',
+   173→  lessonsLearned: '',
+   174→};
+   175→
+   176→// ─── Component ─────────────────────────────────────────────────────────────────
+   177→
+   178→export function OosOotView() {
+   179→  const { currentUser, hasPermission } = useAuth();
+   180→  const store = useQMSStore();
+   181→  const ncrs = store.ncrs;
+   182→  const profiles = store.profiles;
+   183→  const capas = store.capas;
+   184→  const { getApprovedTemplates, hasApprovedTemplate } = useRecordWorkflow();
+   185→  const approvedOosTemplates = getApprovedTemplates('OOS_OOT');
+   186→  const oosHasApprovedTemplate = hasApprovedTemplate('OOS_OOT');
+   187→
+   188→  // Filter to only OOS/OOT NCRs
+   189→  const oosOotNcrs = useMemo(() => ncrs.filter(n => n.isOosOot), [ncrs]);
+   190→
+   191→  // Filters
+   192→  const [searchTerm, setSearchTerm] = useState('');
+   193→  const [typeFilter, setTypeFilter] = useState<string>('all');
+   194→  const [phaseFilter, setPhaseFilter] = useState<string>('all');
+   195→  const [conclusionFilter, setConclusionFilter] = useState<string>('all');
+   196→  const [statusFilter, setStatusFilter] = useState<string>('all');
+   197→
+   198→  // Dialogs
+   199→  const [showCreateDialog, setShowCreateDialog] = useState(false);
+   200→  const [showDetailDialog, setShowDetailDialog] = useState(false);
+   201→  const [selectedNcr, setSelectedNcr] = useState<NonConformance | null>(null);
+   202→
+   203→  // Wizard state
+   204→  const [wizardStep, setWizardStep] = useState(1);
+   205→  const [wizardData, setWizardData] = useState<WizardFormData>({ ...initialWizardData });
+   206→
+   207→  // Template selection
+   208→  const [formTemplateId, setFormTemplateId] = useState('');
+   209→  const [formTemplateVersion, setFormTemplateVersion] = useState('');
+   210→
+   211→  // Phase advancement state for detail dialog
+   212→  const [phase1Conclusion, setPhase1Conclusion] = useState<string>('');
+   213→  const [phase2Conclusion, setPhase2Conclusion] = useState<string>('');
+   214→  const [rejectLotDecision, setRejectLotDecision] = useState<boolean>(false);
+   215→
+   216→  // Lab investigation checklist for detail dialog
+   217→  const [labChecklist, setLabChecklist] = useState({
+   218→    analystError: false,
+   219→    calculationError: false,
+   220→    instrumentMalfunction: false,
+   221→    samplePrepError: false,
+   222→    environmentalConditions: false,
+   223→    methodDeviation: false,
+   224→  });
+   225→
+   226→  // Disposition decision for detail dialog
+   227→  const [disposition, setDisposition] = useState<NcrDisposition>('Pending');
+   228→
+   229→  // E-signature
+   230→  const [showEsigModal, setShowEsigModal] = useState(false);
+   231→  const [pendingAction, setPendingAction] = useState<string>('');
+   232→  const [newTemplateId, setNewTemplateId] = useState('');
+   233→  const [newTemplateVersion, setNewTemplateVersion] = useState('');
+   234→
+   235→  // ─── Helpers ───────────────────────────────────────────────────────────────
+   236→
+   237→  const getUserName = (userId?: string) => {
+   238→    if (!userId) return '-';
+   239→    const profile = profiles.find(p => p.id === userId);
+   240→    return profile?.fullName || profile?.email || userId;
+   241→  };
+   242→
+   243→  const isMeasuredValueOutOfSpec = (ncr: NonConformance) => {
+   244→    if (ncr.measuredValue === undefined || !ncr.specLimit) return false;
+   245→    const specMatch = ncr.specLimit.match(/([\d.]+)\s*-\s*([\d.]+)/);
+   246→    if (specMatch) {
+   247→      const min = parseFloat(specMatch[1]);
+   248→      const max = parseFloat(specMatch[2]);
+   249→      return ncr.measuredValue < min || ncr.measuredValue > max;
+   250→    }
+   251→    return true;
+   252→  };
+   253→
+   254→  const isWizardMeasuredOutOfSpec = () => {
+   255→    const val = parseFloat(wizardData.measuredValue);
+   256→    if (isNaN(val) || !wizardData.specLimit) return null;
+   257→    const specMatch = wizardData.specLimit.match(/([\d.]+)\s*-\s*([\d.]+)/);
+   258→    if (specMatch) {
+   259→      const min = parseFloat(specMatch[1]);
+   260→      const max = parseFloat(specMatch[2]);
+   261→      return val < min || val > max;
+   262→    }
+   263→    return null;
+   264→  };
+   265→
+   266→  const updateWizard = <K extends keyof WizardFormData>(key: K, value: WizardFormData[K]) => {
+   267→    setWizardData(prev => ({ ...prev, [key]: value }));
+   268→  };
+   269→
+   270→  const addContainmentAction = () => {
+   271→    updateWizard('containmentActions', [
+   272→      ...wizardData.containmentActions,
+   273→      { id: `ca-${Date.now()}`, action: '', responsible: '', completionDate: '' },
+   274→    ]);
+   275→  };
+   276→
+   277→  const removeContainmentAction = (id: string) => {
+   278→    updateWizard('containmentActions', wizardData.containmentActions.filter(a => a.id !== id));
+   279→  };
+   280→
+   281→  const updateContainmentAction = (id: string, field: keyof ContainmentAction, value: string) => {
+   282→    updateWizard('containmentActions', wizardData.containmentActions.map(a =>
+   283→      a.id === id ? { ...a, [field]: value } : a
+   284→    ));
+   285→  };
+   286→
+   287→  // ─── Filtered NCRs ─────────────────────────────────────────────────────────
+   288→
+   289→  const filteredNcrs = useMemo(() => {
+   290→    return oosOotNcrs.filter(ncr => {
+   291→      const matchesSearch = searchTerm === '' ||
+   292→        ncr.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+   293→        ncr.ncrNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+   294→        (ncr.lotNumber && ncr.lotNumber.toLowerCase().includes(searchTerm.toLowerCase()));
+   295→      const matchesType = typeFilter === 'all' || ncr.type === typeFilter;
+   296→      const matchesStatus = statusFilter === 'all' || ncr.status === statusFilter;
+   297→
+   298→      let matchesPhase = true;
+   299→      if (phaseFilter === 'phase1_pending') {
+   300→        matchesPhase = !ncr.phase1Conclusion || ncr.phase1Conclusion === 'Pending';
+   301→      } else if (phaseFilter === 'phase2_required') {
+   302→        matchesPhase = ncr.phase2Required;
+   303→      } else if (phaseFilter === 'phase2_pending') {
+   304→        matchesPhase = ncr.phase2Required && (!ncr.phase2Conclusion || ncr.phase2Conclusion === 'Pending');
+   305→      }
+   306→
+   307→      let matchesConclusion = true;
+   308→      if (conclusionFilter === 'confirmed_oos') {
+   309→        matchesConclusion = ncr.phase2Conclusion === 'Confirmed OOS';
+   310→      } else if (conclusionFilter === 'invalidated') {
+   311→        matchesConclusion = ncr.phase2Conclusion === 'Invalidated' || (ncr.phase1Conclusion === 'No Error Found' && !ncr.phase2Required);
+   312→      } else if (conclusionFilter === 'error_found') {
+   313→        matchesConclusion = ncr.phase1Conclusion === 'Error Found';
+   314→      } else if (conclusionFilter === 'no_error') {
+   315→        matchesConclusion = ncr.phase1Conclusion === 'No Error Found';
+   316→      }
+   317→
+   318→      return matchesSearch && matchesType && matchesStatus && matchesPhase && matchesConclusion;
+   319→    });
+   320→  }, [oosOotNcrs, searchTerm, typeFilter, statusFilter, phaseFilter, conclusionFilter]);
+   321→
+   322→  // ─── Summary counts ────────────────────────────────────────────────────────
+   323→
+   324→  const summaryCounts = useMemo(() => ({
+   325→    oosCount: oosOotNcrs.filter(n => n.type === 'OOS').length,
+   326→    ootCount: oosOotNcrs.filter(n => n.type === 'OOT').length,
+   327→    phase1Pending: oosOotNcrs.filter(n => !n.phase1Conclusion || n.phase1Conclusion === 'Pending').length,
+   328→    phase2Confirmed: oosOotNcrs.filter(n => n.phase2Conclusion === 'Confirmed OOS').length,
+   329→  }), [oosOotNcrs]);
+   330→
+   331→  // ─── Dialog handlers ──────────────────────────────────────────────────────
+   332→
+   333→  const openDetail = (ncr: NonConformance) => {
+   334→    setSelectedNcr(ncr);
+   335→    setPhase1Conclusion(ncr.phase1Conclusion || '');
+   336→    setPhase2Conclusion(ncr.phase2Conclusion || '');
+   337→    setRejectLotDecision(ncr.rejectLot);
+   338→    setDisposition(ncr.disposition || 'Pending');
+   339→    setLabChecklist({
+   340→      analystError: false,
+   341→      calculationError: false,
+   342→      instrumentMalfunction: false,
+   343→      samplePrepError: false,
+   344→      environmentalConditions: false,
+   345→      methodDeviation: false,
+   346→    });
+   347→    setShowDetailDialog(true);
+   348→  };
+   349→
+   350→  const resetCreateForm = () => {
+   351→    setWizardStep(1);
+   352→    setWizardData({ ...initialWizardData });
+   353→    setNewTemplateId('');
+   354→    setNewTemplateVersion('');
+   355→  };
+   356→
+   357→  const openCreateDialog = () => {
+   358→    resetCreateForm();
+   359→    setShowCreateDialog(true);
+   360→  };
+   361→
+   362→  const handleCreateOosOot = () => {
+   363→    if (!wizardData.title) return;
+   364→    const ncrCount = store.ncrs.length;
+   365→    const newNcr: NonConformance = {
+   366→      id: `ncr-${Date.now()}`,
+   367→      ncrNumber: `NCR-2024-${String(ncrCount + 1).padStart(3, '0')}`,
+   368→      title: wizardData.title,
+   369→      type: wizardData.type,
+   370→      status: 'Open',
+   371→      severity: 'Major',
+   372→      source: wizardData.detectionSource || 'Quality Control Testing',
+   373→      description: wizardData.assignableCauseDesc || wizardData.labInvestigation || `OOS/OOT Investigation for ${wizardData.productCode || 'Unknown Product'}`,
+   374→      lotNumber: wizardData.lotNumber || undefined,
+   375→      disposition: 'Pending',
+   376→      isOosOot: true,
+   377→      analyticalMethod: wizardData.analyticalMethod || undefined,
+   378→      measuredValue: wizardData.measuredValue ? parseFloat(wizardData.measuredValue) : undefined,
+   379→      measuredUnit: wizardData.unit || undefined,
+   380→      specLimit: wizardData.specLimit || wizardData.specification || undefined,
+   381→      phase1Conclusion: (wizardData.phase1Conclusion || 'Pending') as NonConformance['phase1Conclusion'],
+   382→      phase2Required: wizardData.phase1Conclusion === 'Requires Phase II' || wizardData.phase1Conclusion === 'No Assignable Cause Found',
+   383→      phase2Conclusion: (wizardData.phase2Conclusion || 'Pending') as NonConformance['phase2Conclusion'],
+   384→      rejectLot: wizardData.lotDisposition === 'Reject Lot',
+   385→      linkedCapaId: wizardData.linkedCapaRef || undefined,
+   386→      templateId: formTemplateId || undefined,
+   387→      templateVersion: formTemplateVersion || undefined,
+   388→      assignedTo: undefined,
+   389→      createdDate: new Date().toISOString(),
+   390→      createdById: currentUser?.id,
+   391→      organizationId: 'org-001',
+   392→      createdAt: new Date().toISOString(),
+   393→      updatedAt: new Date().toISOString(),
+   394→    };
+   395→    store.addNCR(newNcr);
+   396→    resetCreateForm();
+   397→    setShowCreateDialog(false);
+   398→  };
+   399→
+   400→  const handleAdvancePhase1 = () => {
+   401→    if (!selectedNcr || !phase1Conclusion) return;
+   402→    const updates: Partial<NonConformance> = {
+   403→      phase1Conclusion: phase1Conclusion as NonConformance['phase1Conclusion'],
+   404→      status: 'Under Investigation' as NcrStatus,
+   405→    };
+   406→    if (phase1Conclusion === 'Error Found') {
+   407→      updates.phase2Required = true;
+   408→    } else if (phase1Conclusion === 'No Error Found') {
+   409→      updates.phase2Required = true;
+   410→    }
+   411→    store.updateNCR(selectedNcr.id, updates);
+   412→    setSelectedNcr({ ...selectedNcr, ...updates });
+   413→  };
+   414→
+   415→  const handleAdvancePhase2 = () => {
+   416→    if (!selectedNcr || !phase2Conclusion) return;
+   417→    const updates: Partial<NonConformance> = {
+   418→      phase2Conclusion: phase2Conclusion as NonConformance['phase2Conclusion'],
+   419→      rejectLot: rejectLotDecision,
+   420→      status: 'Pending Disposition' as NcrStatus,
+   421→    };
+   422→    store.updateNCR(selectedNcr.id, updates);
+   423→    setSelectedNcr({ ...selectedNcr, ...updates });
+   424→  };
+   425→
+   426→  const handleSetDisposition = () => {
+   427→    if (!selectedNcr || disposition === 'Pending') return;
+   428→    setPendingAction('disposition');
+   429→    setShowEsigModal(true);
+   430→  };
+   431→
+   432→  const handleEsigSign = (data: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
+   433→    if (!selectedNcr) return;
+   434→    if (pendingAction === 'disposition') {
+   435→      const updates: Partial<NonConformance> = {
+   436→        disposition,
+   437→        status: 'Closed' as NcrStatus,
+   438→      };
+   439→      store.updateNCR(selectedNcr.id, updates);
+   440→      setSelectedNcr({ ...selectedNcr, ...updates });
+   441→    }
+   442→    setShowEsigModal(false);
+   443→    setPendingAction('');
+   444→  };
+   445→
+   446→  // ─── Wizard step validation ────────────────────────────────────────────────
+   447→
+   448→  const canProceedStep = (step: number): boolean => {
+   449→    switch (step) {
+   450→      case 1: return !!wizardData.title && !!wizardData.type;
+   451→      case 2: return !!wizardData.specLimit;
+   452→      case 3: return !!wizardData.phase1Conclusion;
+   453→      case 4: return wizardData.phase1Conclusion === 'Requires Phase II' || wizardData.phase1Conclusion === 'No Assignable Cause Found' ? !!wizardData.phase2Conclusion : true;
+   454→      case 5: return !!wizardData.lotDisposition && !!wizardData.dispositionDecision;
+   455→      case 6: return true;
+   456→      case 7: return true;
+   457→      default: return true;
+   458→    }
+   459→  };
+   460→
+   461→  // ─── Render: Wizard Steps ──────────────────────────────────────────────────
+   462→
+   463→  const renderWizardStep = () => {
+   464→    switch (wizardStep) {
+   465→      case 1:
+   466→        return (
+   467→          <div className="space-y-4">
+   468→            <div className="flex items-center gap-2 mb-2">
+   469→              <FileText className="h-5 w-5 text-primary" />
+   470→              <h3 className="font-semibold">Step 1: Identification</h3>
+   471→            </div>
+   472→            <p className="text-sm text-muted-foreground">Enter the identification details for this OOS/OOT investigation.</p>
+   473→
+   474→            {/* Template Selector */}
+   475→            <div className="grid gap-2">
+   476→              <Label>Template</Label>
+   477→              <Select value={formTemplateId || 'none'} onValueChange={(v) => {
+   478→                if (v === 'none') {
+   479→                  setFormTemplateId('');
+   480→                  setFormTemplateVersion('');
+   481→                } else {
+   482→                  setFormTemplateId(v);
+   483→                  const tpl = approvedOosTemplates.find(t => t.id === v);
+   484→                  setFormTemplateVersion(tpl?.version || '');
+   485→                }
+   486→              }}>
+   487→                <SelectTrigger><SelectValue placeholder="Select an approved template (optional)" /></SelectTrigger>
+   488→                <SelectContent>
+   489→                  <SelectItem value="none">No template</SelectItem>
+   490→                  {approvedOosTemplates.map(t => (
+   491→                    <SelectItem key={t.id} value={t.id}>{t.title} (v{t.version})</SelectItem>
+   492→                  ))}
+   493→                </SelectContent>
+   494→              </Select>
+   495→            </div>
+   496→
+   497→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   498→              <div className="grid gap-2 sm:col-span-2">
+   499→                <Label>Title *</Label>
+   500→                <Input value={wizardData.title} onChange={(e) => updateWizard('title', e.target.value)} placeholder="e.g., Out of Specification Result - API Assay" />
+   501→              </div>
+   502→              <div className="grid gap-2">
+   503→                <Label>Type *</Label>
+   504→                <Select value={wizardData.type} onValueChange={(v) => updateWizard('type', v as OosOotType)}>
+   505→                  <SelectTrigger><SelectValue /></SelectTrigger>
+   506→                  <SelectContent>
+   507→                    <SelectItem value="OOS">OOS - Out of Specification</SelectItem>
+   508→                    <SelectItem value="OOT">OOT - Out of Trend</SelectItem>
+   509→                  </SelectContent>
+   510→                </Select>
+   511→              </div>
+   512→              <div className="grid gap-2">
+   513→                <Label>Product Code</Label>
+   514→                <Input value={wizardData.productCode} onChange={(e) => updateWizard('productCode', e.target.value)} placeholder="e.g., PRD-001" />
+   515→              </div>
+   516→              <div className="grid gap-2">
+   517→                <Label>Lot Number</Label>
+   518→                <Input value={wizardData.lotNumber} onChange={(e) => updateWizard('lotNumber', e.target.value)} placeholder="e.g., BN-2024-XXX" />
+   519→              </div>
+   520→              <div className="grid gap-2">
+   521→                <Label>Sample ID</Label>
+   522→                <Input value={wizardData.sampleId} onChange={(e) => updateWizard('sampleId', e.target.value)} placeholder="e.g., SMP-2024-001" />
+   523→              </div>
+   524→              <div className="grid gap-2 sm:col-span-2">
+   525→                <Label>Analytical Method</Label>
+   526→                <Input value={wizardData.analyticalMethod} onChange={(e) => updateWizard('analyticalMethod', e.target.value)} placeholder="e.g., HPLC Assay USP <621>" />
+   527→              </div>
+   528→              <div className="grid gap-2 sm:col-span-2">
+   529→                <Label>Specification</Label>
+   530→                <Input value={wizardData.specification} onChange={(e) => updateWizard('specification', e.target.value)} placeholder="e.g., 95.0% - 105.0%" />
+   531→              </div>
+   532→              <div className="grid gap-2">
+   533→                <Label>Measured Value</Label>
+   534→                <Input type="number" value={wizardData.measuredValue} onChange={(e) => updateWizard('measuredValue', e.target.value)} placeholder="e.g., 92.3" />
+   535→              </div>
+   536→              <div className="grid gap-2">
+   537→                <Label>Unit</Label>
+   538→                <Input value={wizardData.unit} onChange={(e) => updateWizard('unit', e.target.value)} placeholder="e.g., %, mg/L, CFU/mL" />
+   539→              </div>
+   540→              <div className="grid gap-2 sm:col-span-2">
+   541→                <Label>Applicable Specification Reference</Label>
+   542→                <Input value={wizardData.specReference} onChange={(e) => updateWizard('specReference', e.target.value)} placeholder="e.g., SOP-QC-042 Rev. 3" />
+   543→              </div>
+   544→              <div className="sm:col-span-2">
+   545→                <TemplateSelector
+   546→                  moduleType="oos_oot"
+   547→                  value={newTemplateId}
+   548→                  onChange={(id, version) => {
+   549→                    setNewTemplateId(id);
+   550→                    setNewTemplateVersion(version);
+   551→                  }}
+   552→                  required
+   553→                />
+   554→              </div>
+   555→            </div>
+   556→          </div>
+   557→        );
+   558→
+   559→      case 2:
+   560→        return (
+   561→          <div className="space-y-4">
+   562→            <div className="flex items-center gap-2 mb-2">
+   563→              <Beaker className="h-5 w-5 text-primary" />
+   564→              <h3 className="font-semibold">Step 2: Analytical Data</h3>
+   565→            </div>
+   566→            <p className="text-sm text-muted-foreground">Review specification limits, measured values, and detection source.</p>
+   567→
+   568→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   569→              <div className="grid gap-2 sm:col-span-2">
+   570→                <Label>Specification Limit (Upper/Lower) *</Label>
+   571→                <Input value={wizardData.specLimit} onChange={(e) => updateWizard('specLimit', e.target.value)} placeholder="e.g., 95.0-105.0%" />
+   572→              </div>
+   573→            </div>
+   574→
+   575→            {/* Out-of-Spec Visual Comparison */}
+   576→            {wizardData.measuredValue && wizardData.specLimit && (
+   577→              <div className={cn(
+   578→                'rounded-lg p-4 border-2',
+   579→                isWizardMeasuredOutOfSpec() === true
+   580→                  ? 'bg-red-50 dark:bg-red-900/10 border-red-300 dark:border-red-800'
+   581→                  : isWizardMeasuredOutOfSpec() === false
+   582→                    ? 'bg-green-50 dark:bg-green-900/10 border-green-300 dark:border-green-800'
+   583→                    : 'bg-muted/30 border-muted'
+   584→              )}>
+   585→                <div className="flex items-center justify-between">
+   586→                  <div>
+   587→                    <span className="text-xs text-muted-foreground block mb-1">Measured Value</span>
+   588→                    <span className={cn(
+   589→                      'text-2xl font-bold',
+   590→                      isWizardMeasuredOutOfSpec() === true ? 'text-red-600 dark:text-red-400'
+   591→                        : isWizardMeasuredOutOfSpec() === false ? 'text-green-600 dark:text-green-400'
+   592→                          : ''
+   593→                    )}>
+   594→                      {wizardData.measuredValue} {wizardData.unit}
+   595→                    </span>
+   596→                  </div>
+   597→                  <div className="text-right">
+   598→                    <span className="text-xs text-muted-foreground block mb-1">Specification</span>
+   599→                    <span className="text-sm font-mono font-medium">{wizardData.specLimit}</span>
+   600→                  </div>
+   601→                  {isWizardMeasuredOutOfSpec() === true && (
+   602→                    <div className="flex items-center gap-1 ml-4">
+   603→                      <AlertTriangle className="h-5 w-5 text-red-500" />
+   604→                      <span className="text-sm font-bold text-red-600 dark:text-red-400">OUT OF SPEC</span>
+   605→                    </div>
+   606→                  )}
+   607→                  {isWizardMeasuredOutOfSpec() === false && (
+   608→                    <div className="flex items-center gap-1 ml-4">
+   609→                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+   610→                      <span className="text-sm font-medium text-green-600 dark:text-green-400">IN SPEC</span>
+   611→                    </div>
+   612→                  )}
+   613→                </div>
+   614→              </div>
+   615→            )}
+   616→
+   617→            <div className="grid gap-2">
+   618→              <Label>Detection Source</Label>
+   619→              <Select value={wizardData.detectionSource} onValueChange={(v) => updateWizard('detectionSource', v)}>
+   620→                <SelectTrigger><SelectValue placeholder="Select detection source..." /></SelectTrigger>
+   621→                <SelectContent>
+   622→                  <SelectItem value="Final QC Testing">Final QC Testing</SelectItem>
+   623→                  <SelectItem value="Customer Complaint">Customer Complaint</SelectItem>
+   624→                  <SelectItem value="Internal Audit">Internal Audit</SelectItem>
+   625→                  <SelectItem value="Supplier COA Review">Supplier COA Review</SelectItem>
+   626→                  <SelectItem value="Environmental Monitoring">Environmental Monitoring</SelectItem>
+   627→                  <SelectItem value="Stability Study">Stability Study</SelectItem>
+   628→                  <SelectItem value="Process Deviation">Process Deviation</SelectItem>
+   629→                  <SelectItem value="Management Review">Management Review</SelectItem>
+   630→                  <SelectItem value="Other">Other</SelectItem>
+   631→                </SelectContent>
+   632→              </Select>
+   633→            </div>
+   634→          </div>
+   635→        );
+   636→
+   637→      case 3:
+   638→        return (
+   639→          <div className="space-y-4">
+   640→            <div className="flex items-center gap-2 mb-2">
+   641→              <ClipboardCheck className="h-5 w-5 text-primary" />
+   642→              <h3 className="font-semibold">Step 3: Phase I Investigation</h3>
+   643→            </div>
+   644→            <p className="text-sm text-muted-foreground">Laboratory investigation per FDA OOS Guidance — Phase I assesses assignable laboratory causes.</p>
+   645→
+   646→            <div className="grid gap-2">
+   647→              <Label>Laboratory Investigation</Label>
+   648→              <Textarea value={wizardData.labInvestigation} onChange={(e) => updateWizard('labInvestigation', e.target.value)} placeholder="Describe the laboratory investigation performed..." rows={4} />
+   649→            </div>
+   650→
+   651→            {/* Checklist */}
+   652→            <div className="bg-muted/30 rounded-lg p-4 space-y-3">
+   653→              <h5 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Investigation Checklist</h5>
+   654→              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   655→                {([
+   656→                  { key: 'analystError' as const, label: 'Analyst Error?' },
+   657→                  { key: 'calculationError' as const, label: 'Calculation Error?' },
+   658→                  { key: 'instrumentMalfunction' as const, label: 'Instrument Malfunction?' },
+   659→                  { key: 'samplePrepError' as const, label: 'Sample Preparation Error?' },
+   660→                  { key: 'environmentalConditions' as const, label: 'Environmental Conditions?' },
+   661→                  { key: 'methodDeviation' as const, label: 'Method Deviation?' },
+   662→                ]).map(item => (
+   663→                  <div key={item.key} className="flex items-center gap-2">
+   664→                    <Checkbox
+   665→                      id={`wiz-${item.key}`}
+   666→                      checked={wizardData[item.key]}
+   667→                      onCheckedChange={(checked) => updateWizard(item.key, checked === true)}
+   668→                    />
+   669→                    <Label htmlFor={`wiz-${item.key}`} className="text-sm cursor-pointer">{item.label}</Label>
+   670→                  </div>
+   671→                ))}
+   672→              </div>
+   673→            </div>
+   674→
+   675→            <div className="grid gap-2">
+   676→              <Label>Assignable Cause Description</Label>
+   677→              <Textarea value={wizardData.assignableCauseDesc} onChange={(e) => updateWizard('assignableCauseDesc', e.target.value)} placeholder="Describe any assignable cause identified..." rows={3} />
+   678→            </div>
+   679→
+   680→            <div className="grid gap-2">
+   681→              <Label>Phase I Conclusion *</Label>
+   682→              <Select value={wizardData.phase1Conclusion} onValueChange={(v) => updateWizard('phase1Conclusion', v)}>
+   683→                <SelectTrigger><SelectValue placeholder="Select Phase I conclusion..." /></SelectTrigger>
+   684→                <SelectContent>
+   685→                  <SelectItem value="Assignable Cause Found">Assignable Cause Found</SelectItem>
+   686→                  <SelectItem value="No Assignable Cause Found">No Assignable Cause Found</SelectItem>
+   687→                  <SelectItem value="Requires Phase II">Requires Phase II</SelectItem>
+   688→                </SelectContent>
+   689→              </Select>
+   690→            </div>
+   691→
+   692→            {wizardData.phase1Conclusion === 'Assignable Cause Found' && (
+   693→              <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-md p-3 flex items-start gap-2">
+   694→                <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+   695→                <div className="text-sm text-green-700 dark:text-green-400">
+   696→                  <p className="font-medium">Assignable Cause Found</p>
+   697→                  <p className="mt-1">An assignable cause has been identified. The original result may be invalidated and a retest performed.</p>
+   698→                </div>
+   699→              </div>
+   700→            )}
+   701→            {(wizardData.phase1Conclusion === 'No Assignable Cause Found' || wizardData.phase1Conclusion === 'Requires Phase II') && (
+   702→              <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+   703→                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+   704→                <div className="text-sm text-amber-700 dark:text-amber-400">
+   705→                  <p className="font-medium">Phase II Investigation Required</p>
+   706→                  <p className="mt-1">No assignable cause was identified in the laboratory investigation. A full-scale Phase II investigation is required per FDA OOS Guidance.</p>
+   707→                </div>
+   708→              </div>
+   709→            )}
+   710→          </div>
+   711→        );
+   712→
+   713→      case 4:
+   714→        return (
+   715→          <div className="space-y-4">
+   716→            <div className="flex items-center gap-2 mb-2">
+   717→              <Search className="h-5 w-5 text-primary" />
+   718→              <h3 className="font-semibold">Step 4: Phase II Investigation</h3>
+   719→            </div>
+   720→            <p className="text-sm text-muted-foreground">Full-scale investigation beyond the laboratory — covers manufacturing, equipment, materials, and personnel.</p>
+   721→
+   722→            {(wizardData.phase1Conclusion === 'Assignable Cause Found') && (
+   723→              <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-md p-3 flex items-start gap-2">
+   724→                <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+   725→                <div className="text-sm text-blue-700 dark:text-blue-400">
+   726→                  <p>Phase II is optional when an assignable cause was found in Phase I. You may still proceed to document additional investigation if needed.</p>
+   727→                </div>
+   728→              </div>
+   729→            )}
+   730→
+   731→            <div className="grid gap-2">
+   732→              <Label>Extended Investigation Description</Label>
+   733→              <Textarea value={wizardData.extendedInvestigation} onChange={(e) => updateWizard('extendedInvestigation', e.target.value)} placeholder="Describe the extended full-scale investigation performed..." rows={4} />
+   734→            </div>
+   735→
+   736→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   737→              <div className="grid gap-2">
+   738→                <Label>Root Cause Analysis Method</Label>
+   739→                <Select value={wizardData.rootCauseMethod} onValueChange={(v) => updateWizard('rootCauseMethod', v)}>
+   740→                  <SelectTrigger><SelectValue placeholder="Select RCA method..." /></SelectTrigger>
+   741→                  <SelectContent>
+   742→                    <SelectItem value="5 Whys">5 Whys</SelectItem>
+   743→                    <SelectItem value="Fishbone">Fishbone (Ishikawa)</SelectItem>
+   744→                    <SelectItem value="FMEA">FMEA</SelectItem>
+   745→                    <SelectItem value="Ishikawa">Ishikawa Diagram</SelectItem>
+   746→                    <SelectItem value="Other">Other</SelectItem>
+   747→                  </SelectContent>
+   748→                </Select>
+   749→              </div>
+   750→              <div className="grid gap-2">
+   751→                <Label>Phase II Conclusion *</Label>
+   752→                <Select value={wizardData.phase2Conclusion} onValueChange={(v) => updateWizard('phase2Conclusion', v)}>
+   753→                  <SelectTrigger><SelectValue placeholder="Select Phase II conclusion..." /></SelectTrigger>
+   754→                  <SelectContent>
+   755→                    <SelectItem value="Confirmed OOS">Confirmed OOS</SelectItem>
+   756→                    <SelectItem value="Invalidated">Invalidated</SelectItem>
+   757→                    <SelectItem value="Error Found">Error Found</SelectItem>
+   758→                    <SelectItem value="No Error Found">No Error Found</SelectItem>
+   759→                  </SelectContent>
+   760→                </Select>
+   761→              </div>
+   762→            </div>
+   763→
+   764→            <div className="grid gap-2">
+   765→              <Label>Root Cause Statement</Label>
+   766→              <Textarea value={wizardData.rootCauseStatement} onChange={(e) => updateWizard('rootCauseStatement', e.target.value)} placeholder="State the identified root cause..." rows={3} />
+   767→            </div>
+   768→
+   769→            {wizardData.phase2Conclusion === 'Confirmed OOS' && (
+   770→              <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-md p-3 flex items-start gap-2">
+   771→                <XCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+   772→                <div className="text-sm text-red-700 dark:text-red-400">
+   773→                  <p className="font-medium">OOS Confirmed</p>
+   774→                  <p className="mt-1">The original OOS result has been confirmed. Lot disposition and impact assessment must be completed.</p>
+   775→                </div>
+   776→              </div>
+   777→            )}
+   778→            {wizardData.phase2Conclusion === 'Invalidated' && (
+   779→              <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-md p-3 flex items-start gap-2">
+   780→                <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+   781→                <div className="text-sm text-green-700 dark:text-green-400">
+   782→                  <p className="font-medium">Result Invalidated</p>
+   783→                  <p className="mt-1">The original OOS result has been invalidated. A retest may be performed and the original result should not be reported.</p>
+   784→                </div>
+   785→              </div>
+   786→            )}
+   787→          </div>
+   788→        );
+   789→
+   790→      case 5:
+   791→        return (
+   792→          <div className="space-y-4">
+   793→            <div className="flex items-center gap-2 mb-2">
+   794→              <Scale className="h-5 w-5 text-primary" />
+   795→              <h3 className="font-semibold">Step 5: Disposition &amp; Impact</h3>
+   796→            </div>
+   797→            <p className="text-sm text-muted-foreground">Determine lot disposition and assess impact on product quality.</p>
+   798→
+   799→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   800→              <div className="grid gap-2">
+   801→                <Label>Lot Disposition *</Label>
+   802→                <Select value={wizardData.lotDisposition} onValueChange={(v) => updateWizard('lotDisposition', v)}>
+   803→                  <SelectTrigger><SelectValue placeholder="Select lot disposition..." /></SelectTrigger>
+   804→                  <SelectContent>
+   805→                    <SelectItem value="Reject Lot">Reject Lot</SelectItem>
+   806→                    <SelectItem value="Do Not Reject Lot">Do Not Reject Lot</SelectItem>
+   807→                  </SelectContent>
+   808→                </Select>
+   809→              </div>
+   810→              <div className="grid gap-2">
+   811→                <Label>Disposition Decision *</Label>
+   812→                <Select value={wizardData.dispositionDecision} onValueChange={(v) => updateWizard('dispositionDecision', v)}>
+   813→                  <SelectTrigger><SelectValue placeholder="Select disposition decision..." /></SelectTrigger>
+   814→                  <SelectContent>
+   815→                    <SelectItem value="Use As Is">Use As Is</SelectItem>
+   816→                    <SelectItem value="Rework">Rework</SelectItem>
+   817→                    <SelectItem value="Scrap">Scrap</SelectItem>
+   818→                    <SelectItem value="Return to Supplier">Return to Supplier</SelectItem>
+   819→                  </SelectContent>
+   820→                </Select>
+   821→              </div>
+   822→            </div>
+   823→
+   824→            {/* Lot disposition visual indicator */}
+   825→            {wizardData.lotDisposition && (
+   826→              <div className={cn(
+   827→                'rounded-md p-4 flex items-center gap-3',
+   828→                wizardData.lotDisposition === 'Reject Lot'
+   829→                  ? 'bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800'
+   830→                  : 'bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800'
+   831→              )}>
+   832→                {wizardData.lotDisposition === 'Reject Lot' ? (
+   833→                  <>
+   834→                    <Ban className="h-6 w-6 text-red-500" />
+   835→                    <div>
+   836→                      <span className="font-medium text-red-700 dark:text-red-400">LOT REJECTED</span>
+   837→                      <p className="text-xs text-red-600 dark:text-red-400 mt-1">This lot must be rejected based on the investigation findings.</p>
+   838→                    </div>
+   839→                  </>
+   840→                ) : (
+   841→                  <>
+   842→                    <CheckCircle2 className="h-6 w-6 text-green-500" />
+   843→                    <div>
+   844→                      <span className="font-medium text-green-700 dark:text-green-400">LOT NOT REJECTED</span>
+   845→                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">The lot disposition decision is to not reject this lot.</p>
+   846→                    </div>
+   847→                  </>
+   848→                )}
+   849→              </div>
+   850→            )}
+   851→
+   852→            <div className="grid gap-2">
+   853→              <Label>Disposition Justification</Label>
+   854→              <Textarea value={wizardData.dispositionJustification} onChange={(e) => updateWizard('dispositionJustification', e.target.value)} placeholder="Justify the disposition decision..." rows={3} />
+   855→            </div>
+   856→
+   857→            <div className="flex items-center gap-2">
+   858→              <Checkbox
+   859→                id="wiz-concession"
+   860→                checked={wizardData.concession}
+   861→                onCheckedChange={(checked) => updateWizard('concession', checked === true)}
+   862→              />
+   863→              <Label htmlFor="wiz-concession" className="text-sm cursor-pointer">Concession Granted</Label>
+   864→            </div>
+   865→
+   866→            {wizardData.dispositionDecision === 'Rework' && (
+   867→              <div className="grid gap-2">
+   868→                <Label>Rework Instructions</Label>
+   869→                <Textarea value={wizardData.reworkInstructions} onChange={(e) => updateWizard('reworkInstructions', e.target.value)} placeholder="Provide detailed rework instructions..." rows={3} />
+   870→              </div>
+   871→            )}
+   872→
+   873→            {wizardData.concession && (
+   874→              <div className="grid gap-2">
+   875→                <Label>Concession Authorized By</Label>
+   876→                <Input value={wizardData.concessionAuthorizedBy} onChange={(e) => updateWizard('concessionAuthorizedBy', e.target.value)} placeholder="Name of authorizing person" />
+   877→              </div>
+   878→            )}
+   879→
+   880→            {wizardData.dispositionDecision === 'Scrap' && (
+   881→              <div className="grid gap-2">
+   882→                <Label>Scrap Documentation Reference</Label>
+   883→                <Input value={wizardData.scrapDocRef} onChange={(e) => updateWizard('scrapDocRef', e.target.value)} placeholder="e.g., SCR-2024-001" />
+   884→              </div>
+   885→            )}
+   886→          </div>
+   887→        );
+   888→
+   889→      case 6:
+   890→        return (
+   891→          <div className="space-y-4">
+   892→            <div className="flex items-center gap-2 mb-2">
+   893→              <Wrench className="h-5 w-5 text-primary" />
+   894→              <h3 className="font-semibold">Step 6: Actions &amp; CAPA</h3>
+   895→            </div>
+   896→            <p className="text-sm text-muted-foreground">Define containment actions, corrective actions, and link to CAPA records.</p>
+   897→
+   898→            {/* Containment Actions Table */}
+   899→            <div className="space-y-2">
+   900→              <div className="flex items-center justify-between">
+   901→                <Label className="font-medium">Containment Actions</Label>
+   902→                <Button variant="outline" size="sm" onClick={addContainmentAction}>
+   903→                  <Plus className="h-3 w-3 mr-1" />Add Action
+   904→                </Button>
+   905→              </div>
+   906→              {wizardData.containmentActions.length > 0 ? (
+   907→                <div className="border rounded-lg overflow-hidden">
+   908→                  <Table>
+   909→                    <TableHeader>
+   910→                      <TableRow>
+   911→                        <TableHead className="w-[40%]">Action</TableHead>
+   912→                        <TableHead className="w-[25%]">Responsible</TableHead>
+   913→                        <TableHead className="w-[25%]">Completion Date</TableHead>
+   914→                        <TableHead className="w-[10%]"></TableHead>
+   915→                      </TableRow>
+   916→                    </TableHeader>
+   917→                    <TableBody>
+   918→                      {wizardData.containmentActions.map((ca) => (
+   919→                        <TableRow key={ca.id}>
+   920→                          <TableCell>
+   921→                            <Input value={ca.action} onChange={(e) => updateContainmentAction(ca.id, 'action', e.target.value)} placeholder="Action description" className="h-8 text-xs" />
+   922→                          </TableCell>
+   923→                          <TableCell>
+   924→                            <Input value={ca.responsible} onChange={(e) => updateContainmentAction(ca.id, 'responsible', e.target.value)} placeholder="Name" className="h-8 text-xs" />
+   925→                          </TableCell>
+   926→                          <TableCell>
+   927→                            <Input type="date" value={ca.completionDate} onChange={(e) => updateContainmentAction(ca.id, 'completionDate', e.target.value)} className="h-8 text-xs" />
+   928→                          </TableCell>
+   929→                          <TableCell>
+   930→                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeContainmentAction(ca.id)}>
+   931→                              <Trash2 className="h-3 w-3 text-red-500" />
+   932→                            </Button>
+   933→                          </TableCell>
+   934→                        </TableRow>
+   935→                      ))}
+   936→                    </TableBody>
+   937→                  </Table>
+   938→                </div>
+   939→              ) : (
+   940→                <div className="text-sm text-muted-foreground text-center py-4 border rounded-lg border-dashed">
+   941→                  No containment actions added. Click &quot;Add Action&quot; to add one.
+   942→                </div>
+   943→              )}
+   944→            </div>
+   945→
+   946→            <div className="grid gap-2">
+   947→              <Label>Corrective Action Summary</Label>
+   948→              <Textarea value={wizardData.correctiveActionSummary} onChange={(e) => updateWizard('correctiveActionSummary', e.target.value)} placeholder="Summarize the corrective actions to be taken..." rows={3} />
+   949→            </div>
+   950→
+   951→            <div className="grid gap-2">
+   952→              <Label>Linked CAPA Reference</Label>
+   953→              <Select value={wizardData.linkedCapaRef} onValueChange={(v) => updateWizard('linkedCapaRef', v)}>
+   954→                <SelectTrigger><SelectValue placeholder="Select existing CAPA..." /></SelectTrigger>
+   955→                <SelectContent>
+   956→                  <SelectItem value="none">None</SelectItem>
+   957→                  {capas.map(c => (
+   958→                    <SelectItem key={c.id} value={c.id}>{c.capaNumber} — {c.title}</SelectItem>
+   959→                  ))}
+   960→                </SelectContent>
+   961→              </Select>
+   962→            </div>
+   963→
+   964→            <div className="grid gap-2">
+   965→              <Label>Lessons Learned</Label>
+   966→              <Textarea value={wizardData.lessonsLearned} onChange={(e) => updateWizard('lessonsLearned', e.target.value)} placeholder="Document key lessons learned from this investigation..." rows={3} />
+   967→            </div>
+   968→          </div>
+   969→        );
+   970→
+   971→      case 7:
+   972→        return (
+   973→          <div className="space-y-4">
+   974→            <div className="flex items-center gap-2 mb-2">
+   975→              <CheckCircle2 className="h-5 w-5 text-primary" />
+   976→              <h3 className="font-semibold">Step 7: Review &amp; Submit</h3>
+   977→            </div>
+   978→            <p className="text-sm text-muted-foreground">Review all entered data before submitting the investigation.</p>
+   979→
+   980→            {/* Summary Sections */}
+   981→            <div className="border rounded-lg p-4 space-y-3">
+   982→              <h4 className="font-semibold text-sm flex items-center gap-2"><FileText className="h-4 w-4 text-primary" />Identification</h4>
+   983→              <div className="grid grid-cols-2 gap-2 text-sm">
+   984→                <div><span className="text-muted-foreground">Title:</span> <span className="font-medium ml-1">{wizardData.title || '-'}</span></div>
+   985→                <div><span className="text-muted-foreground">Type:</span> <Badge className={cn('ml-1 text-xs', wizardData.type === 'OOS' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400')} variant="secondary">{wizardData.type}</Badge></div>
+   986→                <div><span className="text-muted-foreground">Product Code:</span> <span className="font-medium ml-1 font-mono text-xs">{wizardData.productCode || '-'}</span></div>
+   987→                <div><span className="text-muted-foreground">Lot Number:</span> <span className="font-medium ml-1 font-mono text-xs">{wizardData.lotNumber || '-'}</span></div>
+   988→                <div><span className="text-muted-foreground">Sample ID:</span> <span className="font-medium ml-1 font-mono text-xs">{wizardData.sampleId || '-'}</span></div>
+   989→                <div><span className="text-muted-foreground">Analytical Method:</span> <span className="font-medium ml-1 text-xs">{wizardData.analyticalMethod || '-'}</span></div>
+   990→                <div><span className="text-muted-foreground">Specification:</span> <span className="font-medium ml-1 font-mono text-xs">{wizardData.specification || '-'}</span></div>
+   991→                <div><span className="text-muted-foreground">Spec Reference:</span> <span className="font-medium ml-1 text-xs">{wizardData.specReference || '-'}</span></div>
+   992→              </div>
+   993→            </div>
+   994→
+   995→            <div className="border rounded-lg p-4 space-y-3">
+   996→              <h4 className="font-semibold text-sm flex items-center gap-2"><Beaker className="h-4 w-4 text-primary" />Analytical Data</h4>
+   997→              <div className="grid grid-cols-2 gap-2 text-sm">
+   998→                <div><span className="text-muted-foreground">Spec Limit:</span> <span className="font-mono font-medium ml-1">{wizardData.specLimit || '-'}</span></div>
+   999→                <div><span className="text-muted-foreground">Measured Value:</span> <span className={cn('font-bold ml-1', isWizardMeasuredOutOfSpec() === true ? 'text-red-600 dark:text-red-400' : '')}>{wizardData.measuredValue || '-'} {wizardData.unit}</span></div>
+  1000→                <div><span className="text-muted-foreground">Detection Source:</span> <span className="font-medium ml-1">{wizardData.detectionSource || '-'}</span></div>
+  1001→              </div>
+  1002→              {isWizardMeasuredOutOfSpec() === true && (
+  1003→                <div className="flex items-center gap-1">
+  1004→                  <AlertTriangle className="h-4 w-4 text-red-500" />
+  1005→                  <span className="text-sm font-medium text-red-600 dark:text-red-400">OUT OF SPECIFICATION</span>
+  1006→                </div>
+  1007→              )}
+  1008→            </div>
+  1009→
+  1010→            <div className="border rounded-lg p-4 space-y-3">
+  1011→              <h4 className="font-semibold text-sm flex items-center gap-2"><ClipboardCheck className="h-4 w-4 text-primary" />Phase I Investigation</h4>
+  1012→              <div className="grid grid-cols-2 gap-2 text-sm">
+  1013→                <div><span className="text-muted-foreground">Conclusion:</span> <Badge className={cn('ml-1 text-xs', phase1ConclusionColors[wizardData.phase1Conclusion] || '')} variant="secondary">{wizardData.phase1Conclusion || 'Pending'}</Badge></div>
+  1014→              </div>
+  1015→              <div className="text-sm"><span className="text-muted-foreground">Lab Investigation:</span> <span className="ml-1">{wizardData.labInvestigation || '-'}</span></div>
+  1016→              <div className="text-sm"><span className="text-muted-foreground">Assignable Cause:</span> <span className="ml-1">{wizardData.assignableCauseDesc || '-'}</span></div>
+  1017→              <div className="flex flex-wrap gap-2">
+  1018→                {wizardData.analystError && <Badge variant="outline" className="text-xs">Analyst Error</Badge>}
+  1019→                {wizardData.calculationError && <Badge variant="outline" className="text-xs">Calculation Error</Badge>}
+  1020→                {wizardData.instrumentMalfunction && <Badge variant="outline" className="text-xs">Instrument Malfunction</Badge>}
+  1021→                {wizardData.samplePrepError && <Badge variant="outline" className="text-xs">Sample Prep Error</Badge>}
+  1022→                {wizardData.environmentalConditions && <Badge variant="outline" className="text-xs">Environmental Conditions</Badge>}
+  1023→                {wizardData.methodDeviation && <Badge variant="outline" className="text-xs">Method Deviation</Badge>}
+  1024→              </div>
+  1025→            </div>
+  1026→
+  1027→            {(wizardData.phase2Conclusion || wizardData.phase1Conclusion === 'Requires Phase II' || wizardData.phase1Conclusion === 'No Assignable Cause Found') && (
+  1028→              <div className="border rounded-lg p-4 space-y-3">
+  1029→                <h4 className="font-semibold text-sm flex items-center gap-2"><Search className="h-4 w-4 text-primary" />Phase II Investigation</h4>
+  1030→                <div className="grid grid-cols-2 gap-2 text-sm">
+  1031→                  <div><span className="text-muted-foreground">Conclusion:</span> <Badge className={cn('ml-1 text-xs', phase2ConclusionColors[wizardData.phase2Conclusion] || '')} variant="secondary">{wizardData.phase2Conclusion || 'Pending'}</Badge></div>
+  1032→                  <div><span className="text-muted-foreground">RCA Method:</span> <span className="font-medium ml-1">{wizardData.rootCauseMethod || '-'}</span></div>
+  1033→                </div>
+  1034→                <div className="text-sm"><span className="text-muted-foreground">Root Cause:</span> <span className="ml-1">{wizardData.rootCauseStatement || '-'}</span></div>
+  1035→              </div>
+  1036→            )}
+  1037→
+  1038→            <div className="border rounded-lg p-4 space-y-3">
+  1039→              <h4 className="font-semibold text-sm flex items-center gap-2"><Scale className="h-4 w-4 text-primary" />Disposition &amp; Impact</h4>
+  1040→              <div className="grid grid-cols-2 gap-2 text-sm">
+  1041→                <div><span className="text-muted-foreground">Lot Disposition:</span> <Badge className={cn('ml-1 text-xs', wizardData.lotDisposition === 'Reject Lot' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400')} variant="secondary">{wizardData.lotDisposition || '-'}</Badge></div>
+  1042→                <div><span className="text-muted-foreground">Decision:</span> <Badge className={cn('ml-1 text-xs', dispositionColors[wizardData.dispositionDecision] || '')} variant="secondary">{wizardData.dispositionDecision || '-'}</Badge></div>
+  1043→                <div><span className="text-muted-foreground">Concession:</span> <span className="font-medium ml-1">{wizardData.concession ? 'Yes' : 'No'}</span></div>
+  1044→              </div>
+  1045→              {wizardData.dispositionJustification && <div className="text-sm"><span className="text-muted-foreground">Justification:</span> <span className="ml-1">{wizardData.dispositionJustification}</span></div>}
+  1046→            </div>
+  1047→
+  1048→            {(wizardData.containmentActions.length > 0 || wizardData.correctiveActionSummary || wizardData.lessonsLearned) && (
+  1049→              <div className="border rounded-lg p-4 space-y-3">
+  1050→                <h4 className="font-semibold text-sm flex items-center gap-2"><Wrench className="h-4 w-4 text-primary" />Actions &amp; CAPA</h4>
+  1051→                {wizardData.containmentActions.length > 0 && (
+  1052→                  <div className="space-y-1">
+  1053→                    <span className="text-xs font-medium text-muted-foreground">Containment Actions:</span>
+  1054→                    {wizardData.containmentActions.map((ca) => (
+  1055→                      <div key={ca.id} className="text-sm ml-2 flex items-center gap-2">
+  1056→                        <ChevronRight className="h-3 w-3 text-muted-foreground" />
+  1057→                        <span>{ca.action || 'Unnamed'} — {ca.responsible || 'Unassigned'} ({ca.completionDate || 'No date'})</span>
+  1058→                      </div>
+  1059→                    ))}
+  1060→                  </div>
+  1061→                )}
+  1062→                {wizardData.correctiveActionSummary && <div className="text-sm"><span className="text-muted-foreground">Corrective Action:</span> <span className="ml-1">{wizardData.correctiveActionSummary}</span></div>}
+  1063→                {wizardData.linkedCapaRef && wizardData.linkedCapaRef !== 'none' && <div className="text-sm"><span className="text-muted-foreground">Linked CAPA:</span> <span className="ml-1 font-mono text-xs">{capas.find(c => c.id === wizardData.linkedCapaRef)?.capaNumber || wizardData.linkedCapaRef}</span></div>}
+  1064→                {wizardData.lessonsLearned && <div className="text-sm"><span className="text-muted-foreground">Lessons Learned:</span> <span className="ml-1">{wizardData.lessonsLearned}</span></div>}
+  1065→              </div>
+  1066→            )}
+  1067→
+  1068→            {/* Regulatory Compliance Note */}
+  1069→            <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-start gap-3">
+  1070→              <BookOpen className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+  1071→              <div className="text-sm text-blue-700 dark:text-blue-400">
+  1072→                <p className="font-medium">Regulatory Compliance Verification</p>
+  1073→                <p className="mt-1">This investigation has been conducted in accordance with <strong>ICH Q2(R1)</strong> (Validation of Analytical Procedures) and <strong>FDA OOS Guidance</strong> (Investigating Out-of-Specification Test Results for Pharmaceutical Production). All phases follow the prescribed laboratory and full-scale investigation workflow.</p>
+  1074→              </div>
+  1075→            </div>
+  1076→          </div>
+  1077→        );
+  1078→
+  1079→      default:
+  1080→        return null;
+  1081→    }
+  1082→  };
+  1083→
+  1084→  // ─── Render: Enhanced Detail Dialog ────────────────────────────────────────
+  1085→
+  1086→  const renderDetailDialog = () => {
+  1087→    if (!selectedNcr) return null;
+  1088→
+  1089→    // Compute investigation workflow phase
+  1090→    const getWorkflowPhase = () => {
+  1091→      if (selectedNcr.status === 'Open') return 1;
+  1092→      if (selectedNcr.phase1Conclusion && selectedNcr.phase1Conclusion !== 'Pending' && !selectedNcr.phase2Required) return 3;
+  1093→      if (selectedNcr.phase1Conclusion && selectedNcr.phase1Conclusion !== 'Pending' && selectedNcr.phase2Required) {
+  1094→        if (selectedNcr.phase2Conclusion && selectedNcr.phase2Conclusion !== 'Pending') return 4;
+  1095→        return 3;
+  1096→      }
+  1097→      return 2;
+  1098→    };
+  1099→    const workflowPhase = getWorkflowPhase();
+  1100→
+  1101→    return (
+  1102→      <div className="space-y-5">
+  1103→        {/* Status & Type Badges */}
+  1104→        <div className="flex flex-wrap gap-2">
+  1105→          <Badge className={cn(ncrStatusColors[selectedNcr.status] || '')} variant="secondary">{selectedNcr.status}</Badge>
+  1106→          <Badge className={cn(
+  1107→            selectedNcr.type === 'OOS'
+  1108→              ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+  1109→              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+  1110→          )} variant="secondary">{selectedNcr.type}</Badge>
+  1111→          {selectedNcr.severity && <Badge variant="outline">{selectedNcr.severity}</Badge>}
+  1112→          {selectedNcr.rejectLot && (
+  1113→            <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" variant="secondary">
+  1114→              <Ban className="h-3 w-3 mr-1" />Reject Lot
+  1115→            </Badge>
+  1116→          )}
+  1117→        </div>
+  1118→
+  1119→        {/* Spec Comparison Visualization */}
+  1120→        <div className="border rounded-lg p-4 space-y-3">
+  1121→          <h4 className="font-semibold text-sm flex items-center gap-2">
+  1122→            <Beaker className="h-4 w-4 text-primary" />
+  1123→            Specification Comparison
+  1124→          </h4>
+  1125→          <div className="grid grid-cols-2 gap-4">
+  1126→            <div className="bg-muted/30 rounded-md p-3">
+  1127→              <span className="text-xs text-muted-foreground block mb-1">Analytical Method</span>
+  1128→              <span className="font-medium text-sm">{selectedNcr.analyticalMethod || '-'}</span>
+  1129→            </div>
+  1130→            <div className="bg-muted/30 rounded-md p-3">
+  1131→              <span className="text-xs text-muted-foreground block mb-1">Specification Limit</span>
+  1132→              <span className="font-mono text-sm font-medium">{selectedNcr.specLimit || '-'}</span>
+  1133→            </div>
+  1134→          </div>
+  1135→          <div className={cn(
+  1136→            'rounded-md p-4 border-2',
+  1137→            isMeasuredValueOutOfSpec(selectedNcr)
+  1138→              ? 'bg-red-50 dark:bg-red-900/10 border-red-300 dark:border-red-800'
+  1139→              : 'bg-green-50 dark:bg-green-900/10 border-green-300 dark:border-green-800'
+  1140→          )}>
+  1141→            <div className="flex items-center justify-between">
+  1142→              <div>
+  1143→                <span className="text-xs text-muted-foreground block mb-1">Measured Value</span>
+  1144→                <span className={cn(
+  1145→                  'text-2xl font-bold',
+  1146→                  isMeasuredValueOutOfSpec(selectedNcr) ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+  1147→                )}>
+  1148→                  {selectedNcr.measuredValue !== undefined ? `${selectedNcr.measuredValue} ${selectedNcr.measuredUnit || ''}` : '-'}
+  1149→                </span>
+  1150→              </div>
+  1151→              <div className="text-right">
+  1152→                <span className="text-xs text-muted-foreground block mb-1">Specification</span>
+  1153→                <span className="text-sm font-mono font-medium">{selectedNcr.specLimit || '-'}</span>
+  1154→              </div>
+  1155→              {isMeasuredValueOutOfSpec(selectedNcr) ? (
+  1156→                <div className="flex items-center gap-1 ml-4">
+  1157→                  <XCircle className="h-5 w-5 text-red-500" />
+  1158→                  <span className="text-sm font-bold text-red-600 dark:text-red-400">OUT OF SPEC</span>
+  1159→                </div>
+  1160→              ) : (
+  1161→                <div className="flex items-center gap-1 ml-4">
+  1162→                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+  1163→                  <span className="text-sm font-medium text-green-600 dark:text-green-400">IN SPEC</span>
+  1164→                </div>
+  1165→              )}
+  1166→            </div>
+  1167→          </div>
+  1168→        </div>
+  1169→
+  1170→        {/* Investigation Workflow Progress Bar */}
+  1171→        <div className="border rounded-lg p-4 space-y-3">
+  1172→          <h4 className="font-semibold text-sm flex items-center gap-2">
+  1173→            <Activity className="h-4 w-4 text-primary" />
+  1174→            Investigation Workflow
+  1175→          </h4>
+  1176→          <div className="flex items-center gap-1">
+  1177→            {[
+  1178→              { label: 'Open', phase: 1 },
+  1179→              { label: 'Phase I', phase: 2 },
+  1180→              { label: 'Phase I Complete', phase: 3 },
+  1181→              { label: 'Phase II', phase: 4 },
+  1182→              { label: 'Disposition', phase: 5 },
+  1183→            ].map((step, i, arr) => (
+  1184→              <React.Fragment key={step.label}>
+  1185→                <div className={cn(
+  1186→                  'px-2 py-1.5 rounded-md text-xs font-medium whitespace-nowrap flex-1 text-center',
+  1187→                  workflowPhase >= step.phase
+  1188→                    ? step.label === 'Phase II' && selectedNcr.phase2Conclusion === 'Confirmed OOS'
+  1189→                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+  1190→                      : step.label === 'Disposition' && selectedNcr.rejectLot
+  1191→                        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+  1192→                        : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+  1193→                    : 'bg-muted text-muted-foreground'
+  1194→                )}>
+  1195→                  {step.label}
+  1196→                </div>
+  1197→                {i < arr.length - 1 && <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
+  1198→              </React.Fragment>
+  1199→            ))}
+  1200→          </div>
+  1201→          <div className="w-full bg-muted rounded-full h-2 mt-1">
+  1202→            <div
+  1203→              className={cn(
+  1204→                'h-2 rounded-full transition-all',
+  1205→                workflowPhase >= 5 ? 'bg-green-500' : workflowPhase >= 4 ? 'bg-red-500' : 'bg-primary'
+  1206→              )}
+  1207→              style={{ width: `${Math.min((workflowPhase / 5) * 100, 100)}%` }}
+  1208→            />
+  1209→          </div>
+  1210→        </div>
+  1211→
+  1212→        {/* Basic Info */}
+  1213→        <div className="border rounded-lg p-4 space-y-3">
+  1214→          <h4 className="font-semibold text-sm flex items-center gap-2">
+  1215→            <ClipboardCheck className="h-4 w-4 text-primary" />
+  1216→            Basic Information
+  1217→          </h4>
+  1218→          <div className="grid grid-cols-2 gap-3 text-sm">
+  1219→            {selectedNcr.templateId && (() => {
+  1220→              const tpl = store.formTemplates.find(t => t.id === selectedNcr.templateId);
+  1221→              return tpl ? (
+  1222→                <div className="col-span-2">
+  1223→                  <span className="text-muted-foreground">Template:</span>{' '}
+  1224→                  <Badge variant="outline" className="text-xs">{tpl.title} (v{selectedNcr.templateVersion || tpl.version})</Badge>
+  1225→                </div>
+  1226→              ) : null;
+  1227→            })()}
+  1228→            <div><span className="text-muted-foreground">NCR Number:</span> <span className="font-medium ml-1 font-mono text-xs">{selectedNcr.ncrNumber}</span></div>
+  1229→            <div><span className="text-muted-foreground">Type:</span> <span className="font-medium ml-1">{selectedNcr.type}</span></div>
+  1230→            <div><span className="text-muted-foreground">Lot Number:</span> <span className="font-medium ml-1 font-mono text-xs">{selectedNcr.lotNumber || '-'}</span></div>
+  1231→            <div><span className="text-muted-foreground">Status:</span> <Badge className={cn('text-xs ml-1', ncrStatusColors[selectedNcr.status])} variant="secondary">{selectedNcr.status}</Badge></div>
+  1232→            <div><span className="text-muted-foreground">Assigned To:</span> <span className="font-medium ml-1">{getUserName(selectedNcr.assignedTo)}</span></div>
+  1233→            <div><span className="text-muted-foreground">Created:</span> <span className="font-medium ml-1">{formatDate(selectedNcr.createdDate)}</span></div>
+  1234→          </div>
+  1235→          {selectedNcr.description && (
+  1236→            <div>
+  1237→              <h5 className="font-medium text-sm mb-1">Description</h5>
+  1238→              <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md">{selectedNcr.description}</p>
+  1239→            </div>
+  1240→          )}
+  1241→        </div>
+  1242→
+  1243→        {/* Phase I Investigation */}
+  1244→        <div className="border rounded-lg p-4 space-y-3">
+  1245→          <h4 className="font-semibold text-sm flex items-center gap-2">
+  1246→            <span className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded text-xs font-medium">Phase 1</span>
+  1247→            Laboratory Investigation
+  1248→          </h4>
+  1249→
+  1250→          {/* Checklist Results */}
+  1251→          <div className="bg-muted/30 rounded-md p-3 space-y-2">
+  1252→            <h5 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Investigation Checklist</h5>
+  1253→            <div className="grid grid-cols-2 gap-2">
+  1254→              {[
+  1255→                { key: 'analystError' as const, label: 'Analyst Error?' },
+  1256→                { key: 'calculationError' as const, label: 'Calculation Error?' },
+  1257→                { key: 'instrumentMalfunction' as const, label: 'Instrument Malfunction?' },
+  1258→                { key: 'samplePrepError' as const, label: 'Sample Preparation Error?' },
+  1259→                { key: 'environmentalConditions' as const, label: 'Environmental Conditions?' },
+  1260→                { key: 'methodDeviation' as const, label: 'Method Deviation?' },
+  1261→              ].map(item => (
+  1262→                <label key={item.key} className="flex items-center gap-2 text-sm cursor-pointer">
+  1263→                  <Checkbox
+  1264→                    checked={labChecklist[item.key]}
+  1265→                    onCheckedChange={(checked) => setLabChecklist({ ...labChecklist, [item.key]: checked === true })}
+  1266→                    disabled={!!(selectedNcr.phase1Conclusion && selectedNcr.phase1Conclusion !== 'Pending')}
+  1267→                  />
+  1268→                  {item.label}
+  1269→                </label>
+  1270→              ))}
+  1271→            </div>
+  1272→          </div>
+  1273→
+  1274→          <Separator />
+  1275→          <div className="flex items-center justify-between flex-wrap gap-2">
+  1276→            <div className="flex items-center gap-2">
+  1277→              <span className="text-sm font-medium">Phase 1 Conclusion:</span>
+  1278→              {selectedNcr.phase1Conclusion && selectedNcr.phase1Conclusion !== 'Pending' ? (
+  1279→                <Badge className={cn(phase1ConclusionColors[selectedNcr.phase1Conclusion] || '')} variant="secondary">
+  1280→                  {selectedNcr.phase1Conclusion}
+  1281→                </Badge>
+  1282→              ) : (
+  1283→                <Badge variant="outline" className="text-muted-foreground">Pending</Badge>
+  1284→              )}
+  1285→            </div>
+  1286→            {hasPermission('ncr.update') && (!selectedNcr.phase1Conclusion || selectedNcr.phase1Conclusion === 'Pending') && (
+  1287→              <div className="flex items-center gap-2">
+  1288→                <Select value={phase1Conclusion} onValueChange={setPhase1Conclusion}>
+  1289→                  <SelectTrigger className="w-[200px] h-8 text-xs"><SelectValue placeholder="Select conclusion" /></SelectTrigger>
+  1290→                  <SelectContent>
+  1291→                    <SelectItem value="Error Found">Error Found</SelectItem>
+  1292→                    <SelectItem value="No Error Found">No Error Found</SelectItem>
+  1293→                  </SelectContent>
+  1294→                </Select>
+  1295→                <Button size="sm" onClick={handleAdvancePhase1} disabled={!phase1Conclusion}>
+  1296→                  Advance <ArrowRight className="h-3 w-3 ml-1" />
+  1297→                </Button>
+  1298→              </div>
+  1299→            )}
+  1300→          </div>
+  1301→          {selectedNcr.phase1Conclusion === 'Error Found' && (
+  1302→            <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-md p-2 text-xs text-amber-700 dark:text-amber-400">
+  1303→              An error was found during laboratory investigation. The result may be invalidated. Phase 2 investigation is required to confirm root cause.
+  1304→            </div>
+  1305→          )}
+  1306→          {selectedNcr.phase1Conclusion === 'No Error Found' && (
+  1307→            <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-md p-2 text-xs text-blue-700 dark:text-blue-400">
+  1308→              No error found in laboratory investigation. The OOS result cannot be invalidated — Phase 2 full-scale investigation is required.
+  1309→            </div>
+  1310→          )}
+  1311→        </div>
+  1312→
+  1313→        {/* Phase II Investigation */}
+  1314→        {selectedNcr.phase2Required && (
+  1315→          <div className="border rounded-lg p-4 space-y-3">
+  1316→            <h4 className="font-semibold text-sm flex items-center gap-2">
+  1317→              <span className="bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-2 py-0.5 rounded text-xs font-medium">Phase 2</span>
+  1318→              Full-Scale Investigation
+  1319→            </h4>
+  1320→            {(!selectedNcr.phase1Conclusion || selectedNcr.phase1Conclusion === 'Pending') ? (
+  1321→              <div className="bg-muted/30 rounded-md p-3 text-sm text-muted-foreground">
+  1322→                Phase 2 investigation requires Phase 1 to be concluded first.
+  1323→              </div>
+  1324→            ) : (
+  1325→              <>
+  1326→                <div className="bg-muted/30 rounded-md p-3 space-y-1 text-sm">
+  1327→                  <p>Phase 2 is required because <strong>{selectedNcr.phase1Conclusion === 'No Error Found' ? 'no assignable error was found in Phase 1' : 'an error was found but the result must be confirmed through expanded investigation'}</strong>.</p>
+  1328→                </div>
+  1329→                <Separator />
+  1330→                <div className="flex items-center justify-between flex-wrap gap-2">
+  1331→                  <div className="flex items-center gap-2">
+  1332→                    <span className="text-sm font-medium">Phase 2 Conclusion:</span>
+  1333→                    {selectedNcr.phase2Conclusion && selectedNcr.phase2Conclusion !== 'Pending' ? (
+  1334→                      <Badge className={cn(phase2ConclusionColors[selectedNcr.phase2Conclusion] || '')} variant="secondary">
+  1335→                        {selectedNcr.phase2Conclusion}
+  1336→                      </Badge>
+  1337→                    ) : (
+  1338→                      <Badge variant="outline" className="text-muted-foreground">Pending</Badge>
+  1339→                    )}
+  1340→                  </div>
+  1341→                  {hasPermission('ncr.update') && (!selectedNcr.phase2Conclusion || selectedNcr.phase2Conclusion === 'Pending') && (
+  1342→                    <div className="flex items-center gap-2">
+  1343→                      <Select value={phase2Conclusion} onValueChange={setPhase2Conclusion}>
+  1344→                        <SelectTrigger className="w-[180px] h-8 text-xs"><SelectValue placeholder="Select conclusion" /></SelectTrigger>
+  1345→                        <SelectContent>
+  1346→                          <SelectItem value="Confirmed OOS">Confirmed OOS</SelectItem>
+  1347→                          <SelectItem value="Invalidated">Invalidated</SelectItem>
+  1348→                        </SelectContent>
+  1349→                      </Select>
+  1350→                      <Button size="sm" onClick={handleAdvancePhase2} disabled={!phase2Conclusion}>
+  1351→                        Conclude <ArrowRight className="h-3 w-3 ml-1" />
+  1352→                      </Button>
+  1353→                    </div>
+  1354→                  )}
+  1355→                </div>
+  1356→
+  1357→                {/* Reject Lot Decision */}
+  1358→                {(selectedNcr.phase2Conclusion === 'Confirmed OOS' || (!selectedNcr.phase2Conclusion || selectedNcr.phase2Conclusion === 'Pending')) && (
+  1359→                  <div className="flex items-center justify-between flex-wrap gap-2">
+  1360→                    <div className="flex items-center gap-2">
+  1361→                      <span className="text-sm font-medium">Reject Lot Decision:</span>
+  1362→                      {selectedNcr.phase2Conclusion && selectedNcr.phase2Conclusion !== 'Pending' ? (
+  1363→                        selectedNcr.rejectLot ? (
+  1364→                          <Badge className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" variant="secondary">
+  1365→                            <Ban className="h-3 w-3 mr-1" />Yes — Reject Lot
+  1366→                          </Badge>
+  1367→                        ) : (
+  1368→                          <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" variant="secondary">
+  1369→                            <CheckCircle2 className="h-3 w-3 mr-1" />No — Do Not Reject
+  1370→                          </Badge>
+  1371→                        )
+  1372→                      ) : (
+  1373→                        <Badge variant="outline" className="text-muted-foreground">Pending</Badge>
+  1374→                      )}
+  1375→                    </div>
+  1376→                    {hasPermission('ncr.update') && (!selectedNcr.phase2Conclusion || selectedNcr.phase2Conclusion === 'Pending') && (
+  1377→                      <Button
+  1378→                        size="sm"
+  1379→                        variant={rejectLotDecision ? 'destructive' : 'outline'}
+  1380→                        onClick={() => setRejectLotDecision(!rejectLotDecision)}
+  1381→                      >
+  1382→                        {rejectLotDecision ? 'Reject Lot' : 'Do Not Reject Lot'}
+  1383→                      </Button>
+  1384→                    )}
+  1385→                  </div>
+  1386→                )}
+  1387→              </>
+  1388→            )}
+  1389→          </div>
+  1390→        )}
+  1391→
+  1392→        {/* Disposition Decision with Visual Indicator */}
+  1393→        {(selectedNcr.status === 'Pending Disposition' || (selectedNcr.disposition && selectedNcr.disposition !== 'Pending')) && (
+  1394→          <div className="border rounded-lg p-4 space-y-3">
+  1395→            <h4 className="font-semibold text-sm flex items-center gap-2">
+  1396→              <Gavel className="h-4 w-4 text-primary" />
+  1397→              Disposition Decision
+  1398→            </h4>
+  1399→            {selectedNcr.disposition && selectedNcr.disposition !== 'Pending' ? (
+  1400→              <div className={cn(
+  1401→                'rounded-md p-4 flex items-center gap-3',
+  1402→                selectedNcr.disposition === 'Scrap' || selectedNcr.disposition === 'Return to Supplier'
+  1403→                  ? 'bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800'
+  1404→                  : selectedNcr.disposition === 'Rework'
+  1405→                    ? 'bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800'
+  1406→                    : 'bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800'
+  1407→              )}>
+  1408→                <Badge className={cn('text-sm', dispositionColors[selectedNcr.disposition] || '')} variant="secondary">
+  1409→                  {selectedNcr.disposition}
+  1410→                </Badge>
+  1411→                <ShieldCheck className="h-4 w-4 text-green-500" />
+  1412→                <span className="text-xs text-muted-foreground">E-signature verified</span>
+  1413→              </div>
+  1414→            ) : (
+  1415→              <>
+  1416→                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+  1417→                  {(['Use As Is', 'Rework', 'Scrap', 'Return to Supplier'] as NcrDisposition[]).map(d => (
+  1418→                    <Button
+  1419→                      key={d}
+  1420→                      variant={disposition === d ? 'default' : 'outline'}
+  1421→                      size="sm"
+  1422→                      className="text-xs"
+  1423→                      onClick={() => setDisposition(d)}
+  1424→                    >
+  1425→                      {d}
+  1426→                    </Button>
+  1427→                  ))}
+  1428→                </div>
+  1429→                {hasPermission('ncr.approve') && (
+  1430→                  <Button onClick={handleSetDisposition} disabled={disposition === 'Pending'} className="w-full">
+  1431→                    <ShieldCheck className="h-4 w-4 mr-2" />
+  1432→                    Apply Disposition with Electronic Signature
+  1433→                  </Button>
+  1434→                )}
+  1435→              </>
+  1436→            )}
+  1437→          </div>
+  1438→        )}
+  1439→
+  1440→        {/* Lot Disposition Visual */}
+  1441→        <div className="border rounded-lg p-4 space-y-3">
+  1442→          <h4 className="font-semibold text-sm flex items-center gap-2">
+  1443→            Lot Disposition
+  1444→          </h4>
+  1445→          <div className={cn(
+  1446→            'rounded-md p-4 flex items-center gap-3',
+  1447→            selectedNcr.rejectLot
+  1448→              ? 'bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800'
+  1449→              : 'bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800'
+  1450→          )}>
+  1451→            {selectedNcr.rejectLot ? (
+  1452→              <>
+  1453→                <Ban className="h-6 w-6 text-red-500" />
+  1454→                <div>
+  1455→                  <span className="font-medium text-red-700 dark:text-red-400">LOT REJECTED</span>
+  1456→                  <p className="text-xs text-red-600 dark:text-red-400 mt-1">This lot must be rejected based on the confirmed OOS result.</p>
+  1457→                </div>
+  1458→              </>
+  1459→            ) : (
+  1460→              <>
+  1461→                <CheckCircle2 className="h-6 w-6 text-green-500" />
+  1462→                <div>
+  1463→                  <span className="font-medium text-green-700 dark:text-green-400">LOT NOT REJECTED</span>
+  1464→                  <p className="text-xs text-green-600 dark:text-green-400 mt-1">The lot disposition decision is to not reject this lot.</p>
+  1465→                </div>
+  1466→              </>
+  1467→            )}
+  1468→          </div>
+  1469→        </div>
+  1470→
+  1471→        {/* Linked CAPA */}
+  1472→        {selectedNcr.linkedCapaId && (
+  1473→          <div className="border rounded-lg p-4">
+  1474→            <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+  1475→              <ListChecks className="h-4 w-4 text-primary" />
+  1476→              Linked CAPA
+  1477→            </h4>
+  1478→            <div className="text-sm">
+  1479→              <span className="font-mono text-xs">{selectedNcr.linkedCapaId}</span>
+  1480→              {(() => {
+  1481→                const capa = store.capas.find(c => c.id === selectedNcr.linkedCapaId);
+  1482→                return capa ? (
+  1483→                  <span className="ml-2 text-muted-foreground">— {capa.title}</span>
+  1484→                ) : null;
+  1485→              })()}
+  1486→            </div>
+  1487→          </div>
+  1488→        )}
+  1489→      </div>
+  1490→    );
+  1491→  };
+  1492→
+  1493→  // ─── Main Render ───────────────────────────────────────────────────────────
+  1494→
+  1495→  return (
+  1496→    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+  1497→      {/* Layer 1 Gate Warning */}
+  1498→      {!oosHasApprovedTemplate && (
+  1499→        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 flex items-start gap-2">
+  1500→          <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+  1501→          <div className="text-sm text-amber-700 dark:text-amber-400">
+  1502→            <p className="font-medium">No approved template found for OOS/OOT records</p>
+  1503→            <p className="mt-0.5">Please create and approve a template in the Forms module first.</p>
+  1504→          </div>
+  1505→        </div>
+  1506→      )}
+  1507→
+  1508→      {/* Header */}
+  1509→      <div className="flex items-center justify-between">
+  1510→        <div>
+  1511→          <h1 className="text-2xl font-bold flex items-center gap-2">
+  1512→            <FlaskConical className="h-6 w-6 text-primary" />
+  1513→            OOS / OOT Investigations
+  1514→          </h1>
+  1515→          <p className="text-muted-foreground mt-1">Out of Specification / Out of Trend — FDA &amp; ICH Q2(R1) Guidance</p>
+  1516→        </div>
+  1517→        {hasPermission('ncr.create') && (
+  1518→          <Button onClick={openCreateDialog}>
+  1519→            <Plus className="h-4 w-4 mr-2" />Create OOS/OOT
+  1520→          </Button>
+  1521→        )}
+  1522→      </div>
+  1523→
+  1524→      {/* Summary Cards */}
+  1525→      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+  1526→        <Card>
+  1527→          <CardContent className="pt-4 pb-4">
+  1528→            <div className="flex items-center gap-2">
+  1529→              <FlaskConical className="h-4 w-4 text-red-500" />
+  1530→              <span className="text-sm text-muted-foreground">OOS Count</span>
+  1531→            </div>
+  1532→            <span className="text-2xl font-bold">{summaryCounts.oosCount}</span>
+  1533→          </CardContent>
+  1534→        </Card>
+  1535→        <Card>
+  1536→          <CardContent className="pt-4 pb-4">
+  1537→            <div className="flex items-center gap-2">
+  1538→              <AlertTriangle className="h-4 w-4 text-amber-500" />
+  1539→              <span className="text-sm text-muted-foreground">OOT Count</span>
+  1540→            </div>
+  1541→            <span className="text-2xl font-bold">{summaryCounts.ootCount}</span>
+  1542→          </CardContent>
+  1543→        </Card>
+  1544→        <Card>
+  1545→          <CardContent className="pt-4 pb-4">
+  1546→            <div className="flex items-center gap-2">
+  1547→              <AlertCircle className="h-4 w-4 text-blue-500" />
+  1548→              <span className="text-sm text-muted-foreground">Phase 1 Pending</span>
+  1549→            </div>
+  1550→            <span className="text-2xl font-bold">{summaryCounts.phase1Pending}</span>
+  1551→          </CardContent>
+  1552→        </Card>
+  1553→        <Card>
+  1554→          <CardContent className="pt-4 pb-4">
+  1555→            <div className="flex items-center gap-2">
+  1556→              <XCircle className="h-4 w-4 text-red-500" />
+  1557→              <span className="text-sm text-muted-foreground">Phase 2 Confirmed</span>
+  1558→            </div>
+  1559→            <span className="text-2xl font-bold">{summaryCounts.phase2Confirmed}</span>
+  1560→          </CardContent>
+  1561→        </Card>
+  1562→      </div>
+  1563→
+  1564→      {/* Filters */}
+  1565→      <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
+  1566→        <div className="relative flex-1 min-w-[200px]">
+  1567→          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+  1568→          <Input placeholder="Search OOS/OOT (title, NCR#, lot#)..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
+  1569→        </div>
+  1570→        <Select value={typeFilter} onValueChange={setTypeFilter}>
+  1571→          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Type" /></SelectTrigger>
+  1572→          <SelectContent>
+  1573→            <SelectItem value="all">All Types</SelectItem>
+  1574→            <SelectItem value="OOS">OOS</SelectItem>
+  1575→            <SelectItem value="OOT">OOT</SelectItem>
+  1576→          </SelectContent>
+  1577→        </Select>
+  1578→        <Select value={phaseFilter} onValueChange={setPhaseFilter}>
+  1579→          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Phase" /></SelectTrigger>
+  1580→          <SelectContent>
+  1581→            <SelectItem value="all">All Phases</SelectItem>
+  1582→            <SelectItem value="phase1_pending">Phase 1 Pending</SelectItem>
+  1583→            <SelectItem value="phase2_required">Phase 2 Required</SelectItem>
+  1584→            <SelectItem value="phase2_pending">Phase 2 Pending</SelectItem>
+  1585→          </SelectContent>
+  1586→        </Select>
+  1587→        <Select value={conclusionFilter} onValueChange={setConclusionFilter}>
+  1588→          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Conclusion" /></SelectTrigger>
+  1589→          <SelectContent>
+  1590→            <SelectItem value="all">All Conclusions</SelectItem>
+  1591→            <SelectItem value="confirmed_oos">Confirmed OOS</SelectItem>
+  1592→            <SelectItem value="invalidated">Invalidated</SelectItem>
+  1593→            <SelectItem value="error_found">Error Found</SelectItem>
+  1594→            <SelectItem value="no_error">No Error Found</SelectItem>
+  1595→          </SelectContent>
+  1596→        </Select>
+  1597→        <Select value={statusFilter} onValueChange={setStatusFilter}>
+  1598→          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
+  1599→          <SelectContent>
+  1600→            <SelectItem value="all">All Statuses</SelectItem>
+  1601→            {(['Open', 'Under Investigation', 'Pending Disposition', 'Closed'] as NcrStatus[]).map(s => (
+  1602→              <SelectItem key={s} value={s}>{s}</SelectItem>
+  1603→            ))}
+  1604→          </SelectContent>
+  1605→        </Select>
+  1606→      </div>
+  1607→
+  1608→      {/* Table */}
+  1609→      <Card>
+  1610→        <CardContent className="p-0">
+  1611→          <div className="overflow-x-auto">
+  1612→            <Table>
+  1613→              <TableHeader>
+  1614→                <TableRow>
+  1615→                  <TableHead className="w-[130px]">NCR #</TableHead>
+  1616→                  <TableHead>Title</TableHead>
+  1617→                  <TableHead className="w-[70px]">Type</TableHead>
+  1618→                  <TableHead className="w-[110px]">Lot #</TableHead>
+  1619→                  <TableHead className="w-[180px]">Analytical Method</TableHead>
+  1620→                  <TableHead className="w-[120px]">Measured vs Spec</TableHead>
+  1621→                  <TableHead className="w-[120px]">Phase 1</TableHead>
+  1622→                  <TableHead className="w-[120px]">Phase 2</TableHead>
+  1623→                  <TableHead className="w-[140px]">Status</TableHead>
+  1624→                  <TableHead className="w-[100px]">Template</TableHead>
+  1625→                  <TableHead className="w-[80px]">Actions</TableHead>
+  1626→                </TableRow>
+  1627→              </TableHeader>
+  1628→              <TableBody>
+  1629→                {filteredNcrs.map(ncr => (
+  1630→                  <TableRow key={ncr.id} className="hover:bg-muted/50 cursor-pointer" onClick={() => openDetail(ncr)}>
+  1631→                    <TableCell className="font-mono text-xs">{ncr.ncrNumber}</TableCell>
+  1632→                    <TableCell>
+  1633→                      <p className="font-medium truncate max-w-xs">{ncr.title}</p>
+  1634→                    </TableCell>
+  1635→                    <TableCell>
+  1636→                      <Badge className={cn(
+  1637→                        'text-xs',
+  1638→                        ncr.type === 'OOS'
+  1639→                          ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+  1640→                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+  1641→                      )} variant="secondary">{ncr.type}</Badge>
+  1642→                    </TableCell>
+  1643→                    <TableCell className="font-mono text-xs">{ncr.lotNumber || '-'}</TableCell>
+  1644→                    <TableCell className="text-xs">{ncr.analyticalMethod || '-'}</TableCell>
+  1645→                    <TableCell>
+  1646→                      <div className="flex flex-col">
+  1647→                        <span className={cn(
+  1648→                          'text-sm font-medium',
+  1649→                          isMeasuredValueOutOfSpec(ncr) && 'text-red-600 dark:text-red-400'
+  1650→                        )}>
+  1651→                          {ncr.measuredValue !== undefined ? `${ncr.measuredValue} ${ncr.measuredUnit || ''}` : '-'}
+  1652→                        </span>
+  1653→                        <span className="text-xs text-muted-foreground font-mono">vs {ncr.specLimit || '-'}</span>
+  1654→                      </div>
+  1655→                    </TableCell>
+  1656→                    <TableCell>
+  1657→                      {ncr.phase1Conclusion && ncr.phase1Conclusion !== 'Pending' ? (
+  1658→                        <Badge className={cn('text-xs', phase1ConclusionColors[ncr.phase1Conclusion] || '')} variant="secondary">
+  1659→                          {ncr.phase1Conclusion}
+  1660→                        </Badge>
+  1661→                      ) : (
+  1662→                        <Badge className="text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" variant="secondary">Pending</Badge>
+  1663→                      )}
+  1664→                    </TableCell>
+  1665→                    <TableCell>
+  1666→                      {ncr.phase2Required ? (
+  1667→                        ncr.phase2Conclusion && ncr.phase2Conclusion !== 'Pending' ? (
+  1668→                          <Badge className={cn('text-xs', phase2ConclusionColors[ncr.phase2Conclusion] || '')} variant="secondary">
+  1669→                            {ncr.phase2Conclusion}
+  1670→                          </Badge>
+  1671→                        ) : (
+  1672→                          <Badge className="text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" variant="secondary">
+  1673→                            Required
+  1674→                          </Badge>
+  1675→                        )
+  1676→                      ) : (
+  1677→                        <span className="text-muted-foreground text-xs">N/A</span>
+  1678→                      )}
+  1679→                    </TableCell>
+  1680→                    <TableCell>
+  1681→                      <Badge className={cn('text-xs', ncrStatusColors[ncr.status] || '')} variant="secondary">{ncr.status}</Badge>
+  1682→                    </TableCell>
+  1683→                    <TableCell>
+  1684→                      {ncr.templateId ? (() => {
+  1685→                        const tpl = store.formTemplates.find(t => t.id === ncr.templateId);
+  1686→                        return tpl ? (
+  1687→                          <Badge variant="outline" className="text-xs">{tpl.title}</Badge>
+  1688→                        ) : (
+  1689→                          <span className="text-xs text-muted-foreground">-</span>
+  1690→                        );
+  1691→                      })() : (
+  1692→                        <span className="text-xs text-muted-foreground">-</span>
+  1693→                      )}
+  1694→                    </TableCell>
+  1695→                    <TableCell>
+  1696→                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openDetail(ncr); }}>
+  1697→                        <Eye className="h-4 w-4" />
+  1698→                      </Button>
+  1699→                    </TableCell>
+  1700→                  </TableRow>
+  1701→                ))}
+  1702→                {filteredNcrs.length === 0 && (
+  1703→                  <TableRow>
+  1704→                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+  1705→                      No OOS/OOT records found
+  1706→                    </TableCell>
+  1707→                  </TableRow>
+  1708→                )}
+  1709→              </TableBody>
+  1710→            </Table>
+  1711→          </div>
+  1712→        </CardContent>
+  1713→      </Card>
+  1714→
+  1715→      {/* ─── 7-Step Create Wizard Dialog ────────────────────────────────────── */}
+  1716→      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+  1717→        <DialogContent className="sm:max-w-5xl max-h-[92vh] overflow-y-auto">
+  1718→          <DialogHeader>
+  1719→            <DialogTitle className="flex items-center gap-2">
+  1720→              <FlaskConical className="h-5 w-5 text-primary" />
+  1721→              Create OOS/OOT Investigation
+  1722→            </DialogTitle>
+  1723→          </DialogHeader>
+  1724→
+  1725→          {/* Step Indicator */}
+  1726→          <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-2">
+  1727→            {WIZARD_STEPS.map((step, i) => {
+  1728→              const Icon = step.icon;
+  1729→              const isActive = wizardStep === step.id;
+  1730→              const isComplete = wizardStep > step.id;
+  1731→              return (
+  1732→                <React.Fragment key={step.id}>
+  1733→                  <button
+  1734→                    type="button"
+  1735→                    onClick={() => {
+  1736→                      if (isComplete) setWizardStep(step.id);
+  1737→                    }}
+  1738→                    className={cn(
+  1739→                      'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors',
+  1740→                      isActive ? 'bg-primary text-primary-foreground' :
+  1741→                      isComplete ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 cursor-pointer hover:bg-green-200 dark:hover:bg-green-900/50' :
+  1742→                      'bg-muted text-muted-foreground cursor-default'
+  1743→                    )}
+  1744→                    disabled={!isComplete && !isActive}
+  1745→                  >
+  1746→                    <Icon className="h-3.5 w-3.5" />
+  1747→                    <span className="hidden sm:inline">{step.label}</span>
+  1748→                    <span className="sm:hidden">{step.id}</span>
+  1749→                  </button>
+  1750→                  {i < WIZARD_STEPS.length - 1 && (
+  1751→                    <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+  1752→                  )}
+  1753→                </React.Fragment>
+  1754→              );
+  1755→            })}
+  1756→          </div>
+  1757→
+  1758→          {/* Progress bar */}
+  1759→          <div className="w-full bg-muted rounded-full h-1.5 mb-4">
+  1760→            <div
+  1761→              className="bg-primary h-1.5 rounded-full transition-all"
+  1762→              style={{ width: `${(wizardStep / 7) * 100}%` }}
+  1763→            />
+  1764→          </div>
+  1765→
+  1766→          {/* Step Content */}
+  1767→          {renderWizardStep()}
+  1768→
+  1769→          {/* Navigation Buttons */}
+  1770→          <div className="flex items-center justify-between pt-4 border-t mt-4">
+  1771→            <Button
+  1772→              variant="outline"
+  1773→              onClick={() => setWizardStep(Math.max(1, wizardStep - 1))}
+  1774→              disabled={wizardStep === 1}
+  1775→            >
+  1776→              <ChevronLeft className="h-4 w-4 mr-1" />Previous
+  1777→            </Button>
+  1778→            <span className="text-sm text-muted-foreground">Step {wizardStep} of 7</span>
+  1779→            {wizardStep < 7 ? (
+  1780→              <Button onClick={() => setWizardStep(Math.min(7, wizardStep + 1))} disabled={!canProceedStep(wizardStep)}>
+  1781→                Next <ArrowRight className="h-4 w-4 ml-1" />
+  1782→              </Button>
+  1783→            ) : (
+  1784→              <Button onClick={handleCreateOosOot} disabled={!wizardData.title}>
+  1785→                <Plus className="h-4 w-4 mr-1" />Create Investigation
+  1786→              </Button>
+  1787→            )}
+  1788→          </div>
+  1789→        </DialogContent>
+  1790→      </Dialog>
+  1791→
+  1792→      {/* ─── Enhanced Detail Dialog ─────────────────────────────────────────── */}
+  1793→      <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+  1794→        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
+  1795→          {selectedNcr && (
+  1796→            <>
+  1797→              <DialogHeader>
+  1798→                <DialogTitle className="flex items-center gap-2">
+  1799→                  <FlaskConical className="h-5 w-5 text-primary" />
+  1800→                  <span className="font-mono text-sm text-muted-foreground">{selectedNcr.ncrNumber}</span>
+  1801→                  {selectedNcr.title}
+  1802→                </DialogTitle>
+  1803→              </DialogHeader>
+  1804→              {renderDetailDialog()}
+  1805→            </>
+  1806→          )}
+  1807→        </DialogContent>
+  1808→      </Dialog>
+  1809→
+  1810→      {/* Electronic Signature Modal */}
+  1811→      <ElectronicSignatureModal
+  1812→        open={showEsigModal}
+  1813→        onClose={() => { setShowEsigModal(false); setPendingAction(''); }}
+  1814→        onSign={handleEsigSign}
+  1815→        recordTitle={selectedNcr?.title || 'OOS/OOT Investigation'}
+  1816→        recordId={selectedNcr?.id || ''}
+  1817→        signatureType="approval"
+  1818→      />
+  1819→    </div>
+  1820→  );
+  1821→}
+  1822→

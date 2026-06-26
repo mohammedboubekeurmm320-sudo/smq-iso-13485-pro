@@ -1,0 +1,1704 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useMemo, useCallback } from 'react';
+     4→import { useQMSStore } from '@/lib/demo-store';
+     5→import { useAuth } from '@/contexts/AuthContext';
+     6→import { useOrganization } from '@/contexts/OrganizationContext';
+     7→import { cn, formatDate } from '@/lib/utils';
+     8→import {
+     9→  CheckCircle2,
+    10→  Shield,
+    11→  FileText,
+    12→  AlertTriangle,
+    13→  ChevronDown,
+    14→  ChevronRight,
+    15→  CircleDot,
+    16→  XCircle,
+    17→  MinusCircle,
+    18→  Award,
+    19→  TriangleAlert,
+    20→  ArrowRight,
+    21→  Clock,
+    22→  ListChecks,
+    23→  Download,
+    24→  Search,
+    25→  ChevronLeftIcon,
+    26→  ChevronRightIcon,
+    27→  BarChart3,
+    28→  TrendingUp,
+    29→  GraduationCap,
+    30→  ClipboardCheck,
+    31→  ShieldAlert,
+    32→  FolderOpen,
+    33→  Truck,
+    34→  Package,
+    35→  PenLine,
+    36→  Users,
+    37→  Eye,
+    38→} from 'lucide-react';
+    39→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+    40→import { Badge } from '@/components/ui/badge';
+    41→import { Button } from '@/components/ui/button';
+    42→import { Separator } from '@/components/ui/separator';
+    43→import { Progress } from '@/components/ui/progress';
+    44→import { Input } from '@/components/ui/input';
+    45→import {
+    46→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    47→} from '@/components/ui/select';
+    48→import {
+    49→  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+    50→} from '@/components/ui/table';
+    51→import { INDUSTRY_CONFIG } from '@/types/qms';
+    52→import type { IndustryType, AuditAction } from '@/types/qms';
+    53→import {
+    54→  getChecklistById,
+    55→  getChecklistForIndustry,
+    56→  buildComplianceData,
+    57→  COMPLIANCE_CHECKLISTS,
+    58→} from '@/lib/compliance-checklists';
+    59→import type { ComplianceClause as ChecklistClause, ClauseCategory } from '@/lib/compliance-checklists';
+    60→
+    61→// ---------------------------------------------------------------------------
+    62→// Types (for rendering)
+    63→// ---------------------------------------------------------------------------
+    64→
+    65→type ClauseStatus = 'Compliant' | 'Partially Compliant' | 'Non-Compliant' | 'Not Assessed';
+    66→
+    67→interface ComplianceClause {
+    68→  id: string;
+    69→  number: string;
+    70→  name: string;
+    71→  description: string;
+    72→  category: ClauseCategory;
+    73→  status: ClauseStatus;
+    74→  evidenceCount: number;
+    75→  evidence: { type: string; reference: string; title: string }[];
+    76→}
+    77→
+    78→interface ComplianceGap {
+    79→  id: string;
+    80→  title: string;
+    81→  severity: 'Critical' | 'Major' | 'Minor';
+    82→  clause: string;
+    83→  description: string;
+    84→  recommendedAction: string;
+    85→}
+    86→
+    87→// ---------------------------------------------------------------------------
+    88→// Category section labels
+    89→// ---------------------------------------------------------------------------
+    90→
+    91→const CATEGORY_SECTIONS: { key: ClauseCategory; label: string }[] = [
+    92→  { key: 'quality_system', label: 'Quality System' },
+    93→  { key: 'management', label: 'Management Responsibility' },
+    94→  { key: 'resources', label: 'Resource Management' },
+    95→  { key: 'realization', label: 'Product Realization' },
+    96→  { key: 'measurement', label: 'Measurement & Analysis' },
+    97→  { key: 'improvement', label: 'Improvement' },
+    98→];
+    99→
+   100→// ---------------------------------------------------------------------------
+   101→// Audit trail filter constants
+   102→// ---------------------------------------------------------------------------
+   103→
+   104→const AUDIT_ACTIONS: AuditAction[] = ['CREATE', 'UPDATE', 'DELETE', 'APPROVE', 'REJECT', 'SIGN', 'LOGIN', 'EXPORT'];
+   105→
+   106→const TABLE_MODULES = [
+   107→  { value: 'all', label: 'All Modules' },
+   108→  { value: 'Document', label: 'Documents' },
+   109→  { value: 'Capa', label: 'CAPA' },
+   110→  { value: 'NonConformance', label: 'NCR' },
+   111→  { value: 'Audit', label: 'Audits' },
+   112→  { value: 'Risk', label: 'Risks' },
+   113→  { value: 'Training', label: 'Training' },
+   114→  { value: 'BatchRecord', label: 'Batch Records' },
+   115→  { value: 'Supplier', label: 'Suppliers' },
+   116→  { value: 'ChangeControl', label: 'Change Controls' },
+   117→  { value: 'Deviation', label: 'Deviations' },
+   118→  { value: 'FormTemplate', label: 'Form Templates' },
+   119→  { value: 'FormInstance', label: 'Form Instances' },
+   120→  { value: 'Profile', label: 'Profiles' },
+   121→];
+   122→
+   123→const ITEMS_PER_PAGE = 20;
+   124→
+   125→// ---------------------------------------------------------------------------
+   126→// Report templates
+   127→// ---------------------------------------------------------------------------
+   128→
+   129→const REPORT_TEMPLATES = [
+   130→  {
+   131→    id: 'rt-capa',
+   132→    title: 'CAPA Summary',
+   133→    description: 'Overview of all CAPAs with status breakdown, aging analysis, and effectiveness metrics.',
+   134→    icon: ClipboardCheck,
+   135→    color: 'text-red-500',
+   136→    bg: 'bg-red-100 dark:bg-red-900/30',
+   137→  },
+   138→  {
+   139→    id: 'rt-ncr',
+   140→    title: 'NCR Trend',
+   141→    description: 'Trend analysis of non-conformances by type, severity, and source over time.',
+   142→    icon: TrendingUp,
+   143→    color: 'text-amber-500',
+   144→    bg: 'bg-amber-100 dark:bg-amber-900/30',
+   145→  },
+   146→  {
+   147→    id: 'rt-training',
+   148→    title: 'Training Compliance',
+   149→    description: 'Training completion rates, overdue items, and competency gap analysis.',
+   150→    icon: GraduationCap,
+   151→    color: 'text-green-500',
+   152→    bg: 'bg-green-100 dark:bg-green-900/30',
+   153→  },
+   154→  {
+   155→    id: 'rt-audit',
+   156→    title: 'Audit Findings',
+   157→    description: 'Summary of audit findings, classification, and corrective action status.',
+   158→    icon: ShieldAlert,
+   159→    color: 'text-purple-500',
+   160→    bg: 'bg-purple-100 dark:bg-purple-900/30',
+   161→  },
+   162→  {
+   163→    id: 'rt-risk',
+   164→    title: 'Risk Assessment',
+   165→    description: 'Risk matrix, RPN distribution, and mitigation effectiveness report.',
+   166→    icon: BarChart3,
+   167→    color: 'text-orange-500',
+   168→    bg: 'bg-orange-100 dark:bg-orange-900/30',
+   169→  },
+   170→  {
+   171→    id: 'rt-docs',
+   172→    title: 'Document Status',
+   173→    description: 'Document lifecycle status, review cycle tracking, and approval metrics.',
+   174→    icon: FolderOpen,
+   175→    color: 'text-teal-500',
+   176→    bg: 'bg-teal-100 dark:bg-teal-900/30',
+   177→  },
+   178→  {
+   179→    id: 'rt-supplier',
+   180→    title: 'Supplier Performance',
+   181→    description: 'Supplier qualification status, performance scores, and review schedule.',
+   182→    icon: Truck,
+   183→    color: 'text-indigo-500',
+   184→    bg: 'bg-indigo-100 dark:bg-indigo-900/30',
+   185→  },
+   186→  {
+   187→    id: 'rt-batch',
+   188→    title: 'Batch Release',
+   189→    description: 'Batch record status, QA release metrics, and manufacturing compliance.',
+   190→    icon: Package,
+   191→    color: 'text-cyan-500',
+   192→    bg: 'bg-cyan-100 dark:bg-cyan-900/30',
+   193→  },
+   194→];
+   195→
+   196→// ---------------------------------------------------------------------------
+   197→// Standard -> checklist ID mapping
+   198→// ---------------------------------------------------------------------------
+   199→
+   200→function standardToChecklistId(standard: string): string {
+   201→  if (standard.includes('IVDR') || standard.includes('2017/746')) return 'ivdr';
+   202→  if (standard.includes('ICH Q10')) return 'ichq10';
+   203→  if (standard.includes('ISO 13485')) return 'iso13485';
+   204→  // Default fallback
+   205→  return 'iso13485';
+   206→}
+   207→
+   208→// ---------------------------------------------------------------------------
+   209→// CSV Export utility
+   210→// ---------------------------------------------------------------------------
+   211→
+   212→function exportAuditTrailCSV(data: { timestamp: string; action: string; tableName: string; recordId: string; user: string; details: string }[]) {
+   213→  const headers = ['Timestamp', 'Action', 'Table/Module', 'Record ID', 'User', 'Details'];
+   214→  const csvRows = [
+   215→    headers.join(','),
+   216→    ...data.map(row =>
+   217→      [row.timestamp, row.action, row.tableName, row.recordId, `"${row.user}"`, `"${row.details.replace(/"/g, '""')}"`].join(',')
+   218→    ),
+   219→  ];
+   220→  const csvString = csvRows.join('\n');
+   221→  const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+   222→  const url = URL.createObjectURL(blob);
+   223→  const link = document.createElement('a');
+   224→  link.href = url;
+   225→  link.download = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`;
+   226→  document.body.appendChild(link);
+   227→  link.click();
+   228→  document.body.removeChild(link);
+   229→  URL.revokeObjectURL(url);
+   230→}
+   231→
+   232→// ---------------------------------------------------------------------------
+   233→// Circular Gauge Component
+   234→// ---------------------------------------------------------------------------
+   235→
+   236→function ComplianceGauge({ score, size = 180 }: { score: number; size?: number }) {
+   237→  const strokeWidth = 12;
+   238→  const radius = (size - strokeWidth) / 2;
+   239→  const circumference = radius * 2 * Math.PI;
+   240→  const offset = circumference - (score / 100) * circumference;
+   241→  const center = size / 2;
+   242→
+   243→  let color = 'hsl(142, 76%, 36%)'; // green
+   244→  if (score < 60) color = 'hsl(0, 84%, 60%)'; // red
+   245→  else if (score < 80) color = 'hsl(38, 92%, 50%)'; // amber
+   246→
+   247→  return (
+   248→    <div className="relative" style={{ width: size, height: size }} role="img" aria-label={`Overall compliance score: ${score}%`}>
+   249→      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
+   250→        <circle
+   251→          cx={center}
+   252→          cy={center}
+   253→          r={radius}
+   254→          fill="none"
+   255→          stroke="currentColor"
+   256→          strokeWidth={strokeWidth}
+   257→          className="text-muted/30"
+   258→        />
+   259→        <circle
+   260→          cx={center}
+   261→          cy={center}
+   262→          r={radius}
+   263→          fill="none"
+   264→          stroke={color}
+   265→          strokeWidth={strokeWidth}
+   266→          strokeDasharray={circumference}
+   267→          strokeDashoffset={offset}
+   268→          strokeLinecap="round"
+   269→          className="transition-all duration-1000 ease-out"
+   270→        />
+   271→      </svg>
+   272→      <div className="absolute inset-0 flex flex-col items-center justify-center">
+   273→        <span className="text-4xl font-bold" style={{ color }}>{score}%</span>
+   274→        <span className="text-xs text-muted-foreground">Overall Compliance</span>
+   275→      </div>
+   276→    </div>
+   277→  );
+   278→}
+   279→
+   280→// ---------------------------------------------------------------------------
+   281→// Sub-metric bar
+   282→// ---------------------------------------------------------------------------
+   283→
+   284→function MetricBar({ label, value, color }: { label: string; value: number; color: string }) {
+   285→  return (
+   286→    <div className="space-y-1">
+   287→      <div className="flex items-center justify-between text-xs">
+   288→        <span className="text-muted-foreground">{label}</span>
+   289→        <span className="font-medium">{Math.round(value)}%</span>
+   290→      </div>
+   291→      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+   292→        <div
+   293→          className="h-full rounded-full transition-all duration-700"
+   294→          style={{ width: `${value}%`, backgroundColor: color }}
+   295→        />
+   296→      </div>
+   297→    </div>
+   298→  );
+   299→}
+   300→
+   301→// ---------------------------------------------------------------------------
+   302→// Status badge
+   303→// ---------------------------------------------------------------------------
+   304→
+   305→function ClauseStatusBadge({ status }: { status: ClauseStatus }) {
+   306→  const config: Record<ClauseStatus, { icon: React.ReactNode; className: string }> = {
+   307→    'Compliant': {
+   308→      icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+   309→      className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+   310→    },
+   311→    'Partially Compliant': {
+   312→      icon: <CircleDot className="h-3.5 w-3.5" />,
+   313→      className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+   314→    },
+   315→    'Non-Compliant': {
+   316→      icon: <XCircle className="h-3.5 w-3.5" />,
+   317→      className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+   318→    },
+   319→    'Not Assessed': {
+   320→      icon: <MinusCircle className="h-3.5 w-3.5" />,
+   321→      className: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+   322→    },
+   323→  };
+   324→  const c = config[status];
+   325→  return (
+   326→    <Badge className={cn('text-xs gap-1', c.className)} variant="secondary">
+   327→      {c.icon}{status}
+   328→    </Badge>
+   329→  );
+   330→}
+   331→
+   332→// ---------------------------------------------------------------------------
+   333→// Action badge for audit trail
+   334→// ---------------------------------------------------------------------------
+   335→
+   336→function AuditActionBadge({ action }: { action: AuditAction }) {
+   337→  const config: Record<AuditAction, { className: string }> = {
+   338→    'CREATE': { className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+   339→    'UPDATE': { className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+   340→    'DELETE': { className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+   341→    'APPROVE': { className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+   342→    'REJECT': { className: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' },
+   343→    'SIGN': { className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+   344→    'LOGIN': { className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+   345→    'EXPORT': { className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+   346→  };
+   347→  const c = config[action];
+   348→  return (
+   349→    <Badge className={cn('text-xs font-mono', c.className)} variant="secondary">
+   350→      {action}
+   351→    </Badge>
+   352→  );
+   353→}
+   354→
+   355→// ---------------------------------------------------------------------------
+   356→// Compliance Category Card (enhanced with percentage bar & expand)
+   357→// ---------------------------------------------------------------------------
+   358→
+   359→interface CategoryCardData {
+   360→  key: string;
+   361→  label: string;
+   362→  icon: React.ReactNode;
+   363→  value: number;
+   364→  numerator: number;
+   365→  denominator: number;
+   366→  color: string;
+   367→  details: string[];
+   368→}
+   369→
+   370→function ComplianceCategoryCard({ card, expanded, onToggle }: { card: CategoryCardData; expanded: boolean; onToggle: () => void }) {
+   371→  const barColor = card.value >= 80 ? 'hsl(142, 76%, 36%)' : card.value >= 60 ? 'hsl(38, 92%, 50%)' : 'hsl(0, 84%, 60%)';
+   372→
+   373→  return (
+   374→    <div className="border rounded-lg overflow-hidden">
+   375→      <button
+   376→        className="w-full p-4 hover:bg-muted/20 transition-colors text-left"
+   377→        onClick={onToggle}
+   378→        aria-expanded={expanded}
+   379→      >
+   380→        <div className="flex items-center gap-3 mb-2">
+   381→          <div className={cn('p-2 rounded-lg', card.color)}>
+   382→            {card.icon}
+   383→          </div>
+   384→          <div className="flex-1 min-w-0">
+   385→            <div className="flex items-center justify-between">
+   386→              <span className="text-sm font-semibold">{card.label}</span>
+   387→              <span className="text-sm font-bold" style={{ color: barColor }}>{Math.round(card.value)}%</span>
+   388→            </div>
+   389→            <div className="w-full h-2 bg-muted rounded-full overflow-hidden mt-1">
+   390→              <div
+   391→                className="h-full rounded-full transition-all duration-700"
+   392→                style={{ width: `${card.value}%`, backgroundColor: barColor }}
+   393→              />
+   394→            </div>
+   395→          </div>
+   396→          <div className="shrink-0 ml-1">
+   397→            {expanded ? (
+   398→              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+   399→            ) : (
+   400→              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+   401→            )}
+   402→          </div>
+   403→        </div>
+   404→        <p className="text-xs text-muted-foreground">{card.numerator}/{card.denominator} compliant</p>
+   405→      </button>
+   406→      {expanded && (
+   407→        <div className="px-4 pb-4 pt-0">
+   408→          <Separator className="mb-3" />
+   409→          <ul className="space-y-1.5">
+   410→            {card.details.map((detail, idx) => (
+   411→              <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1.5">
+   412→                <ArrowRight className="h-3 w-3 mt-0.5 shrink-0 text-primary" />
+   413→                <span>{detail}</span>
+   414→              </li>
+   415→            ))}
+   416→          </ul>
+   417→        </div>
+   418→      )}
+   419→    </div>
+   420→  );
+   421→}
+   422→
+   423→// ---------------------------------------------------------------------------
+   424→// Main Component
+   425→// ---------------------------------------------------------------------------
+   426→
+   427→export function ComplianceView() {
+   428→  const store = useQMSStore();
+   429→  const { hasPermission } = useAuth();
+   430→  const { orgSettings } = useOrganization();
+   431→
+   432→  const documents = store.documents;
+   433→  const capas = store.capas;
+   434→  const ncrs = store.ncrs;
+   435→  const audits = store.audits;
+   436→  const trainingItems = store.training;
+   437→  const risks = store.risks;
+   438→  const changeControls = store.changeControls;
+   439→  const deviations = store.deviations;
+   440→  const batchRecords = store.batchRecords;
+   441→  const suppliers = store.suppliers;
+   442→  const auditTrails = store.auditTrails;
+   443→
+   444→  const [expandedClauses, setExpandedClauses] = useState<Set<string>>(new Set());
+   445→  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+   446→
+   447→  // -------------------------------------------------------------------------
+   448→  // Audit trail filter state
+   449→  // -------------------------------------------------------------------------
+   450→
+   451→  const [auditActionFilter, setAuditActionFilter] = useState<string>('all');
+   452→  const [auditTableFilter, setAuditTableFilter] = useState<string>('all');
+   453→  const [auditDateFrom, setAuditDateFrom] = useState<string>('');
+   454→  const [auditDateTo, setAuditDateTo] = useState<string>('');
+   455→  const [auditSearch, setAuditSearch] = useState<string>('');
+   456→  const [auditPage, setAuditPage] = useState(1);
+   457→
+   458→  // -------------------------------------------------------------------------
+   459→  // Industry config
+   460→  // -------------------------------------------------------------------------
+   461→
+   462→  const industryType = orgSettings?.industry_type || 'medical_device';
+   463→  const industryConfig = INDUSTRY_CONFIG[industryType as IndustryType] || INDUSTRY_CONFIG.medical_device;
+   464→  const applicableStandards = orgSettings?.applicable_standards || [industryConfig.primaryStandard];
+   465→
+   466→  // -------------------------------------------------------------------------
+   467→  // Checklist selection state — dropdown for applicable standards
+   468→  // -------------------------------------------------------------------------
+   469→
+   470→  const defaultChecklistId = industryConfig.checklistId;
+   471→  const [selectedChecklistId, setSelectedChecklistId] = useState<string>(defaultChecklistId);
+   472→
+   473→  // Available checklists based on applicable standards
+   474→  const availableChecklists = useMemo(() => {
+   475→    const seen = new Set<string>();
+   476→    const result: { id: string; name: string; standard: string }[] = [];
+   477→    for (const standard of applicableStandards) {
+   478→      const checklistId = standardToChecklistId(standard);
+   479→      const checklist = COMPLIANCE_CHECKLISTS[checklistId];
+   480→      if (checklist && !seen.has(checklistId)) {
+   481→        seen.add(checklistId);
+   482→        result.push({ id: checklistId, name: checklist.name, standard: checklist.standard });
+   483→      }
+   484→    }
+   485→    return result;
+   486→  }, [applicableStandards]);
+   487→
+   488→  // If the selected checklist is no longer available (industry changed), reset
+   489→  const activeChecklist = useMemo(() => {
+   490→    if (availableChecklists.some(c => c.id === selectedChecklistId)) {
+   491→      return COMPLIANCE_CHECKLISTS[selectedChecklistId];
+   492→    }
+   493→    return COMPLIANCE_CHECKLISTS[defaultChecklistId] || COMPLIANCE_CHECKLISTS.iso13485;
+   494→  }, [selectedChecklistId, availableChecklists, defaultChecklistId]);
+   495→
+   496→  // -------------------------------------------------------------------------
+   497→  // Build ComplianceData from store
+   498→  // -------------------------------------------------------------------------
+   499→
+   500→  const complianceData = useMemo(() => buildComplianceData({
+   501→    documents: documents.map(d => ({ status: d.status, type: d.type })),
+   502→    capas: capas.map(c => ({ status: c.status, rootCauseAnalysis: c.rootCauseAnalysis })),
+   503→    trainingItems: trainingItems.map(t => ({ status: t.status })),
+   504→    audits: audits.map(a => ({ status: a.status })),
+   505→    ncrs: ncrs.map(n => ({ status: n.status })),
+   506→    risks: risks.map(r => ({ status: r.status })),
+   507→    batchRecords: batchRecords.map(b => ({ status: b.status, productCode: b.productCode })),
+   508→    suppliers: suppliers.map(s => ({ status: s.status })),
+   509→    changeControls: changeControls.map(cc => ({ status: cc.status })),
+   510→    deviations: deviations.map(d => ({ status: d.status })),
+   511→  }), [documents, capas, trainingItems, audits, ncrs, risks, batchRecords, suppliers, changeControls, deviations]);
+   512→
+   513→  // -------------------------------------------------------------------------
+   514→  // Toggle clause expansion
+   515→  // -------------------------------------------------------------------------
+   516→
+   517→  const toggleClause = (id: string) => {
+   518→    setExpandedClauses(prev => {
+   519→      const next = new Set(prev);
+   520→      if (next.has(id)) next.delete(id);
+   521→      else next.add(id);
+   522→      return next;
+   523→    });
+   524→  };
+   525→
+   526→  const toggleCategory = (key: string) => {
+   527→    setExpandedCategories(prev => {
+   528→      const next = new Set(prev);
+   529→      if (next.has(key)) next.delete(key);
+   530→      else next.add(key);
+   531→      return next;
+   532→    });
+   533→  };
+   534→
+   535→  // -------------------------------------------------------------------------
+   536→  // Compliance calculations — use industry-specific weights
+   537→  // -------------------------------------------------------------------------
+   538→
+   539→  const docCompliance = documents.length > 0
+   540→    ? (documents.filter(d => d.status === 'Approved').length / documents.length) * 100
+   541→    : 0;
+   542→
+   543→  const capaCompliance = capas.length > 0
+   544→    ? (capas.filter(c => c.status === 'Closed').length / capas.length) * 100
+   545→    : 100;
+   546→
+   547→  const trainingCompliance = trainingItems.length > 0
+   548→    ? (trainingItems.filter(t => t.status === 'Completed').length / trainingItems.length) * 100
+   549→    : 100;
+   550→
+   551→  const auditCompliance = audits.length > 0
+   552→    ? (audits.filter(a => a.status === 'Completed').length / audits.length) * 100
+   553→    : 100;
+   554→
+   555→  const ncrResolutionRate = ncrs.length > 0
+   556→    ? (ncrs.filter(n => n.status === 'Closed').length / ncrs.length) * 100
+   557→    : 100;
+   558→
+   559→  const riskCompliance = risks.length > 0
+   560→    ? (risks.filter(r => r.status !== 'Open').length / risks.length) * 100
+   561→    : 100;
+   562→
+   563→  const batchCompliance = batchRecords.length > 0
+   564→    ? (batchRecords.filter(b => b.status === 'Released').length / batchRecords.length) * 100
+   565→    : 100;
+   566→
+   567→  const supplierCompliance = suppliers.length > 0
+   568→    ? (suppliers.filter(s => s.status === 'Qualified').length / suppliers.length) * 100
+   569→    : 100;
+   570→
+   571→  const w = industryConfig.complianceWeights;
+   572→  const overallScore = Math.round(
+   573→    docCompliance * w.documents +
+   574→    capaCompliance * w.capas +
+   575→    trainingCompliance * w.training +
+   576→    auditCompliance * w.audits +
+   577→    ncrResolutionRate * w.ncrs +
+   578→    riskCompliance * w.risks +
+   579→    batchCompliance * w.batchRecords +
+   580→    supplierCompliance * w.suppliers
+   581→  );
+   582→
+   583→  // -------------------------------------------------------------------------
+   584→  // Build clause list from checklist + compute status
+   585→  // -------------------------------------------------------------------------
+   586→
+   587→  const complianceClauses = useMemo<ComplianceClause[]>(() => {
+   588→    if (!activeChecklist) return [];
+   589→
+   590→    const approvedDocs = documents.filter(d => d.status === 'Approved');
+   591→    const inReviewDocs = documents.filter(d => d.status === 'Under Review');
+   592→    const closedCapas = capas.filter(c => c.status === 'Closed');
+   593→    const completedAudits = audits.filter(a => a.status === 'Completed');
+   594→    const completedTraining = trainingItems.filter(t => t.status === 'Completed');
+   595→    const closedNcrs = ncrs.filter(n => n.status === 'Closed');
+   596→
+   597→    // Map checklist status to display status
+   598→    const mapStatus = (s: string): ClauseStatus => {
+   599→      switch (s) {
+   600→        case 'compliant': return 'Compliant';
+   601→        case 'partially': return 'Partially Compliant';
+   602→        case 'non_compliant': return 'Non-Compliant';
+   603→        default: return 'Not Assessed';
+   604→      }
+   605→    };
+   606→
+   607→    // Build evidence for a clause based on category
+   608→    const buildEvidence = (clause: ChecklistClause): { type: string; reference: string; title: string }[] => {
+   609→      const evidence: { type: string; reference: string; title: string }[] = [];
+   610→      switch (clause.category) {
+   611→        case 'quality_system':
+   612→          evidence.push(...approvedDocs.slice(0, 3).map(d => ({
+   613→            type: 'Document', reference: d.documentNumber, title: d.title,
+   614→          })));
+   615→          evidence.push(...inReviewDocs.slice(0, 2).map(d => ({
+   616→            type: 'Document', reference: d.documentNumber, title: `${d.title} (${d.status})`,
+   617→          })));
+   618→          break;
+   619→        case 'management':
+   620→          evidence.push(...audits.slice(0, 5).map(a => ({
+   621→            type: 'Audit', reference: a.auditNumber, title: a.title,
+   622→          })));
+   623→          break;
+   624→        case 'resources':
+   625→          evidence.push(...trainingItems.slice(0, 5).map(t => ({
+   626→            type: 'Training', reference: t.type, title: t.title,
+   627→          })));
+   628→          break;
+   629→        case 'realization':
+   630→          evidence.push(...risks.slice(0, 3).map(r => ({
+   631→            type: 'Risk', reference: r.riskNumber, title: r.title,
+   632→          })));
+   633→          evidence.push(...batchRecords.slice(0, 2).map(b => ({
+   634→            type: 'Batch Record', reference: b.lotNumber, title: b.productName,
+   635→          })));
+   636→          break;
+   637→        case 'measurement':
+   638→          evidence.push(...completedAudits.slice(0, 3).map(a => ({
+   639→            type: 'Audit', reference: a.auditNumber, title: a.title,
+   640→          })));
+   641→          evidence.push(...ncrs.slice(0, 2).map(n => ({
+   642→            type: 'NCR', reference: n.ncrNumber, title: n.title,
+   643→          })));
+   644→          break;
+   645→        case 'improvement':
+   646→          evidence.push(...closedCapas.slice(0, 5).map(c => ({
+   647→            type: 'CAPA', reference: c.capaNumber, title: c.title,
+   648→          })));
+   649→          break;
+   650→      }
+   651→      return evidence;
+   652→    };
+   653→
+   654→    return activeChecklist.clauses.map(clause => {
+   655→      const rawStatus = clause.computeStatus(complianceData);
+   656→      return {
+   657→        id: clause.id,
+   658→        number: clause.clause,
+   659→        name: clause.title,
+   660→        description: clause.description,
+   661→        category: clause.category,
+   662→        status: mapStatus(rawStatus),
+   663→        evidenceCount: buildEvidence(clause).length,
+   664→        evidence: buildEvidence(clause),
+   665→      };
+   666→    });
+   667→  }, [activeChecklist, documents, capas, audits, trainingItems, ncrs, risks, batchRecords, complianceData]);
+   668→
+   669→  // -------------------------------------------------------------------------
+   670→  // Compliance Gaps
+   671→  // -------------------------------------------------------------------------
+   672→
+   673→  const complianceGaps = useMemo<ComplianceGap[]>(() => {
+   674→    const gaps: ComplianceGap[] = [];
+   675→
+   676→    // Document compliance gaps
+   677→    const draftDocs = documents.filter(d => d.status === 'Draft').length;
+   678→    const inReviewDocs = documents.filter(d => d.status === 'Under Review').length;
+   679→    if (draftDocs > 0) {
+   680→      gaps.push({
+   681→        id: 'gap-draft-docs',
+   682→        title: 'Unapproved Documents',
+   683→        severity: draftDocs > 5 ? 'Major' : 'Minor',
+   684→        clause: '4.2.3',
+   685→        description: `${draftDocs} document(s) are in Draft status and require review and approval.`,
+   686→        recommendedAction: 'Prioritize review and approval of draft documents to meet document control requirements.',
+   687→      });
+   688→    }
+   689→    if (inReviewDocs > 0) {
+   690→      gaps.push({
+   691→        id: 'gap-inreview-docs',
+   692→        title: 'Documents Pending Review',
+   693→        severity: inReviewDocs > 3 ? 'Major' : 'Minor',
+   694→        clause: '4.2.3',
+   695→        description: `${inReviewDocs} document(s) are Under Review and awaiting approval.`,
+   696→        recommendedAction: 'Complete document reviews to maintain document control compliance.',
+   697→      });
+   698→    }
+   699→
+   700→    // CAPA gaps
+   701→    const openCapasList = capas.filter(c => c.status !== 'Closed');
+   702→    const overdueCapas = capas.filter(c => c.status !== 'Closed' && new Date(c.dueDate) < new Date());
+   703→    if (overdueCapas.length > 0) {
+   704→      gaps.push({
+   705→        id: 'gap-overdue-capa',
+   706→        title: 'Overdue CAPAs',
+   707→        severity: 'Critical',
+   708→        clause: '8.5',
+   709→        description: `${overdueCapas.length} CAPA(s) are past their due date without closure.`,
+   710→        recommendedAction: 'Escalate overdue CAPAs and allocate additional resources for closure.',
+   711→      });
+   712→    }
+   713→    if (openCapasList.length > 5) {
+   714→      gaps.push({
+   715→        id: 'gap-open-capa',
+   716→        title: 'High Open CAPA Count',
+   717→        severity: 'Major',
+   718→        clause: '8.5',
+   719→        description: `${openCapasList.length} CAPAs are open, indicating potential systemic quality issues.`,
+   720→        recommendedAction: 'Conduct management review of open CAPAs and prioritize closure.',
+   721→      });
+   722→    }
+   723→
+   724→    // NCR gaps
+   725→    const criticalNcrs = ncrs.filter(n => n.severity === 'Critical' && n.status !== 'Closed');
+   726→    if (criticalNcrs.length > 0) {
+   727→      gaps.push({
+   728→        id: 'gap-critical-ncr',
+   729→        title: 'Open Critical NCRs',
+   730→        severity: 'Critical',
+   731→        clause: '8.3',
+   732→        description: `${criticalNcrs.length} critical non-conformance(s) remain unresolved.`,
+   733→        recommendedAction: 'Immediately address critical NCRs and implement containment actions.',
+   734→      });
+   735→    }
+   736→
+   737→    // Training gaps
+   738→    const overdueTraining = trainingItems.filter(t => t.status === 'Overdue' || (t.status !== 'Completed' && new Date(t.dueDate) < new Date()));
+   739→    if (overdueTraining.length > 0) {
+   740→      gaps.push({
+   741→        id: 'gap-overdue-training',
+   742→        title: 'Overdue Training',
+   743→        severity: overdueTraining.length > 3 ? 'Major' : 'Minor',
+   744→        clause: '6',
+   745→        description: `${overdueTraining.length} training item(s) are overdue for completion.`,
+   746→        recommendedAction: 'Schedule and complete overdue training to ensure competency compliance.',
+   747→      });
+   748→    }
+   749→
+   750→    // Supplier gaps
+   751→    const expiredSupplierReviews = suppliers.filter(s => s.nextReviewDate && new Date(s.nextReviewDate) < new Date());
+   752→    if (expiredSupplierReviews.length > 0) {
+   753→      gaps.push({
+   754→        id: 'gap-supplier-review',
+   755→        title: 'Overdue Supplier Reviews',
+   756→        severity: 'Minor',
+   757→        clause: '7.5',
+   758→        description: `${expiredSupplierReviews.length} supplier(s) have overdue qualification reviews.`,
+   759→        recommendedAction: 'Schedule and complete supplier re-evaluation activities.',
+   760→      });
+   761→    }
+   762→
+   763→    // Change control gaps
+   764→    const openChangeControls = changeControls.filter(cc => cc.status !== 'Completed' && cc.status !== 'Rejected');
+   765→    if (openChangeControls.length > 3) {
+   766→      gaps.push({
+   767→        id: 'gap-open-cc',
+   768→        title: 'Pending Change Controls',
+   769→        severity: 'Minor',
+   770→        clause: '7.1',
+   771→        description: `${openChangeControls.length} change control(s) are pending completion.`,
+   772→        recommendedAction: 'Review and advance pending change controls through the approval workflow.',
+   773→      });
+   774→    }
+   775→
+   776→    return gaps;
+   777→  }, [documents, capas, ncrs, trainingItems, suppliers, changeControls]);
+   778→
+   779→  // -------------------------------------------------------------------------
+   780→  // Clause section grouping (by category, works for all checklists)
+   781→  // -------------------------------------------------------------------------
+   782→
+   783→  const clauseSections = useMemo(() => {
+   784→    return CATEGORY_SECTIONS
+   785→      .map(section => ({
+   786→        ...section,
+   787→        clauses: complianceClauses.filter(c => c.category === section.key),
+   788→      }))
+   789→      .filter(section => section.clauses.length > 0);
+   790→  }, [complianceClauses]);
+   791→
+   792→  // -------------------------------------------------------------------------
+   793→  // Summary counts
+   794→  // -------------------------------------------------------------------------
+   795→
+   796→  const statusCounts = useMemo(() => {
+   797→    const counts = { Compliant: 0, 'Partially Compliant': 0, 'Non-Compliant': 0, 'Not Assessed': 0 };
+   798→    complianceClauses.forEach(c => { counts[c.status]++; });
+   799→    return counts;
+   800→  }, [complianceClauses]);
+   801→
+   802→  // -------------------------------------------------------------------------
+   803→  // Sub-metrics for the weighted score display
+   804→  // -------------------------------------------------------------------------
+   805→
+   806→  const subMetrics = useMemo(() => [
+   807→    { label: `Document Compliance (${Math.round(w.documents * 100)}%)`, value: docCompliance, color: 'hsl(142, 76%, 36%)' },
+   808→    { label: `CAPA Compliance (${Math.round(w.capas * 100)}%)`, value: capaCompliance, color: 'hsl(0, 84%, 60%)' },
+   809→    { label: `Training (${Math.round(w.training * 100)}%)`, value: trainingCompliance, color: 'hsl(217, 91%, 60%)' },
+   810→    { label: `Audits (${Math.round(w.audits * 100)}%)`, value: auditCompliance, color: 'hsl(280, 67%, 58%)' },
+   811→    { label: `NCR Resolution (${Math.round(w.ncrs * 100)}%)`, value: ncrResolutionRate, color: 'hsl(38, 92%, 50%)' },
+   812→    { label: `Risk Management (${Math.round(w.risks * 100)}%)`, value: riskCompliance, color: 'hsl(200, 80%, 50%)' },
+   813→  ], [w, docCompliance, capaCompliance, trainingCompliance, auditCompliance, ncrResolutionRate, riskCompliance]);
+   814→
+   815→  // -------------------------------------------------------------------------
+   816→  // Compliance category cards (enhanced)
+   817→  // -------------------------------------------------------------------------
+   818→
+   819→  const categoryCards = useMemo<CategoryCardData[]>(() => [
+   820→    {
+   821→      key: 'documents',
+   822→      label: 'Document Control',
+   823→      icon: <FileText className="h-4 w-4 text-green-600" />,
+   824→      value: docCompliance,
+   825→      numerator: documents.filter(d => d.status === 'Approved').length,
+   826→      denominator: documents.length,
+   827→      color: 'bg-green-100 dark:bg-green-900/30',
+   828→      details: [
+   829→        `${documents.filter(d => d.status === 'Approved').length} Approved`,
+   830→        `${documents.filter(d => d.status === 'Under Review').length} Under Review`,
+   831→        `${documents.filter(d => d.status === 'Draft').length} Draft`,
+   832→        `${documents.filter(d => d.status === 'Obsolete').length} Obsolete`,
+   833→      ],
+   834→    },
+   835→    {
+   836→      key: 'capas',
+   837→      label: 'CAPA Management',
+   838→      icon: <ClipboardCheck className="h-4 w-4 text-red-600" />,
+   839→      value: capaCompliance,
+   840→      numerator: capas.filter(c => c.status === 'Closed').length,
+   841→      denominator: capas.length,
+   842→      color: 'bg-red-100 dark:bg-red-900/30',
+   843→      details: [
+   844→        `${capas.filter(c => c.status === 'Open').length} Open`,
+   845→        `${capas.filter(c => c.status === 'Investigation').length} Investigation`,
+   846→        `${capas.filter(c => c.status === 'Implementation').length} Implementation`,
+   847→        `${capas.filter(c => c.status === 'Effectiveness Check').length} Effectiveness Check`,
+   848→        `${capas.filter(c => c.status === 'Closed').length} Closed`,
+   849→      ],
+   850→    },
+   851→    {
+   852→      key: 'training',
+   853→      label: 'Training Compliance',
+   854→      icon: <GraduationCap className="h-4 w-4 text-blue-600" />,
+   855→      value: trainingCompliance,
+   856→      numerator: trainingItems.filter(t => t.status === 'Completed').length,
+   857→      denominator: trainingItems.length,
+   858→      color: 'bg-blue-100 dark:bg-blue-900/30',
+   859→      details: [
+   860→        `${trainingItems.filter(t => t.status === 'Completed').length} Completed`,
+   861→        `${trainingItems.filter(t => t.status === 'In Progress').length} In Progress`,
+   862→        `${trainingItems.filter(t => t.status === 'Planned').length} Planned`,
+   863→        `${trainingItems.filter(t => t.status === 'Overdue').length} Overdue`,
+   864→      ],
+   865→    },
+   866→    {
+   867→      key: 'audits',
+   868→      label: 'Audit Management',
+   869→      icon: <ShieldAlert className="h-4 w-4 text-purple-600" />,
+   870→      value: auditCompliance,
+   871→      numerator: audits.filter(a => a.status === 'Completed').length,
+   872→      denominator: audits.length,
+   873→      color: 'bg-purple-100 dark:bg-purple-900/30',
+   874→      details: [
+   875→        `${audits.filter(a => a.status === 'Planned').length} Planned`,
+   876→        `${audits.filter(a => a.status === 'In Progress').length} In Progress`,
+   877→        `${audits.filter(a => a.status === 'Completed').length} Completed`,
+   878→      ],
+   879→    },
+   880→    {
+   881→      key: 'ncrs',
+   882→      label: 'NCR Resolution',
+   883→      icon: <TriangleAlert className="h-4 w-4 text-amber-600" />,
+   884→      value: ncrResolutionRate,
+   885→      numerator: ncrs.filter(n => n.status === 'Closed').length,
+   886→      denominator: ncrs.length,
+   887→      color: 'bg-amber-100 dark:bg-amber-900/30',
+   888→      details: [
+   889→        `${ncrs.filter(n => n.status === 'Open').length} Open`,
+   890→        `${ncrs.filter(n => n.status === 'Under Investigation').length} Under Investigation`,
+   891→        `${ncrs.filter(n => n.status === 'Pending Disposition').length} Pending Disposition`,
+   892→        `${ncrs.filter(n => n.status === 'Closed').length} Closed`,
+   893→      ],
+   894→    },
+   895→    {
+   896→      key: 'risks',
+   897→      label: 'Risk Management',
+   898→      icon: <BarChart3 className="h-4 w-4 text-orange-600" />,
+   899→      value: riskCompliance,
+   900→      numerator: risks.filter(r => r.status !== 'Open').length,
+   901→      denominator: risks.length,
+   902→      color: 'bg-orange-100 dark:bg-orange-900/30',
+   903→      details: [
+   904→        `${risks.filter(r => r.status === 'Open').length} Open`,
+   905→        `${risks.filter(r => r.status === 'Mitigated').length} Mitigated`,
+   906→        `${risks.filter(r => r.status === 'Accepted').length} Accepted`,
+   907→        `${risks.filter(r => r.status === 'Closed').length} Closed`,
+   908→      ],
+   909→    },
+   910→    {
+   911→      key: 'batch',
+   912→      label: 'Batch Records',
+   913→      icon: <Package className="h-4 w-4 text-cyan-600" />,
+   914→      value: batchCompliance,
+   915→      numerator: batchRecords.filter(b => b.status === 'Released').length,
+   916→      denominator: batchRecords.length,
+   917→      color: 'bg-cyan-100 dark:bg-cyan-900/30',
+   918→      details: [
+   919→        `${batchRecords.filter(b => b.status === 'In Progress').length} In Progress`,
+   920→        `${batchRecords.filter(b => b.status === 'Pending QA Review').length} Pending QA Review`,
+   921→        `${batchRecords.filter(b => b.status === 'Released').length} Released`,
+   922→        `${batchRecords.filter(b => b.status === 'Rejected').length} Rejected`,
+   923→      ],
+   924→    },
+   925→    {
+   926→      key: 'suppliers',
+   927→      label: 'Supplier Qualification',
+   928→      icon: <Truck className="h-4 w-4 text-indigo-600" />,
+   929→      value: supplierCompliance,
+   930→      numerator: suppliers.filter(s => s.status === 'Qualified').length,
+   931→      denominator: suppliers.length,
+   932→      color: 'bg-indigo-100 dark:bg-indigo-900/30',
+   933→      details: [
+   934→        `${suppliers.filter(s => s.status === 'Qualified').length} Qualified`,
+   935→        `${suppliers.filter(s => s.status === 'Conditional').length} Conditional`,
+   936→        `${suppliers.filter(s => s.status === 'Under Evaluation').length} Under Evaluation`,
+   937→        `${suppliers.filter(s => s.status === 'Disqualified').length} Disqualified`,
+   938→      ],
+   939→    },
+   940→  ], [docCompliance, capaCompliance, trainingCompliance, auditCompliance, ncrResolutionRate, riskCompliance, batchCompliance, supplierCompliance, documents, capas, trainingItems, audits, ncrs, risks, batchRecords, suppliers]);
+   941→
+   942→  // -------------------------------------------------------------------------
+   943→  // Pending Signatures counts
+   944→  // -------------------------------------------------------------------------
+   945→
+   946→  const pendingSignatures = useMemo(() => {
+   947→    const docsAwaitingApproval = documents.filter(d => d.status === 'Under Review').length;
+   948→    const openCapasCount = capas.filter(c => c.status !== 'Closed').length;
+   949→    // Pending signatures = documents in review + change controls pending approval
+   950→    const pendingSigs = documents.filter(d => d.status === 'Under Review').length +
+   951→      changeControls.filter(cc => cc.status === 'Under Review' || cc.status === 'Requested').length;
+   952→    return { docsAwaitingApproval, openCapasCount, pendingSigs };
+   953→  }, [documents, capas, changeControls]);
+   954→
+   955→  // -------------------------------------------------------------------------
+   956→  // Audit trail: filtered data
+   957→  // -------------------------------------------------------------------------
+   958→
+   959→  const filteredAuditTrail = useMemo(() => {
+   960→    let data = [...auditTrails];
+   961→
+   962→    // Action filter
+   963→    if (auditActionFilter !== 'all') {
+   964→      data = data.filter(entry => entry.action === auditActionFilter);
+   965→    }
+   966→
+   967→    // Table/module filter
+   968→    if (auditTableFilter !== 'all') {
+   969→      data = data.filter(entry => entry.tableName === auditTableFilter);
+   970→    }
+   971→
+   972→    // Date range filter
+   973→    if (auditDateFrom) {
+   974→      const from = new Date(auditDateFrom);
+   975→      data = data.filter(entry => new Date(entry.createdAt) >= from);
+   976→    }
+   977→    if (auditDateTo) {
+   978→      const to = new Date(auditDateTo);
+   979→      to.setHours(23, 59, 59, 999);
+   980→      data = data.filter(entry => new Date(entry.createdAt) <= to);
+   981→    }
+   982→
+   983→    // Search filter
+   984→    if (auditSearch.trim()) {
+   985→      const q = auditSearch.toLowerCase();
+   986→      data = data.filter(entry =>
+   987→        (entry.action || '').toLowerCase().includes(q) ||
+   988→        (entry.tableName || '').toLowerCase().includes(q) ||
+   989→        (entry.recordId || '').toLowerCase().includes(q) ||
+   990→        (entry.userEmail || '').toLowerCase().includes(q) ||
+   991→        JSON.stringify(entry.newValues || {}).toLowerCase().includes(q) ||
+   992→        JSON.stringify(entry.oldValues || {}).toLowerCase().includes(q)
+   993→      );
+   994→    }
+   995→
+   996→    // Sort by most recent first
+   997→    data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+   998→
+   999→    return data;
+  1000→  }, [auditTrails, auditActionFilter, auditTableFilter, auditDateFrom, auditDateTo, auditSearch]);
+  1001→
+  1002→  // -------------------------------------------------------------------------
+  1003→  // Audit trail: pagination
+  1004→  // -------------------------------------------------------------------------
+  1005→
+  1006→  const totalPages = Math.max(1, Math.ceil(filteredAuditTrail.length / ITEMS_PER_PAGE));
+  1007→  const paginatedAuditTrail = useMemo(() => {
+  1008→    const start = (auditPage - 1) * ITEMS_PER_PAGE;
+  1009→    return filteredAuditTrail.slice(start, start + ITEMS_PER_PAGE);
+  1010→  }, [filteredAuditTrail, auditPage]);
+  1011→
+  1012→  // Reset page when filters change
+  1013→  const handleFilterChange = useCallback(() => {
+  1014→    setAuditPage(1);
+  1015→  }, []);
+  1016→
+  1017→  // -------------------------------------------------------------------------
+  1018→  // Audit trail: format details for display
+  1019→  // -------------------------------------------------------------------------
+  1020→
+  1021→  const formatAuditDetails = useCallback((entry: typeof auditTrails[0]) => {
+  1022→    const parts: string[] = [];
+  1023→    if (entry.oldValues) {
+  1024→      const keys = Object.keys(entry.oldValues);
+  1025→      if (keys.length > 0) {
+  1026→        parts.push(`From: ${keys.map(k => `${k}=${entry.oldValues![k]}`).join(', ')}`);
+  1027→      }
+  1028→    }
+  1029→    if (entry.newValues) {
+  1030→      const keys = Object.keys(entry.newValues);
+  1031→      if (keys.length > 0) {
+  1032→        parts.push(`To: ${keys.map(k => `${k}=${entry.newValues![k]}`).join(', ')}`);
+  1033→      }
+  1034→    }
+  1035→    return parts.length > 0 ? parts.join(' | ') : '—';
+  1036→  }, []);
+  1037→
+  1038→  // -------------------------------------------------------------------------
+  1039→  // CSV export handler
+  1040→  // -------------------------------------------------------------------------
+  1041→
+  1042→  const handleExportCSV = useCallback(() => {
+  1043→    const exportData = filteredAuditTrail.map(entry => ({
+  1044→      timestamp: formatDate(entry.createdAt),
+  1045→      action: entry.action,
+  1046→      tableName: entry.tableName,
+  1047→      recordId: entry.recordId || '—',
+  1048→      user: entry.userEmail || entry.userId || '—',
+  1049→      details: formatAuditDetails(entry),
+  1050→    }));
+  1051→    exportAuditTrailCSV(exportData);
+  1052→  }, [filteredAuditTrail, formatAuditDetails]);
+  1053→
+  1054→  // -------------------------------------------------------------------------
+  1055→  // Permission check
+  1056→  // -------------------------------------------------------------------------
+  1057→
+  1058→  if (!hasPermission('compliance.view')) {
+  1059→    return (
+  1060→      <div className="p-6 flex items-center justify-center min-h-[400px]">
+  1061→        <Card className="w-full max-w-md">
+  1062→          <CardContent className="pt-6 text-center">
+  1063→            <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+  1064→            <h3 className="text-lg font-semibold">Access Restricted</h3>
+  1065→            <p className="text-muted-foreground text-sm mt-1">You do not have permission to view compliance data.</p>
+  1066→          </CardContent>
+  1067→        </Card>
+  1068→      </div>
+  1069→    );
+  1070→  }
+  1071→
+  1072→  return (
+  1073→    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+  1074→      {/* Header */}
+  1075→      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+  1076→        <div>
+  1077→          <h1 className="text-2xl font-bold flex items-center gap-2">
+  1078→            <Shield className="h-6 w-6 text-primary" aria-hidden="true" />Compliance
+  1079→          </h1>
+  1080→          <p className="text-muted-foreground mt-1">
+  1081→            Regulatory compliance tracking for {industryConfig.label} — {industryConfig.primaryStandard}
+  1082→          </p>
+  1083→        </div>
+  1084→        {/* Checklist selector dropdown */}
+  1085→        {availableChecklists.length > 1 && (
+  1086→          <div className="flex items-center gap-2">
+  1087→            <span className="text-sm text-muted-foreground whitespace-nowrap">Checklist:</span>
+  1088→            <Select value={selectedChecklistId} onValueChange={setSelectedChecklistId}>
+  1089→              <SelectTrigger className="w-[260px]">
+  1090→                <SelectValue />
+  1091→              </SelectTrigger>
+  1092→              <SelectContent>
+  1093→                {availableChecklists.map(checklist => (
+  1094→                  <SelectItem key={checklist.id} value={checklist.id}>
+  1095→                    {checklist.standard}
+  1096→                  </SelectItem>
+  1097→                ))}
+  1098→              </SelectContent>
+  1099→            </Select>
+  1100→          </div>
+  1101→        )}
+  1102→      </div>
+  1103→
+  1104→      {/* ----------------------------------------------------------------- */}
+  1105→      {/* Overall Compliance Score + Sub-metrics                            */}
+  1106→      {/* ----------------------------------------------------------------- */}
+  1107→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+  1108→        {/* Large gauge */}
+  1109→        <Card>
+  1110→          <CardHeader>
+  1111→            <CardTitle className="text-base">Overall Compliance Score</CardTitle>
+  1112→            <CardDescription>Weighted composite — {industryConfig.label} weights</CardDescription>
+  1113→          </CardHeader>
+  1114→          <CardContent className="flex flex-col items-center">
+  1115→            <div className="w-full max-w-[200px]">
+  1116→              <ComplianceGauge score={overallScore} />
+  1117→            </div>
+  1118→            <div className="w-full mt-4 space-y-2.5" aria-live="polite" aria-label="Compliance score details">
+  1119→              {subMetrics.map(m => (
+  1120→                <MetricBar key={m.label} label={m.label} value={m.value} color={m.color} />
+  1121→              ))}
+  1122→            </div>
+  1123→          </CardContent>
+  1124→        </Card>
+  1125→
+  1126→        {/* Status overview cards */}
+  1127→        <div className="space-y-4">
+  1128→          <div className="grid grid-cols-2 gap-4">
+  1129→            <Card>
+  1130→              <CardContent className="pt-4 pb-4">
+  1131→                <div className="flex items-center gap-2">
+  1132→                  <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
+  1133→                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+  1134→                  </div>
+  1135→                  <div>
+  1136→                    <p className="text-2xl font-bold">{statusCounts.Compliant}</p>
+  1137→                    <p className="text-xs text-muted-foreground">Compliant</p>
+  1138→                  </div>
+  1139→                </div>
+  1140→              </CardContent>
+  1141→            </Card>
+  1142→            <Card>
+  1143→              <CardContent className="pt-4 pb-4">
+  1144→                <div className="flex items-center gap-2">
+  1145→                  <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+  1146→                    <CircleDot className="h-4 w-4 text-amber-600" />
+  1147→                  </div>
+  1148→                  <div>
+  1149→                    <p className="text-2xl font-bold">{statusCounts['Partially Compliant']}</p>
+  1150→                    <p className="text-xs text-muted-foreground">Partial</p>
+  1151→                  </div>
+  1152→                </div>
+  1153→              </CardContent>
+  1154→            </Card>
+  1155→            <Card>
+  1156→              <CardContent className="pt-4 pb-4">
+  1157→                <div className="flex items-center gap-2">
+  1158→                  <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
+  1159→                    <XCircle className="h-4 w-4 text-red-600" />
+  1160→                  </div>
+  1161→                  <div>
+  1162→                    <p className="text-2xl font-bold">{statusCounts['Non-Compliant']}</p>
+  1163→                    <p className="text-xs text-muted-foreground">Non-Compliant</p>
+  1164→                  </div>
+  1165→                </div>
+  1166→              </CardContent>
+  1167→            </Card>
+  1168→            <Card>
+  1169→              <CardContent className="pt-4 pb-4">
+  1170→                <div className="flex items-center gap-2">
+  1171→                  <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800">
+  1172→                    <MinusCircle className="h-4 w-4 text-gray-500" />
+  1173→                  </div>
+  1174→                  <div>
+  1175→                    <p className="text-2xl font-bold">{statusCounts['Not Assessed']}</p>
+  1176→                    <p className="text-xs text-muted-foreground">Not Assessed</p>
+  1177→                  </div>
+  1178→                </div>
+  1179→              </CardContent>
+  1180→            </Card>
+  1181→          </div>
+  1182→
+  1183→          {/* Quick stats */}
+  1184→          <Card>
+  1185→            <CardHeader className="pb-2">
+  1186→              <CardTitle className="text-sm">Quick Stats</CardTitle>
+  1187→            </CardHeader>
+  1188→            <CardContent className="space-y-2">
+  1189→              <div className="flex items-center justify-between text-sm">
+  1190→                <span className="text-muted-foreground">Approved Documents</span>
+  1191→                <span className="font-medium">{documents.filter(d => d.status === 'Approved').length}/{documents.length}</span>
+  1192→              </div>
+  1193→              <div className="flex items-center justify-between text-sm">
+  1194→                <span className="text-muted-foreground">Closed CAPAs</span>
+  1195→                <span className="font-medium">{capas.filter(c => c.status === 'Closed').length}/{capas.length}</span>
+  1196→              </div>
+  1197→              <div className="flex items-center justify-between text-sm">
+  1198→                <span className="text-muted-foreground">Completed Training</span>
+  1199→                <span className="font-medium">{trainingItems.filter(t => t.status === 'Completed').length}/{trainingItems.length}</span>
+  1200→              </div>
+  1201→              <div className="flex items-center justify-between text-sm">
+  1202→                <span className="text-muted-foreground">Completed Audits</span>
+  1203→                <span className="font-medium">{audits.filter(a => a.status === 'Completed').length}/{audits.length}</span>
+  1204→              </div>
+  1205→              <div className="flex items-center justify-between text-sm">
+  1206→                <span className="text-muted-foreground">Closed NCRs</span>
+  1207→                <span className="font-medium">{ncrs.filter(n => n.status === 'Closed').length}/{ncrs.length}</span>
+  1208→              </div>
+  1209→              <Separator />
+  1210→              <div className="flex items-center justify-between text-sm">
+  1211→                <span className="text-muted-foreground">Compliance Gaps</span>
+  1212→                <span className="font-semibold text-red-600">{complianceGaps.length}</span>
+  1213→              </div>
+  1214→            </CardContent>
+  1215→          </Card>
+  1216→        </div>
+  1217→
+  1218→        {/* Compliance Gaps */}
+  1219→        <Card>
+  1220→          <CardHeader>
+  1221→            <CardTitle className="text-base flex items-center gap-2">
+  1222→              <TriangleAlert className="h-5 w-5 text-amber-500" />
+  1223→              Compliance Gaps
+  1224→              <Badge variant="destructive" className="ml-auto">{complianceGaps.length}</Badge>
+  1225→            </CardTitle>
+  1226→            <CardDescription>Identified gaps requiring attention</CardDescription>
+  1227→          </CardHeader>
+  1228→          <CardContent>
+  1229→            <div className="space-y-3 max-h-96 overflow-y-auto">
+  1230→              {complianceGaps.length === 0 && (
+  1231→                <p className="text-sm text-muted-foreground text-center py-6">No compliance gaps identified.</p>
+  1232→              )}
+  1233→              {complianceGaps.map(gap => (
+  1234→                <div
+  1235→                  key={gap.id}
+  1236→                  className={cn(
+  1237→                    'p-3 rounded-lg border',
+  1238→                    gap.severity === 'Critical'
+  1239→                      ? 'border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20'
+  1240→                      : gap.severity === 'Major'
+  1241→                        ? 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20'
+  1242→                        : 'border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900/20'
+  1243→                  )}
+  1244→                >
+  1245→                  <div className="flex items-start justify-between gap-2">
+  1246→                    <div className="flex-1 min-w-0">
+  1247→                      <div className="flex items-center gap-2">
+  1248→                        <p className="text-sm font-medium truncate">{gap.title}</p>
+  1249→                        <Badge
+  1250→                          className={cn(
+  1251→                            'text-xs shrink-0',
+  1252→                            gap.severity === 'Critical' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+  1253→                            gap.severity === 'Major' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+  1254→                            'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+  1255→                          )}
+  1256→                          variant="secondary"
+  1257→                        >
+  1258→                          {gap.severity}
+  1259→                        </Badge>
+  1260→                      </div>
+  1261→                      <p className="text-xs text-muted-foreground mt-0.5">Clause §{gap.clause}</p>
+  1262→                    </div>
+  1263→                  </div>
+  1264→                  <p className="text-xs text-muted-foreground mt-1.5">{gap.description}</p>
+  1265→                  <div className="mt-2 flex items-start gap-1.5">
+  1266→                    <ArrowRight className="h-3 w-3 mt-0.5 text-primary shrink-0" />
+  1267→                    <p className="text-xs">{gap.recommendedAction}</p>
+  1268→                  </div>
+  1269→                </div>
+  1270→              ))}
+  1271→            </div>
+  1272→          </CardContent>
+  1273→        </Card>
+  1274→      </div>
+  1275→
+  1276→      {/* ----------------------------------------------------------------- */}
+  1277→      {/* Enhanced Compliance Category Cards                                */}
+  1278→      {/* ----------------------------------------------------------------- */}
+  1279→      <Card>
+  1280→        <CardHeader>
+  1281→          <CardTitle className="text-base flex items-center gap-2">
+  1282→            <BarChart3 className="h-5 w-5 text-primary" />
+  1283→            Compliance by Category
+  1284→          </CardTitle>
+  1285→          <CardDescription>Click any card to expand status breakdown</CardDescription>
+  1286→        </CardHeader>
+  1287→        <CardContent>
+  1288→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+  1289→            {categoryCards.map(card => (
+  1290→              <ComplianceCategoryCard
+  1291→                key={card.key}
+  1292→                card={card}
+  1293→                expanded={expandedCategories.has(card.key)}
+  1294→                onToggle={() => toggleCategory(card.key)}
+  1295→              />
+  1296→            ))}
+  1297→          </div>
+  1298→        </CardContent>
+  1299→      </Card>
+  1300→
+  1301→      {/* ----------------------------------------------------------------- */}
+  1302→      {/* Pending Signatures Section                                        */}
+  1303→      {/* ----------------------------------------------------------------- */}
+  1304→      <Card>
+  1305→        <CardHeader>
+  1306→          <CardTitle className="text-base flex items-center gap-2">
+  1307→            <PenLine className="h-5 w-5 text-primary" />
+  1308→            Pending Signatures & Approvals
+  1309→          </CardTitle>
+  1310→          <CardDescription>Items requiring your attention and approval</CardDescription>
+  1311→        </CardHeader>
+  1312→        <CardContent>
+  1313→          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+  1314→            <div className="flex items-center gap-4 p-4 rounded-lg border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50">
+  1315→              <div className="p-3 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+  1316→                <FileText className="h-6 w-6 text-amber-600" />
+  1317→              </div>
+  1318→              <div>
+  1319→                <p className="text-3xl font-bold text-amber-700 dark:text-amber-400">{pendingSignatures.docsAwaitingApproval}</p>
+  1320→                <p className="text-sm text-muted-foreground">Documents Awaiting Approval</p>
+  1321→              </div>
+  1322→            </div>
+  1323→            <div className="flex items-center gap-4 p-4 rounded-lg border bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/50">
+  1324→              <div className="p-3 rounded-lg bg-red-100 dark:bg-red-900/30">
+  1325→                <ClipboardCheck className="h-6 w-6 text-red-600" />
+  1326→              </div>
+  1327→              <div>
+  1328→                <p className="text-3xl font-bold text-red-700 dark:text-red-400">{pendingSignatures.openCapasCount}</p>
+  1329→                <p className="text-sm text-muted-foreground">Open CAPAs</p>
+  1330→              </div>
+  1331→            </div>
+  1332→            <div className="flex items-center gap-4 p-4 rounded-lg border bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-900/50">
+  1333→              <div className="p-3 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+  1334→                <PenLine className="h-6 w-6 text-purple-600" />
+  1335→              </div>
+  1336→              <div>
+  1337→                <p className="text-3xl font-bold text-purple-700 dark:text-purple-400">{pendingSignatures.pendingSigs}</p>
+  1338→                <p className="text-sm text-muted-foreground">Pending Signatures</p>
+  1339→              </div>
+  1340→            </div>
+  1341→          </div>
+  1342→          <Separator className="my-4" />
+  1343→          <div className="flex flex-wrap gap-2">
+  1344→            <Button variant="outline" size="sm" className="gap-1.5">
+  1345→              <Eye className="h-3.5 w-3.5" />
+  1346→              Review Documents
+  1347→            </Button>
+  1348→            <Button variant="outline" size="sm" className="gap-1.5">
+  1349→              <ClipboardCheck className="h-3.5 w-3.5" />
+  1350→              Review CAPAs
+  1351→            </Button>
+  1352→            <Button variant="outline" size="sm" className="gap-1.5">
+  1353→              <Users className="h-3.5 w-3.5" />
+  1354→              View All Pending
+  1355→            </Button>
+  1356→          </div>
+  1357→        </CardContent>
+  1358→      </Card>
+  1359→
+  1360→      {/* ----------------------------------------------------------------- */}
+  1361→      {/* Report Templates Section                                          */}
+  1362→      {/* ----------------------------------------------------------------- */}
+  1363→      <Card>
+  1364→        <CardHeader>
+  1365→          <CardTitle className="text-base flex items-center gap-2">
+  1366→            <BarChart3 className="h-5 w-5 text-primary" />
+  1367→            Report Templates
+  1368→          </CardTitle>
+  1369→          <CardDescription>Generate compliance reports from QMS data</CardDescription>
+  1370→        </CardHeader>
+  1371→        <CardContent>
+  1372→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+  1373→            {REPORT_TEMPLATES.map(template => {
+  1374→              const Icon = template.icon;
+  1375→              return (
+  1376→                <div key={template.id} className="p-4 rounded-lg border hover:shadow-md transition-shadow">
+  1377→                  <div className="flex items-start gap-3 mb-3">
+  1378→                    <div className={cn('p-2 rounded-lg', template.bg)}>
+  1379→                      <Icon className={cn('h-5 w-5', template.color)} />
+  1380→                    </div>
+  1381→                    <div className="flex-1 min-w-0">
+  1382→                      <p className="text-sm font-semibold">{template.title}</p>
+  1383→                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{template.description}</p>
+  1384→                    </div>
+  1385→                  </div>
+  1386→                  <div className="flex gap-2">
+  1387→                    <Button variant="outline" size="sm" className="flex-1 gap-1 text-xs">
+  1388→                      <Eye className="h-3 w-3" />
+  1389→                      Generate
+  1390→                    </Button>
+  1391→                    <Button variant="outline" size="sm" className="flex-1 gap-1 text-xs">
+  1392→                      <Download className="h-3 w-3" />
+  1393→                      Export
+  1394→                    </Button>
+  1395→                  </div>
+  1396→                </div>
+  1397→              );
+  1398→            })}
+  1399→          </div>
+  1400→        </CardContent>
+  1401→      </Card>
+  1402→
+  1403→      {/* ----------------------------------------------------------------- */}
+  1404→      {/* Applicable Standards                                              */}
+  1405→      {/* ----------------------------------------------------------------- */}
+  1406→      <Card>
+  1407→        <CardHeader>
+  1408→          <CardTitle className="text-base flex items-center gap-2">
+  1409→            <Award className="h-5 w-5 text-primary" />
+  1410→            Applicable Standards
+  1411→          </CardTitle>
+  1412→          <CardDescription>
+  1413→            Standards applicable to your organization ({industryConfig.label})
+  1414→          </CardDescription>
+  1415→        </CardHeader>
+  1416→        <CardContent>
+  1417→          <div className="flex flex-wrap gap-3">
+  1418→            {applicableStandards.map(standard => {
+  1419→              const checklistId = standardToChecklistId(standard);
+  1420→              const isActive = checklistId === (activeChecklist?.id || '');
+  1421→              return (
+  1422→                <button
+  1423→                  key={standard}
+  1424→                  onClick={() => {
+  1425→                    const cid = standardToChecklistId(standard);
+  1426→                    if (COMPLIANCE_CHECKLISTS[cid]) {
+  1427→                      setSelectedChecklistId(cid);
+  1428→                    }
+  1429→                  }}
+  1430→                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
+  1431→                    isActive
+  1432→                      ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+  1433→                      : 'bg-muted/30 hover:bg-muted/50'
+  1434→                  }`}
+  1435→                >
+  1436→                  <Shield className={`h-4 w-4 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
+  1437→                  <span className={`text-sm font-medium ${isActive ? 'text-primary' : ''}`}>{standard}</span>
+  1438→                  {isActive && <CheckCircle2 className="h-3.5 w-3.5 text-primary" />}
+  1439→                </button>
+  1440→              );
+  1441→            })}
+  1442→          </div>
+  1443→        </CardContent>
+  1444→      </Card>
+  1445→
+  1446→      {/* ----------------------------------------------------------------- */}
+  1447→      {/* Compliance Checklist (industry-specific)                          */}
+  1448→      {/* ----------------------------------------------------------------- */}
+  1449→      <Card>
+  1450→        <CardHeader>
+  1451→          <CardTitle className="text-base flex items-center gap-2">
+  1452→            <ListChecks className="h-5 w-5 text-primary" />
+  1453→            {activeChecklist?.name || 'Compliance Checklist'}
+  1454→          </CardTitle>
+  1455→          <CardDescription>
+  1456→            Assessment of compliance by clause — status calculated from actual QMS data
+  1457→          </CardDescription>
+  1458→        </CardHeader>
+  1459→        <CardContent>
+  1460→          <div className="space-y-4">
+  1461→            {clauseSections.map(section => {
+  1462→              const sectionCompliant = section.clauses.filter(c => c.status === 'Compliant').length;
+  1463→              const sectionTotal = section.clauses.length;
+  1464→              const sectionPct = sectionTotal > 0 ? Math.round((sectionCompliant / sectionTotal) * 100) : 0;
+  1465→
+  1466→              return (
+  1467→                <div key={section.key} className="border rounded-lg overflow-hidden">
+  1468→                  {/* Section header */}
+  1469→                  <div className="flex items-center justify-between p-3 bg-muted/30">
+  1470→                    <div className="flex items-center gap-2">
+  1471→                      <span className="font-semibold text-sm">{section.label}</span>
+  1472→                      <Badge variant="outline" className="text-xs">{section.clauses.length} clauses</Badge>
+  1473→                    </div>
+  1474→                    <div className="flex items-center gap-2">
+  1475→                      <Progress value={sectionPct} className="w-24 h-1.5" />
+  1476→                      <span className="text-xs text-muted-foreground">{sectionPct}%</span>
+  1477→                    </div>
+  1478→                  </div>
+  1479→
+  1480→                  {/* Clauses */}
+  1481→                  <div className="divide-y">
+  1482→                    {section.clauses.map(clause => (
+  1483→                      <div key={clause.id}>
+  1484→                        <button
+  1485→                          className="w-full flex items-center gap-3 p-3 hover:bg-muted/20 transition-colors text-left"
+  1486→                          onClick={() => toggleClause(clause.id)}
+  1487→                        >
+  1488→                          {expandedClauses.has(clause.id) ? (
+  1489→                            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+  1490→                          ) : (
+  1491→                            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+  1492→                          )}
+  1493→                          <div className="flex-1 min-w-0">
+  1494→                            <div className="flex items-center gap-2">
+  1495→                              <span className="text-xs font-mono text-muted-foreground">§{clause.number}</span>
+  1496→                              <span className="text-sm font-medium truncate">{clause.name}</span>
+  1497→                            </div>
+  1498→                          </div>
+  1499→                          <div className="flex items-center gap-3 shrink-0">
+  1500→                            <Badge variant="outline" className="text-xs">
+  1501→                              <FileText className="h-3 w-3 mr-1" />
+  1502→                              {clause.evidenceCount}
+  1503→                            </Badge>
+  1504→                            <ClauseStatusBadge status={clause.status} />
+  1505→                          </div>
+  1506→                        </button>
+  1507→
+  1508→                        {/* Expanded evidence + description */}
+  1509→                        {expandedClauses.has(clause.id) && (
+  1510→                          <div className="px-4 pb-3 pl-11">
+  1511→                            {clause.description && (
+  1512→                              <p className="text-xs text-muted-foreground mb-2">{clause.description}</p>
+  1513→                            )}
+  1514→                            <div className="rounded-lg border bg-muted/10 p-3">
+  1515→                              <p className="text-xs font-medium text-muted-foreground mb-2">
+  1516→                                Supporting Evidence ({clause.evidence.length} of {clause.evidenceCount})
+  1517→                              </p>
+  1518→                              {clause.evidence.length === 0 ? (
+  1519→                                <p className="text-xs text-muted-foreground">No evidence records found.</p>
+  1520→                              ) : (
+  1521→                                <div className="space-y-1.5">
+  1522→                                  {clause.evidence.map((ev, idx) => (
+  1523→                                    <div key={idx} className="flex items-center gap-2 text-xs">
+  1524→                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+  1525→                                        {ev.type}
+  1526→                                      </Badge>
+  1527→                                      <span className="font-mono text-muted-foreground">{ev.reference}</span>
+  1528→                                      <span className="truncate">{ev.title}</span>
+  1529→                                    </div>
+  1530→                                  ))}
+  1531→                                </div>
+  1532→                              )}
+  1533→                            </div>
+  1534→                          </div>
+  1535→                        )}
+  1536→                      </div>
+  1537→                    ))}
+  1538→                  </div>
+  1539→                </div>
+  1540→              );
+  1541→            })}
+  1542→          </div>
+  1543→        </CardContent>
+  1544→      </Card>
+  1545→
+  1546→      {/* ----------------------------------------------------------------- */}
+  1547→      {/* Audit Trail Table                                                 */}
+  1548→      {/* ----------------------------------------------------------------- */}
+  1549→      <Card>
+  1550→        <CardHeader>
+  1551→          <CardTitle className="text-base flex items-center gap-2">
+  1552→            <Clock className="h-5 w-5 text-primary" />
+  1553→            Audit Trail
+  1554→            <Badge variant="outline" className="ml-auto">{filteredAuditTrail.length} entries</Badge>
+  1555→          </CardTitle>
+  1556→          <CardDescription>Complete record of all system actions for regulatory compliance</CardDescription>
+  1557→        </CardHeader>
+  1558→        <CardContent>
+  1559→          {/* Filter bar */}
+  1560→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+  1561→            <Select
+  1562→              value={auditActionFilter}
+  1563→              onValueChange={(v) => { setAuditActionFilter(v); handleFilterChange(); }}
+  1564→            >
+  1565→              <SelectTrigger>
+  1566→                <SelectValue placeholder="Action type" />
+  1567→              </SelectTrigger>
+  1568→              <SelectContent>
+  1569→                <SelectItem value="all">All Actions</SelectItem>
+  1570→                {AUDIT_ACTIONS.map(action => (
+  1571→                  <SelectItem key={action} value={action}>{action}</SelectItem>
+  1572→                ))}
+  1573→              </SelectContent>
+  1574→            </Select>
+  1575→
+  1576→            <Select
+  1577→              value={auditTableFilter}
+  1578→              onValueChange={(v) => { setAuditTableFilter(v); handleFilterChange(); }}
+  1579→            >
+  1580→              <SelectTrigger>
+  1581→                <SelectValue placeholder="Table/Module" />
+  1582→              </SelectTrigger>
+  1583→              <SelectContent>
+  1584→                {TABLE_MODULES.map(mod => (
+  1585→                  <SelectItem key={mod.value} value={mod.value}>{mod.label}</SelectItem>
+  1586→                ))}
+  1587→              </SelectContent>
+  1588→            </Select>
+  1589→
+  1590→            <Input
+  1591→              type="date"
+  1592→              value={auditDateFrom}
+  1593→              onChange={(e) => { setAuditDateFrom(e.target.value); handleFilterChange(); }}
+  1594→              placeholder="From date"
+  1595→              className="text-sm"
+  1596→            />
+  1597→
+  1598→            <Input
+  1599→              type="date"
+  1600→              value={auditDateTo}
+  1601→              onChange={(e) => { setAuditDateTo(e.target.value); handleFilterChange(); }}
+  1602→              placeholder="To date"
+  1603→              className="text-sm"
+  1604→            />
+  1605→
+  1606→            <div className="relative">
+  1607→              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1608→              <Input
+  1609→                type="text"
+  1610→                value={auditSearch}
+  1611→                onChange={(e) => { setAuditSearch(e.target.value); handleFilterChange(); }}
+  1612→                placeholder="Search audit trail..."
+  1613→                className="pl-8 text-sm"
+  1614→              />
+  1615→            </div>
+  1616→          </div>
+  1617→
+  1618→          {/* Actions bar */}
+  1619→          <div className="flex items-center justify-between mb-3">
+  1620→            <p className="text-xs text-muted-foreground">
+  1621→              Showing {((auditPage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(auditPage * ITEMS_PER_PAGE, filteredAuditTrail.length)} of {filteredAuditTrail.length} entries
+  1622→            </p>
+  1623→            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportCSV}>
+  1624→              <Download className="h-3.5 w-3.5" />
+  1625→              Export CSV
+  1626→            </Button>
+  1627→          </div>
+  1628→
+  1629→          {/* Table */}
+  1630→          <div className="border rounded-lg overflow-hidden">
+  1631→            <Table>
+  1632→              <TableHeader>
+  1633→                <TableRow>
+  1634→                  <TableHead className="w-[160px]">Timestamp</TableHead>
+  1635→                  <TableHead className="w-[100px]">Action</TableHead>
+  1636→                  <TableHead className="w-[130px]">Table/Module</TableHead>
+  1637→                  <TableHead className="w-[100px]">Record ID</TableHead>
+  1638→                  <TableHead className="w-[160px]">User</TableHead>
+  1639→                  <TableHead>Details</TableHead>
+  1640→                </TableRow>
+  1641→              </TableHeader>
+  1642→              <TableBody>
+  1643→                {paginatedAuditTrail.length === 0 ? (
+  1644→                  <TableRow>
+  1645→                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+  1646→                      No audit trail entries match the current filters.
+  1647→                    </TableCell>
+  1648→                  </TableRow>
+  1649→                ) : (
+  1650→                  paginatedAuditTrail.map(entry => (
+  1651→                    <TableRow key={entry.id}>
+  1652→                      <TableCell className="text-xs font-mono whitespace-nowrap">
+  1653→                        {formatDate(entry.createdAt)}
+  1654→                      </TableCell>
+  1655→                      <TableCell>
+  1656→                        <AuditActionBadge action={entry.action} />
+  1657→                      </TableCell>
+  1658→                      <TableCell className="text-xs">{entry.tableName}</TableCell>
+  1659→                      <TableCell className="text-xs font-mono">{entry.recordId || '—'}</TableCell>
+  1660→                      <TableCell className="text-xs">{entry.userEmail || entry.userId || '—'}</TableCell>
+  1661→                      <TableCell className="text-xs max-w-[300px] truncate" title={formatAuditDetails(entry)}>
+  1662→                        {formatAuditDetails(entry)}
+  1663→                      </TableCell>
+  1664→                    </TableRow>
+  1665→                  ))
+  1666→                )}
+  1667→              </TableBody>
+  1668→            </Table>
+  1669→          </div>
+  1670→
+  1671→          {/* Pagination */}
+  1672→          <div className="flex items-center justify-between mt-4">
+  1673→            <p className="text-sm text-muted-foreground">
+  1674→              Page {auditPage} of {totalPages}
+  1675→            </p>
+  1676→            <div className="flex items-center gap-2">
+  1677→              <Button
+  1678→                variant="outline"
+  1679→                size="sm"
+  1680→                disabled={auditPage <= 1}
+  1681→                onClick={() => setAuditPage(p => Math.max(1, p - 1))}
+  1682→                className="gap-1"
+  1683→              >
+  1684→                <ChevronLeftIcon className="h-4 w-4" />
+  1685→                Previous
+  1686→              </Button>
+  1687→              <Button
+  1688→                variant="outline"
+  1689→                size="sm"
+  1690→                disabled={auditPage >= totalPages}
+  1691→                onClick={() => setAuditPage(p => Math.min(totalPages, p + 1))}
+  1692→                className="gap-1"
+  1693→              >
+  1694→                Next
+  1695→                <ChevronRightIcon className="h-4 w-4" />
+  1696→              </Button>
+  1697→            </div>
+  1698→          </div>
+  1699→        </CardContent>
+  1700→      </Card>
+  1701→    </div>
+  1702→  );
+  1703→}
+  1704→

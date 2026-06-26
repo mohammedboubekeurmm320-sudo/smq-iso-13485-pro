@@ -1,0 +1,2002 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import React, { useState, useMemo, useCallback } from 'react';
+     4→     4→import { useQMSStore } from '@/lib/demo-store';
+     5→     5→import { useAuth } from '@/contexts/AuthContext';
+     6→     6→import { cn, formatDate } from '@/lib/utils';
+     7→     7→import {
+     8→     8→  BarChart3,
+     9→     9→  Shield,
+    10→    10→  AlertTriangle,
+    11→    11→  GraduationCap,
+    12→    12→  ClipboardCheck,
+    13→    13→  Target,
+    14→    14→  FileText,
+    15→    15→  Truck,
+    16→    16→  Package,
+    17→    17→  LayoutDashboard,
+    18→    18→  Download,
+    19→    19→  Eye,
+    20→    20→  X,
+    21→    21→  TrendingUp,
+    22→    22→  TrendingDown,
+    23→    23→  Users,
+    24→    24→  Clock,
+    25→    25→  CheckCircle2,
+    26→    26→  XCircle,
+    27→    27→  AlertOctagon,
+    28→    28→  Calendar,
+    29→    29→  Activity,
+    30→    30→  PieChart as PieChartIcon,
+    31→    31→  Filter,
+    32→    32→  FileSpreadsheet,
+    33→    33→  ArrowUpRight,
+    34→    34→  ArrowDownRight,
+    35→    35→  Minus,
+    36→    36→  Upload,
+    37→    37→} from 'lucide-react';
+    38→    38→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+    39→    39→import { Badge } from '@/components/ui/badge';
+    40→    40→import { Button } from '@/components/ui/button';
+    41→    41→import { Separator } from '@/components/ui/separator';
+    42→    42→import {
+    43→    43→  Dialog,
+    44→    44→  DialogContent,
+    45→    45→  DialogHeader,
+    46→    46→  DialogTitle,
+    47→    47→} from '@/components/ui/dialog';
+    48→    48→import {
+    49→    49→  Select,
+    50→    50→  SelectContent,
+    51→    51→  SelectItem,
+    52→    52→  SelectTrigger,
+    53→    53→  SelectValue,
+    54→    54→} from '@/components/ui/select';
+    55→    55→import {
+    56→    56→  Table,
+    57→    57→  TableBody,
+    58→    58→  TableCell,
+    59→    59→  TableHead,
+    60→    60→  TableHeader,
+    61→    61→  TableRow,
+    62→    62→} from '@/components/ui/table';
+    63→    63→import {
+    64→    64→  BarChart,
+    65→    65→  Bar,
+    66→    66→  XAxis,
+    67→    67→  YAxis,
+    68→    68→  CartesianGrid,
+    69→    69→  Tooltip,
+    70→    70→  ResponsiveContainer,
+    71→    71→  PieChart,
+    72→    72→  Pie,
+    73→    73→  Cell,
+    74→    74→  LineChart,
+    75→    75→  Line,
+    76→    76→  AreaChart,
+    77→    77→  Area,
+    78→    78→  Legend,
+    79→    79→} from 'recharts';
+    80→    80→import { DataImportDialog } from '@/components/shared/DataImportDialog';
+    81→    81→
+    82→    82→// ---------------------------------------------------------------------------
+    83→    83→// Constants
+    84→    84→// ---------------------------------------------------------------------------
+    85→    85→
+    86→    86→const COLORS = [
+    87→    87→  'hsl(142, 76%, 36%)',
+    88→    88→  'hsl(38, 92%, 50%)',
+    89→    89→  'hsl(0, 84%, 60%)',
+    90→    90→  'hsl(217, 91%, 60%)',
+    91→    91→  'hsl(280, 67%, 58%)',
+    92→    92→  'hsl(173, 58%, 39%)',
+    93→    93→  'hsl(45, 93%, 47%)',
+    94→    94→  'hsl(340, 75%, 55%)',
+    95→    95→];
+    96→    96→
+    97→    97→const CHART_COLORS = {
+    98→    98→  green: 'hsl(142, 76%, 36%)',
+    99→    99→  amber: 'hsl(38, 92%, 50%)',
+   100→   100→  red: 'hsl(0, 84%, 60%)',
+   101→   101→  blue: 'hsl(217, 91%, 60%)',
+   102→   102→  purple: 'hsl(280, 67%, 58%)',
+   103→   103→  teal: 'hsl(173, 58%, 39%)',
+   104→   104→  cyan: 'hsl(187, 85%, 43%)',
+   105→   105→  orange: 'hsl(25, 95%, 53%)',
+   106→   106→};
+   107→   107→
+   108→   108→const PRIORITY_COLORS: Record<string, string> = {
+   109→   109→  Critical: CHART_COLORS.red,
+   110→   110→  High: CHART_COLORS.orange,
+   111→   111→  Medium: CHART_COLORS.amber,
+   112→   112→  Low: CHART_COLORS.green,
+   113→   113→};
+   114→   114→
+   115→   115→const SEVERITY_COLORS: Record<string, string> = {
+   116→   116→  Critical: CHART_COLORS.red,
+   117→   117→  Major: CHART_COLORS.orange,
+   118→   118→  Minor: CHART_COLORS.amber,
+   119→   119→  Observation: CHART_COLORS.green,
+   120→   120→};
+   121→   121→
+   122→   122→// ---------------------------------------------------------------------------
+   123→   123→// Helpers
+   124→   124→// ---------------------------------------------------------------------------
+   125→   125→
+   126→   126→function getPeriodCutoff(period: string): Date | null {
+   127→   127→  const now = new Date();
+   128→   128→  switch (period) {
+   129→   129→    case '3m': return new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+   130→   130→    case '6m': return new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
+   131→   131→    case '12m': return new Date(now.getFullYear(), now.getMonth() - 12, now.getDate());
+   132→   132→    case 'all': return null;
+   133→   133→    default: return new Date(now.getFullYear(), now.getMonth() - 12, now.getDate());
+   134→   134→  }
+   135→   135→}
+   136→   136→
+   137→   137→function filterByPeriod<T extends { createdAt: string }>(items: T[], period: string): T[] {
+   138→   138→  const cutoff = getPeriodCutoff(period);
+   139→   139→  if (!cutoff) return items;
+   140→   140→  return items.filter(item => new Date(item.createdAt) >= cutoff);
+   141→   141→}
+   142→   142→
+   143→   143→function getMonthKey(dateStr: string): string {
+   144→   144→  const d = new Date(dateStr);
+   145→   145→  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+   146→   146→}
+   147→   147→
+   148→   148→function formatMonthLabel(key: string): string {
+   149→   149→  const [year, month] = key.split('-');
+   150→   150→  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+   151→   151→  return `${monthNames[parseInt(month) - 1]} ${year.slice(2)}`;
+   152→   152→}
+   153→   153→
+   154→   154→function pct(numerator: number, denominator: number): number {
+   155→   155→  if (denominator === 0) return 0;
+   156→   156→  return Math.round((numerator / denominator) * 100);
+   157→   157→}
+   158→   158→
+   159→   159→// ---------------------------------------------------------------------------
+   160→   160→// Custom Tooltip
+   161→   161→// ---------------------------------------------------------------------------
+   162→   162→
+   163→   163→interface CustomTooltipProps {
+   164→   164→  active?: boolean;
+   165→   165→  payload?: Array<{ name: string; value: number; color?: string }>;
+   166→   166→  label?: string;
+   167→   167→}
+   168→   168→
+   169→   169→function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
+   170→   170→  if (!active || !payload?.length) return null;
+   171→   171→  return (
+   172→   172→    <div className="rounded-lg border bg-background p-2 shadow-sm">
+   173→   173→      <p className="text-xs font-medium mb-1">{label}</p>
+   174→   174→      {payload.map((entry, i) => (
+   175→   175→        <p key={i} className="text-xs" style={{ color: entry.color }}>
+   176→   176→          {entry.name}: {entry.value}
+   177→   177→        </p>
+   178→   178→      ))}
+   179→   179→    </div>
+   180→   180→  );
+   181→   181→}
+   182→   182→
+   183→   183→// ---------------------------------------------------------------------------
+   184→   184→// Report Template type
+   185→   185→// ---------------------------------------------------------------------------
+   186→   186→
+   187→   187→interface ReportTemplate {
+   188→   188→  id: string;
+   189→   189→  title: string;
+   190→   190→  description: string;
+   191→   191→  icon: React.ReactNode;
+   192→   192→  color: string;
+   193→   193→  category: string;
+   194→   194→  recordCount?: number;
+   195→   195→}
+   196→   196→
+   197→   197→// ---------------------------------------------------------------------------
+   198→   198→// Sub-components (declared outside render to avoid re-creation)
+   199→   199→// ---------------------------------------------------------------------------
+   200→   200→
+   201→   201→function MetricCard({ icon, label, value, subValue, colorClass, trend }: {
+   202→   202→  icon: React.ReactNode;
+   203→   203→  label: string;
+   204→   204→  value: string | number;
+   205→   205→  subValue?: string;
+   206→   206→  colorClass: string;
+   207→   207→  trend?: 'up' | 'down' | 'neutral';
+   208→   208→}) {
+   209→   209→  return (
+   210→   210→    <Card className="overflow-hidden">
+   211→   211→      <CardContent className="pt-4 pb-4">
+   212→   212→        <div className="flex items-center justify-between">
+   213→   213→          <div className="flex items-center gap-3">
+   214→   214→            <div className={cn('p-2 rounded-lg', colorClass)}>
+   215→   215→              {icon}
+   216→   216→            </div>
+   217→   217→            <div>
+   218→   218→              <p className="text-2xl font-bold">{value}</p>
+   219→   219→              <p className="text-xs text-muted-foreground">{label}</p>
+   220→   220→              {subValue && <p className="text-[10px] text-muted-foreground mt-0.5">{subValue}</p>}
+   221→   221→            </div>
+   222→   222→          </div>
+   223→   223→          {trend && (
+   224→   224→            <div className={cn(
+   225→   225→              'flex items-center gap-0.5 text-xs font-medium',
+   226→   226→              trend === 'up' && 'text-green-600',
+   227→   227→              trend === 'down' && 'text-red-600',
+   228→   228→              trend === 'neutral' && 'text-muted-foreground',
+   229→   229→            )}>
+   230→   230→              {trend === 'up' && <ArrowUpRight className="h-3 w-3" />}
+   231→   231→              {trend === 'down' && <ArrowDownRight className="h-3 w-3" />}
+   232→   232→              {trend === 'neutral' && <Minus className="h-3 w-3" />}
+   233→   233→            </div>
+   234→   234→          )}
+   235→   235→        </div>
+   236→   236→      </CardContent>
+   237→   237→    </Card>
+   238→   238→  );
+   239→   239→}
+   240→   240→
+   241→   241→function SectionTitle({ children, subtitle }: { children: React.ReactNode; subtitle?: string }) {
+   242→   242→  return (
+   243→   243→    <div className="mb-2">
+   244→   244→      <h4 className="text-sm font-semibold">{children}</h4>
+   245→   245→      {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+   246→   246→    </div>
+   247→   247→  );
+   248→   248→}
+   249→   249→
+   250→   250→function MiniStat({ label, value, color }: { label: string; value: string | number; color?: string }) {
+   251→   251→  return (
+   252→   252→    <div className="p-3 rounded-lg bg-muted/30 text-center border">
+   253→   253→      <p className={cn('text-2xl font-bold', color)}>{value}</p>
+   254→   254→      <p className="text-xs text-muted-foreground">{label}</p>
+   255→   255→    </div>
+   256→   256→  );
+   257→   257→}
+   258→   258→
+   259→   259→// ---------------------------------------------------------------------------
+   260→   260→// Main Component
+   261→   261→// ---------------------------------------------------------------------------
+   262→   262→
+   263→   263→export function ReportsView() {
+   264→   264→  const store = useQMSStore();
+   265→   265→  const { hasPermission } = useAuth();
+   266→   266→
+   267→   267→  const allDocuments = store.documents;
+   268→   268→  const allCapas = store.capas;
+   269→   269→  const allNcrs = store.ncrs;
+   270→   270→  const allAudits = store.audits;
+   271→   271→  const allTrainingItems = store.training;
+   272→   272→  const allRisks = store.risks;
+   273→   273→  const allBatchRecords = store.batchRecords;
+   274→   274→  const allSuppliers = store.suppliers;
+   275→   275→
+   276→   276→  const [previewReport, setPreviewReport] = useState<string | null>(null);
+   277→   277→  const [periodFilter, setPeriodFilter] = useState<string>('12m');
+   278→   278→  const [importDialogOpen, setImportDialogOpen] = useState(false);
+   279→   279→
+   280→   280→  // Period-filtered data
+   281→   281→  const documents = useMemo(() => filterByPeriod(allDocuments, periodFilter), [allDocuments, periodFilter]);
+   282→   282→  const capas = useMemo(() => filterByPeriod(allCapas, periodFilter), [allCapas, periodFilter]);
+   283→   283→  const ncrs = useMemo(() => filterByPeriod(allNcrs, periodFilter), [allNcrs, periodFilter]);
+   284→   284→  const audits = useMemo(() => filterByPeriod(allAudits, periodFilter), [allAudits, periodFilter]);
+   285→   285→  const trainingItems = useMemo(() => filterByPeriod(allTrainingItems, periodFilter), [allTrainingItems, periodFilter]);
+   286→   286→  const risks = useMemo(() => filterByPeriod(allRisks, periodFilter), [allRisks, periodFilter]);
+   287→   287→  const batchRecords = useMemo(() => filterByPeriod(allBatchRecords, periodFilter), [allBatchRecords, periodFilter]);
+   288→   288→  const suppliers = useMemo(() => filterByPeriod(allSuppliers, periodFilter), [allSuppliers, periodFilter]);
+   289→   289→
+   290→   290→  // Report templates with dynamic counts
+   291→   291→  const REPORT_TEMPLATES: ReportTemplate[] = useMemo(() => [
+   292→   292→    {
+   293→   293→      id: 'capa-summary',
+   294→   294→      title: 'CAPA Summary Report',
+   295→   295→      description: 'CAPA statistics, aging analysis, and closure rates',
+   296→   296→      icon: <Shield className="h-6 w-6" />,
+   297→   297→      color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+   298→   298→      category: 'CAPA',
+   299→   299→      recordCount: allCapas.length,
+   300→   300→    },
+   301→   301→    {
+   302→   302→      id: 'ncr-trend',
+   303→   303→      title: 'NCR Trend Report',
+   304→   304→      description: 'NCR trends by type, severity, and resolution time',
+   305→   305→      icon: <AlertTriangle className="h-6 w-6" />,
+   306→   306→      color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+   307→   307→      category: 'NCR',
+   308→   308→      recordCount: allNcrs.length,
+   309→   309→    },
+   310→   310→    {
+   311→   311→      id: 'training-compliance',
+   312→   312→      title: 'Training Compliance Report',
+   313→   313→      description: 'Training completion rates and overdue training items',
+   314→   314→      icon: <GraduationCap className="h-6 w-6" />,
+   315→   315→      color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+   316→   316→      category: 'Training',
+   317→   317→      recordCount: allTrainingItems.length,
+   318→   318→    },
+   319→   319→    {
+   320→   320→      id: 'audit-findings',
+   321→   321→      title: 'Audit Findings Report',
+   322→   322→      description: 'Audit findings summary and open findings tracking',
+   323→   323→      icon: <ClipboardCheck className="h-6 w-6" />,
+   324→   324→      color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+   325→   325→      category: 'Audit',
+   326→   326→      recordCount: allAudits.length,
+   327→   327→    },
+   328→   328→    {
+   329→   329→      id: 'risk-assessment',
+   330→   330→      title: 'Risk Assessment Report',
+   331→   331→      description: 'Risk profile overview and RPN distribution analysis',
+   332→   332→      icon: <Target className="h-6 w-6" />,
+   333→   333→      color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+   334→   334→      category: 'Risk',
+   335→   335→      recordCount: allRisks.length,
+   336→   336→    },
+   337→   337→    {
+   338→   338→      id: 'document-status',
+   339→   339→      title: 'Document Status Report',
+   340→   340→      description: 'Document lifecycle status and approval metrics',
+   341→   341→      icon: <FileText className="h-6 w-6" />,
+   342→   342→      color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+   343→   343→      category: 'Documents',
+   344→   344→      recordCount: allDocuments.length,
+   345→   345→    },
+   346→   346→    {
+   347→   347→      id: 'supplier-performance',
+   348→   348→      title: 'Supplier Performance Report',
+   349→   349→      description: 'Supplier scores, qualification status, and review metrics',
+   350→   350→      icon: <Truck className="h-6 w-6" />,
+   351→   351→      color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+   352→   352→      category: 'Supplier',
+   353→   353→      recordCount: allSuppliers.length,
+   354→   354→    },
+   355→   355→    {
+   356→   356→      id: 'batch-release',
+   357→   357→      title: 'Batch Release Report',
+   358→   358→      description: 'Batch status overview and release metrics',
+   359→   359→      icon: <Package className="h-6 w-6" />,
+   360→   360→      color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
+   361→   361→      category: 'Batch',
+   362→   362→      recordCount: allBatchRecords.length,
+   363→   363→    },
+   364→   364→    {
+   365→   365→      id: 'management-review',
+   366→   366→      title: 'Management Review Report',
+   367→   367→      description: 'Comprehensive QMS overview for management review',
+   368→   368→      icon: <LayoutDashboard className="h-6 w-6" />,
+   369→   369→      color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400',
+   370→   370→      category: 'Management',
+   371→   371→    },
+   372→   372→  ], [allCapas.length, allNcrs.length, allTrainingItems.length, allAudits.length, allRisks.length, allDocuments.length, allSuppliers.length, allBatchRecords.length]);
+   373→   373→
+   374→   374→  // -------------------------------------------------------------------------
+   375→   375→  // Dashboard Metrics Summary
+   376→   376→  // -------------------------------------------------------------------------
+   377→   377→
+   378→   378→  const totalRecords = documents.length + capas.length + ncrs.length + audits.length + trainingItems.length + risks.length + batchRecords.length + suppliers.length;
+   379→   379→  const overdueItems = useMemo(() => {
+   380→   380→    const overdueCapas = capas.filter(c => c.status !== 'Closed' && new Date(c.dueDate) < new Date()).length;
+   381→   381→    const overdueTraining = trainingItems.filter(t => t.status !== 'Completed' && new Date(t.dueDate) < new Date()).length;
+   382→   382→    const overdueAudits = audits.filter(a => a.status !== 'Completed' && new Date(a.scheduledDate) < new Date()).length;
+   383→   383→    return overdueCapas + overdueTraining + overdueAudits;
+   384→   384→  }, [capas, trainingItems, audits]);
+   385→   385→
+   386→   386→  const compliancePct = useMemo(() => {
+   387→   387→    const completed = documents.filter(d => d.status === 'Approved').length +
+   388→   388→      capas.filter(c => c.status === 'Closed').length +
+   389→   389→      ncrs.filter(n => n.status === 'Closed').length +
+   390→   390→      audits.filter(a => a.status === 'Completed').length +
+   391→   391→      trainingItems.filter(t => t.status === 'Completed').length;
+   392→   392→    return pct(completed, Math.max(totalRecords, 1));
+   393→   393→  }, [documents, capas, ncrs, audits, trainingItems, totalRecords]);
+   394→   394→
+   395→   395→  const openItems = capas.filter(c => c.status !== 'Closed').length +
+   396→   396→    ncrs.filter(n => n.status !== 'Closed').length +
+   397→   397→    audits.filter(a => a.status !== 'Completed').length +
+   398→   398→    trainingItems.filter(t => t.status !== 'Completed').length;
+   399→   399→
+   400→   400→  const closedItems = capas.filter(c => c.status === 'Closed').length +
+   401→   401→    ncrs.filter(n => n.status === 'Closed').length +
+   402→   402→    audits.filter(a => a.status === 'Completed').length +
+   403→   403→    trainingItems.filter(t => t.status === 'Completed').length;
+   404→   404→
+   405→   405→  const closedOpenRatio = openItems > 0 ? (closedItems / openItems).toFixed(1) : 'N/A';
+   406→   406→
+   407→   407→  // -------------------------------------------------------------------------
+   408→   408→  // Report-specific data computations
+   409→   409→  // -------------------------------------------------------------------------
+   410→   410→
+   411→   411→  // CAPA data
+   412→   412→  const capaByStatus = useMemo(() => [
+   413→   413→    { name: 'Open', value: capas.filter(c => c.status === 'Open').length },
+   414→   414→    { name: 'Investigation', value: capas.filter(c => c.status === 'Investigation').length },
+   415→   415→    { name: 'Implementation', value: capas.filter(c => c.status === 'Implementation').length },
+   416→   416→    { name: 'Effectiveness', value: capas.filter(c => c.status === 'Effectiveness Check').length },
+   417→   417→    { name: 'Closed', value: capas.filter(c => c.status === 'Closed').length },
+   418→   418→  ].filter(d => d.value > 0), [capas]);
+   419→   419→
+   420→   420→  const capaByPriority = useMemo(() => [
+   421→   421→    { name: 'Critical', count: capas.filter(c => c.priority === 'Critical').length, fill: PRIORITY_COLORS.Critical },
+   422→   422→    { name: 'High', count: capas.filter(c => c.priority === 'High').length, fill: PRIORITY_COLORS.High },
+   423→   423→    { name: 'Medium', count: capas.filter(c => c.priority === 'Medium').length, fill: PRIORITY_COLORS.Medium },
+   424→   424→    { name: 'Low', count: capas.filter(c => c.priority === 'Low').length, fill: PRIORITY_COLORS.Low },
+   425→   425→  ].filter(d => d.count > 0), [capas]);
+   426→   426→
+   427→   427→  const capaAging = useMemo(() => {
+   428→   428→    const now = new Date();
+   429→   429→    const ranges = [
+   430→   430→      { name: '< 30d', min: 0, max: 30 },
+   431→   431→      { name: '30-60d', min: 30, max: 60 },
+   432→   432→      { name: '60-90d', min: 60, max: 90 },
+   433→   433→      { name: '> 90d', min: 90, max: Infinity },
+   434→   434→    ];
+   435→   435→    return ranges.map(r => ({
+   436→   436→      name: r.name,
+   437→   437→      count: capas.filter(c => {
+   438→   438→        if (c.status === 'Closed') return false;
+   439→   439→        const days = Math.floor((now.getTime() - new Date(c.createdDate).getTime()) / (1000 * 60 * 60 * 24));
+   440→   440→        return days >= r.min && days < r.max;
+   441→   441→      }).length,
+   442→   442→    }));
+   443→   443→  }, [capas]);
+   444→   444→
+   445→   445→  const capaClosureRate = useMemo(() => pct(capas.filter(c => c.status === 'Closed').length, capas.length), [capas]);
+   446→   446→
+   447→   447→  const capaByType = useMemo(() => [
+   448→   448→    { name: 'Corrective', count: capas.filter(c => c.type === 'Corrective').length, fill: CHART_COLORS.red },
+   449→   449→    { name: 'Preventive', count: capas.filter(c => c.type === 'Preventive').length, fill: CHART_COLORS.blue },
+   450→   450→  ].filter(d => d.count > 0), [capas]);
+   451→   451→
+   452→   452→  // NCR data
+   453→   453→  const ncrByType = useMemo(() => [
+   454→   454→    { name: 'Product', count: ncrs.filter(n => n.type === 'Product').length, fill: CHART_COLORS.red },
+   455→   455→    { name: 'Process', count: ncrs.filter(n => n.type === 'Process').length, fill: CHART_COLORS.amber },
+   456→   456→    { name: 'System', count: ncrs.filter(n => n.type === 'System').length, fill: CHART_COLORS.blue },
+   457→   457→    { name: 'Supplier', count: ncrs.filter(n => n.type === 'Supplier').length, fill: CHART_COLORS.purple },
+   458→   458→    { name: 'OOS', count: ncrs.filter(n => n.type === 'OOS').length, fill: CHART_COLORS.orange },
+   459→   459→    { name: 'OOT', count: ncrs.filter(n => n.type === 'OOT').length, fill: CHART_COLORS.teal },
+   460→   460→  ].filter(d => d.count > 0), [ncrs]);
+   461→   461→
+   462→   462→  const ncrBySeverity = useMemo(() => [
+   463→   463→    { name: 'Critical', value: ncrs.filter(n => n.severity === 'Critical').length, color: SEVERITY_COLORS.Critical },
+   464→   464→    { name: 'Major', value: ncrs.filter(n => n.severity === 'Major').length, color: SEVERITY_COLORS.Major },
+   465→   465→    { name: 'Minor', value: ncrs.filter(n => n.severity === 'Minor').length, color: SEVERITY_COLORS.Minor },
+   466→   466→  ].filter(d => d.value > 0), [ncrs]);
+   467→   467→
+   468→   468→  const ncrByStatus = useMemo(() => [
+   469→   469→    { name: 'Open', count: ncrs.filter(n => n.status === 'Open').length },
+   470→   470→    { name: 'Under Investigation', count: ncrs.filter(n => n.status === 'Under Investigation').length },
+   471→   471→    { name: 'Pending Disposition', count: ncrs.filter(n => n.status === 'Pending Disposition').length },
+   472→   472→    { name: 'Closed', count: ncrs.filter(n => n.status === 'Closed').length },
+   473→   473→  ], [ncrs]);
+   474→   474→
+   475→   475→  const ncrMonthlyTrend = useMemo(() => {
+   476→   476→    const monthMap = new Map<string, { total: number; closed: number }>();
+   477→   477→    ncrs.forEach(n => {
+   478→   478→      const key = getMonthKey(n.createdDate);
+   479→   479→      const entry = monthMap.get(key) || { total: 0, closed: 0 };
+   480→   480→      entry.total++;
+   481→   481→      if (n.status === 'Closed') entry.closed++;
+   482→   482→      monthMap.set(key, entry);
+   483→   483→    });
+   484→   484→    return Array.from(monthMap.entries())
+   485→   485→      .sort(([a], [b]) => a.localeCompare(b))
+   486→   486→      .map(([key, data]) => ({
+   487→   487→        month: formatMonthLabel(key),
+   488→   488→        Total: data.total,
+   489→   489→        Closed: data.closed,
+   490→   490→      }));
+   491→   491→  }, [ncrs]);
+   492→   492→
+   493→   493→  // Training data
+   494→   494→  const trainingByStatus = useMemo(() => [
+   495→   495→    { name: 'Planned', value: trainingItems.filter(t => t.status === 'Planned').length },
+   496→   496→    { name: 'In Progress', value: trainingItems.filter(t => t.status === 'In Progress').length },
+   497→   497→    { name: 'Completed', value: trainingItems.filter(t => t.status === 'Completed').length },
+   498→   498→    { name: 'Overdue', value: trainingItems.filter(t => t.status === 'Overdue' || (t.status !== 'Completed' && new Date(t.dueDate) < new Date())).length },
+   499→   499→  ].filter(d => d.value > 0), [trainingItems]);
+   500→   500→
+   501→   501→  const trainingByType = useMemo(() => [
+   502→   502→    { name: 'Onboarding', count: trainingItems.filter(t => t.type === 'Onboarding').length, fill: CHART_COLORS.blue },
+   503→   503→    { name: 'SOP', count: trainingItems.filter(t => t.type === 'SOP').length, fill: CHART_COLORS.green },
+   504→   504→    { name: 'Regulatory', count: trainingItems.filter(t => t.type === 'Regulatory').length, fill: CHART_COLORS.amber },
+   505→   505→    { name: 'Skill', count: trainingItems.filter(t => t.type === 'Skill').length, fill: CHART_COLORS.purple },
+   506→   506→    { name: 'Certification', count: trainingItems.filter(t => t.type === 'Certification').length, fill: CHART_COLORS.teal },
+   507→   507→  ].filter(d => d.count > 0), [trainingItems]);
+   508→   508→
+   509→   509→  const overdueTrainingItems = useMemo(() =>
+   510→   510→    trainingItems.filter(t => t.status !== 'Completed' && new Date(t.dueDate) < new Date()),
+   511→   511→  [trainingItems]);
+   512→   512→
+   513→   513→  const trainingCompletionRate = useMemo(() => pct(trainingItems.filter(t => t.status === 'Completed').length, trainingItems.length), [trainingItems]);
+   514→   514→
+   515→   515→  // Audit data
+   516→   516→  const auditFindingsBySeverity = useMemo(() => {
+   517→   517→    const allFindings = audits.flatMap(a => a.findings || []);
+   518→   518→    return [
+   519→   519→      { name: 'Critical', count: allFindings.filter(f => f.severity === 'Critical').length, fill: SEVERITY_COLORS.Critical },
+   520→   520→      { name: 'Major', count: allFindings.filter(f => f.severity === 'Major').length, fill: SEVERITY_COLORS.Major },
+   521→   521→      { name: 'Minor', count: allFindings.filter(f => f.severity === 'Minor').length, fill: SEVERITY_COLORS.Minor },
+   522→   522→      { name: 'Observation', count: allFindings.filter(f => f.severity === 'Observation').length, fill: SEVERITY_COLORS.Observation },
+   523→   523→    ].filter(d => d.count > 0);
+   524→   524→  }, [audits]);
+   525→   525→
+   526→   526→  const auditByType = useMemo(() => [
+   527→   527→    { name: 'Internal', value: audits.filter(a => a.type === 'Internal').length },
+   528→   528→    { name: 'External', value: audits.filter(a => a.type === 'External').length },
+   529→   529→    { name: 'Supplier', value: audits.filter(a => a.type === 'Supplier').length },
+   530→   530→  ].filter(d => d.value > 0), [audits]);
+   531→   531→
+   532→   532→  const totalAuditFindings = useMemo(() => audits.flatMap(a => a.findings || []).length, [audits]);
+   533→   533→  const carRequiredCount = useMemo(() => audits.flatMap(a => a.findings || []).filter(f => f.correctiveActionRequired).length, [audits]);
+   534→   534→
+   535→   535→  // Risk data
+   536→   536→  const riskByLevel = useMemo(() => [
+   537→   537→    { name: 'Low', value: risks.filter(r => r.riskLevel === 'Low').length, color: CHART_COLORS.green },
+   538→   538→    { name: 'Medium', value: risks.filter(r => r.riskLevel === 'Medium').length, color: CHART_COLORS.amber },
+   539→   539→    { name: 'High', value: risks.filter(r => r.riskLevel === 'High').length, color: CHART_COLORS.red },
+   540→   540→    { name: 'Critical', value: risks.filter(r => r.riskLevel === 'Critical').length, color: CHART_COLORS.purple },
+   541→   541→  ].filter(d => d.value > 0), [risks]);
+   542→   542→
+   543→   543→  const rpnDistribution = useMemo(() => {
+   544→   544→    const ranges = [
+   545→   545→      { name: '1-10', min: 1, max: 11, fill: CHART_COLORS.green },
+   546→   546→      { name: '11-30', min: 11, max: 31, fill: CHART_COLORS.teal },
+   547→   547→      { name: '31-60', min: 31, max: 61, fill: CHART_COLORS.amber },
+   548→   548→      { name: '61-125', min: 61, max: 126, fill: CHART_COLORS.red },
+   549→   549→    ];
+   550→   550→    return ranges.map(r => ({
+   551→   551→      name: r.name,
+   552→   552→      count: risks.filter(risk => risk.rpn >= r.min && risk.rpn < r.max).length,
+   553→   553→      fill: r.fill,
+   554→   554→    }));
+   555→   555→  }, [risks]);
+   556→   556→
+   557→   557→  const riskMitigatedClosedRate = useMemo(() =>
+   558→   558→    pct(risks.filter(r => r.status === 'Closed' || r.status === 'Mitigated').length, risks.length),
+   559→   559→  [risks]);
+   560→   560→
+   561→   561→  const riskByCategory = useMemo(() => [
+   562→   562→    { name: 'Product', count: risks.filter(r => r.category === 'Product').length },
+   563→   563→    { name: 'Process', count: risks.filter(r => r.category === 'Process').length },
+   564→   564→    { name: 'System', count: risks.filter(r => r.category === 'System').length },
+   565→   565→    { name: 'Supplier', count: risks.filter(r => r.category === 'Supplier').length },
+   566→   566→  ].filter(d => d.count > 0), [risks]);
+   567→   567→
+   568→   568→  // Document data
+   569→   569→  const docByStatus = useMemo(() => [
+   570→   570→    { name: 'Draft', value: documents.filter(d => d.status === 'Draft').length, color: CHART_COLORS.amber },
+   571→   571→    { name: 'Under Review', value: documents.filter(d => d.status === 'Under Review').length, color: CHART_COLORS.blue },
+   572→   572→    { name: 'Approved', value: documents.filter(d => d.status === 'Approved').length, color: CHART_COLORS.green },
+   573→   573→    { name: 'Obsolete', value: documents.filter(d => d.status === 'Obsolete').length, color: CHART_COLORS.red },
+   574→   574→  ].filter(d => d.value > 0), [documents]);
+   575→   575→
+   576→   576→  const docByType = useMemo(() => {
+   577→   577→    const types = new Set(documents.map(d => d.type));
+   578→   578→    return Array.from(types).map(t => ({
+   579→   579→      name: t,
+   580→   580→      count: documents.filter(d => d.type === t).length,
+   581→   581→    })).sort((a, b) => b.count - a.count);
+   582→   582→  }, [documents]);
+   583→   583→
+   584→   584→  const docApprovalRate = useMemo(() => pct(documents.filter(d => d.status === 'Approved').length, documents.length), [documents]);
+   585→   585→
+   586→   586→  // Supplier data
+   587→   587→  const supplierByStatus = useMemo(() => [
+   588→   588→    { name: 'Qualified', value: suppliers.filter(s => s.status === 'Qualified').length, color: CHART_COLORS.green },
+   589→   589→    { name: 'Conditional', value: suppliers.filter(s => s.status === 'Conditional').length, color: CHART_COLORS.amber },
+   590→   590→    { name: 'Disqualified', value: suppliers.filter(s => s.status === 'Disqualified').length, color: CHART_COLORS.red },
+   591→   591→    { name: 'Under Evaluation', value: suppliers.filter(s => s.status === 'Under Evaluation').length, color: CHART_COLORS.blue },
+   592→   592→  ].filter(d => d.value > 0), [suppliers]);
+   593→   593→
+   594→   594→  const supplierPerformance = useMemo(() =>
+   595→   595→    suppliers.filter(s => s.performanceScore !== undefined && s.performanceScore !== null).map(s => ({
+   596→   596→      name: s.name.length > 15 ? s.name.substring(0, 15) + '…' : s.name,
+   597→   597→      score: s.performanceScore || 0,
+   598→   598→    })).sort((a, b) => b.score - a.score),
+   599→   599→  [suppliers]);
+   600→   600→
+   601→   601→  const avgSupplierScore = useMemo(() => {
+   602→   602→    const scored = suppliers.filter(s => s.performanceScore && s.performanceScore > 0);
+   603→   603→    return scored.length > 0 ? Math.round(scored.reduce((a, s) => a + (s.performanceScore || 0), 0) / scored.length) : 0;
+   604→   604→  }, [suppliers]);
+   605→   605→
+   606→   606→  // Batch data
+   607→   607→  const batchByStatus = useMemo(() => [
+   608→   608→    { name: 'In Progress', value: batchRecords.filter(b => b.status === 'In Progress').length, color: CHART_COLORS.blue },
+   609→   609→    { name: 'Pending QA', value: batchRecords.filter(b => b.status === 'Pending QA Review').length, color: CHART_COLORS.amber },
+   610→   610→    { name: 'Released', value: batchRecords.filter(b => b.status === 'Released').length, color: CHART_COLORS.green },
+   611→   611→    { name: 'Rejected', value: batchRecords.filter(b => b.status === 'Rejected').length, color: CHART_COLORS.red },
+   612→   612→    { name: 'Quarantine', value: batchRecords.filter(b => b.status === 'Quarantine').length, color: CHART_COLORS.purple },
+   613→   613→  ].filter(d => d.value > 0), [batchRecords]);
+   614→   614→
+   615→   615→  const batchByStatusBar = useMemo(() => [
+   616→   616→    { name: 'In Progress', count: batchRecords.filter(b => b.status === 'In Progress').length },
+   617→   617→    { name: 'Pending QA', count: batchRecords.filter(b => b.status === 'Pending QA Review').length },
+   618→   618→    { name: 'Released', count: batchRecords.filter(b => b.status === 'Released').length },
+   619→   619→    { name: 'Rejected', count: batchRecords.filter(b => b.status === 'Rejected').length },
+   620→   620→    { name: 'Quarantine', count: batchRecords.filter(b => b.status === 'Quarantine').length },
+   621→   621→  ], [batchRecords]);
+   622→   622→
+   623→   623→  const batchReleaseRate = useMemo(() => pct(batchRecords.filter(b => b.status === 'Released').length, batchRecords.length), [batchRecords]);
+   624→   624→
+   625→   625→  // Management Review - combined trend data
+   626→   626→  const managementTrendData = useMemo(() => {
+   627→   627→    const monthMap = new Map<string, { capasClosed: number; ncrsClosed: number; docsApproved: number }>();
+   628→   628→
+   629→   629→    // CAPAs closed over time
+   630→   630→    allCapas.filter(c => c.status === 'Closed' && c.closedDate).forEach(c => {
+   631→   631→      const key = getMonthKey(c.closedDate!);
+   632→   632→      const entry = monthMap.get(key) || { capasClosed: 0, ncrsClosed: 0, docsApproved: 0 };
+   633→   633→      entry.capasClosed++;
+   634→   634→      monthMap.set(key, entry);
+   635→   635→    });
+   636→   636→
+   637→   637→    // NCRs closed over time
+   638→   638→    allNcrs.filter(n => n.status === 'Closed').forEach(n => {
+   639→   639→      const key = getMonthKey(n.updatedAt);
+   640→   640→      const entry = monthMap.get(key) || { capasClosed: 0, ncrsClosed: 0, docsApproved: 0 };
+   641→   641→      entry.ncrsClosed++;
+   642→   642→      monthMap.set(key, entry);
+   643→   643→    });
+   644→   644→
+   645→   645→    // Documents approved over time
+   646→   646→    allDocuments.filter(d => d.status === 'Approved' && d.effectiveDate).forEach(d => {
+   647→   647→      const key = getMonthKey(d.effectiveDate!);
+   648→   648→      const entry = monthMap.get(key) || { capasClosed: 0, ncrsClosed: 0, docsApproved: 0 };
+   649→   649→      entry.docsApproved++;
+   650→   650→      monthMap.set(key, entry);
+   651→   651→    });
+   652→   652→
+   653→   653→    return Array.from(monthMap.entries())
+   654→   654→      .sort(([a], [b]) => a.localeCompare(b))
+   655→   655→      .slice(-12)
+   656→   656→      .map(([key, data]) => ({
+   657→   657→        month: formatMonthLabel(key),
+   658→   658→        'CAPAs Closed': data.capasClosed,
+   659→   659→        'NCRs Closed': data.ncrsClosed,
+   660→   660→        'Docs Approved': data.docsApproved,
+   661→   661→      }));
+   662→   662→  }, [allCapas, allNcrs, allDocuments]);
+   663→   663→
+   664→   664→  // Management Review KPI table
+   665→   665→  const managementKpiRows = useMemo(() => [
+   666→   666→    {
+   667→   667→      area: 'Documents',
+   668→   668→      total: documents.length,
+   669→   669→      completed: documents.filter(d => d.status === 'Approved').length,
+   670→   670→      rate: docApprovalRate,
+   671→   671→      overdue: documents.filter(d => d.status === 'Draft').length,
+   672→   672→    },
+   673→   673→    {
+   674→   674→      area: 'CAPAs',
+   675→   675→      total: capas.length,
+   676→   676→      completed: capas.filter(c => c.status === 'Closed').length,
+   677→   677→      rate: capaClosureRate,
+   678→   678→      overdue: capas.filter(c => c.status !== 'Closed' && new Date(c.dueDate) < new Date()).length,
+   679→   679→    },
+   680→   680→    {
+   681→   681→      area: 'NCRs',
+   682→   682→      total: ncrs.length,
+   683→   683→      completed: ncrs.filter(n => n.status === 'Closed').length,
+   684→   684→      rate: pct(ncrs.filter(n => n.status === 'Closed').length, ncrs.length),
+   685→   685→      overdue: 0,
+   686→   686→    },
+   687→   687→    {
+   688→   688→      area: 'Audits',
+   689→   689→      total: audits.length,
+   690→   690→      completed: audits.filter(a => a.status === 'Completed').length,
+   691→   691→      rate: pct(audits.filter(a => a.status === 'Completed').length, audits.length),
+   692→   692→      overdue: audits.filter(a => a.status !== 'Completed' && new Date(a.scheduledDate) < new Date()).length,
+   693→   693→    },
+   694→   694→    {
+   695→   695→      area: 'Training',
+   696→   696→      total: trainingItems.length,
+   697→   697→      completed: trainingItems.filter(t => t.status === 'Completed').length,
+   698→   698→      rate: trainingCompletionRate,
+   699→   699→      overdue: overdueTrainingItems.length,
+   700→   700→    },
+   701→   701→    {
+   702→   702→      area: 'Risks',
+   703→   703→      total: risks.length,
+   704→   704→      completed: risks.filter(r => r.status === 'Closed' || r.status === 'Mitigated').length,
+   705→   705→      rate: riskMitigatedClosedRate,
+   706→   706→      overdue: risks.filter(r => r.status === 'Open' && (r.riskLevel === 'High' || r.riskLevel === 'Critical')).length,
+   707→   707→    },
+   708→   708→    {
+   709→   709→      area: 'Batches',
+   710→   710→      total: batchRecords.length,
+   711→   711→      completed: batchRecords.filter(b => b.status === 'Released').length,
+   712→   712→      rate: batchReleaseRate,
+   713→   713→      overdue: 0,
+   714→   714→    },
+   715→   715→    {
+   716→   716→      area: 'Suppliers',
+   717→   717→      total: suppliers.length,
+   718→   718→      completed: suppliers.filter(s => s.status === 'Qualified').length,
+   719→   719→      rate: pct(suppliers.filter(s => s.status === 'Qualified').length, suppliers.length),
+   720→   720→      overdue: 0,
+   721→   721→    },
+   722→   722→  ], [documents, capas, ncrs, audits, trainingItems, risks, batchRecords, suppliers, capaClosureRate, docApprovalRate, trainingCompletionRate, riskMitigatedClosedRate, batchReleaseRate, overdueTrainingItems.length]);
+   723→   723→
+   724→   724→  // -------------------------------------------------------------------------
+   725→   725→  // Export handler
+   726→   726→  // -------------------------------------------------------------------------
+   727→   727→
+   728→   728→  const handleExport = useCallback((reportId: string) => {
+   729→   729→    let csvContent = '';
+   730→   730→    switch (reportId) {
+   731→   731→      case 'capa-summary':
+   732→   732→        csvContent = [
+   733→   733→          ['CAPA #', 'Title', 'Type', 'Status', 'Priority', 'Assigned To', 'Due Date', 'Created', 'Root Cause'].join(','),
+   734→   734→          ...capas.map(c => [c.capaNumber, `"${c.title}"`, c.type, c.status, c.priority || '', c.assignedTo, formatDate(c.dueDate, true), formatDate(c.createdDate, true), c.rootCauseCategory || ''].join(','))
+   735→   735→        ].join('\n');
+   736→   736→        break;
+   737→   737→      case 'ncr-trend':
+   738→   738→        csvContent = [
+   739→   739→          ['NCR #', 'Title', 'Type', 'Severity', 'Status', 'Disposition', 'Is OOS/OOT', 'Created'].join(','),
+   740→   740→          ...ncrs.map(n => [n.ncrNumber, `"${n.title}"`, n.type, n.severity || '', n.status, n.disposition || '', n.isOosOot ? 'Yes' : 'No', formatDate(n.createdDate, true)].join(','))
+   741→   741→        ].join('\n');
+   742→   742→        break;
+   743→   743→      case 'training-compliance':
+   744→   744→        csvContent = [
+   745→   745→          ['Title', 'Type', 'Assigned To', 'Status', 'Due Date', 'Completed', 'Days Overdue'].join(','),
+   746→   746→          ...trainingItems.map(t => {
+   747→   747→            const isOverdue = t.status !== 'Completed' && new Date(t.dueDate) < new Date();
+   748→   748→            const daysOverdue = isOverdue ? Math.floor((new Date().getTime() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+   749→   749→            return [`"${t.title}"`, t.type, t.assignedTo, t.status, formatDate(t.dueDate, true), t.completedDate ? formatDate(t.completedDate, true) : '', String(daysOverdue)].join(',');
+   750→   750→          })
+   751→   751→        ].join('\n');
+   752→   752→        break;
+   753→   753→      case 'audit-findings':
+   754→   754→        csvContent = [
+   755→   755→          ['Audit #', 'Title', 'Type', 'Status', 'Findings', 'Critical', 'Major', 'CAR Required', 'Scheduled'].join(','),
+   756→   756→          ...audits.map(a => [a.auditNumber, `"${a.title}"`, a.type, a.status, String(a.findings?.length || 0), String(a.findings?.filter(f => f.severity === 'Critical').length || 0), String(a.findings?.filter(f => f.severity === 'Major').length || 0), String(a.findings?.filter(f => f.correctiveActionRequired).length || 0), formatDate(a.scheduledDate, true)].join(','))
+   757→   757→        ].join('\n');
+   758→   758→        break;
+   759→   759→      case 'risk-assessment':
+   760→   760→        csvContent = [
+   761→   761→          ['Risk #', 'Title', 'Category', 'P', 'I', 'D', 'RPN', 'Level', 'Status', 'Mitigation'].join(','),
+   762→   762→          ...risks.map(r => [r.riskNumber, `"${r.title}"`, r.category || '', r.probability, r.impact, r.detectability, r.rpn, r.riskLevel, r.status, `"${r.mitigation || ''}"`].join(','))
+   763→   763→        ].join('\n');
+   764→   764→        break;
+   765→   765→      case 'document-status':
+   766→   766→        csvContent = [
+   767→   767→          ['Doc #', 'Title', 'Type', 'Status', 'Version', 'Owner', 'Effective Date', 'Review Date'].join(','),
+   768→   768→          ...documents.map(d => [d.documentNumber, `"${d.title}"`, d.type, d.status, d.version, d.owner || '', d.effectiveDate ? formatDate(d.effectiveDate, true) : '', d.nextReview ? formatDate(d.nextReview, true) : ''].join(','))
+   769→   769→        ].join('\n');
+   770→   770→        break;
+   771→   771→      case 'supplier-performance':
+   772→   772→        csvContent = [
+   773→   773→          ['Code', 'Name', 'Category', 'Status', 'Score', 'Qualification Method', 'Next Review'].join(','),
+   774→   774→          ...suppliers.map(s => [s.supplierCode, `"${s.name}"`, s.category || '', s.status, String(s.performanceScore || 0), s.qualificationMethod || '', s.nextReviewDate ? formatDate(s.nextReviewDate, true) : ''].join(','))
+   775→   775→        ].join('\n');
+   776→   776→        break;
+   777→   777→      case 'batch-release':
+   778→   778→        csvContent = [
+   779→   779→          ['Lot #', 'Product', 'Status', 'Mfg Date', 'Expiry', 'QA Release Date', 'Batch Size'].join(','),
+   780→   780→          ...batchRecords.map(b => [b.lotNumber, `"${b.productName}"`, b.status, formatDate(b.manufacturingDate, true), b.expiryDate ? formatDate(b.expiryDate, true) : '', b.qaReleaseDate ? formatDate(b.qaReleaseDate, true) : '', b.batchSize ? String(b.batchSize) : ''].join(','))
+   781→   781→        ].join('\n');
+   782→   782→        break;
+   783→   783→      case 'management-review':
+   784→   784→        csvContent = [
+   785→   785→          ['Area', 'Total', 'Completed/Closed', 'Rate %', 'Overdue/At Risk'].join(','),
+   786→   786→          ...managementKpiRows.map(r => [r.area, String(r.total), String(r.completed), String(r.rate), String(r.overdue)].join(','))
+   787→   787→        ].join('\n');
+   788→   788→        break;
+   789→   789→      default:
+   790→   790→        csvContent = 'Report export not available';
+   791→   791→    }
+   792→   792→
+   793→   793→    const blob = new Blob([csvContent], { type: 'text/csv' });
+   794→   794→    const url = URL.createObjectURL(blob);
+   795→   795→    const a = document.createElement('a');
+   796→   796→    a.href = url;
+   797→   797→    a.download = `${reportId}-report-${new Date().toISOString().split('T')[0]}.csv`;
+   798→   798→    a.click();
+   799→   799→    URL.revokeObjectURL(url);
+   800→   800→  }, [capas, ncrs, trainingItems, audits, risks, documents, suppliers, batchRecords, managementKpiRows]);
+   801→   801→
+   802→   802→  // -------------------------------------------------------------------------
+   803→   803→  // Permission check
+   804→   804→  // -------------------------------------------------------------------------
+   805→   805→
+   806→   806→  if (!hasPermission('reports.view')) {
+   807→   807→    return (
+   808→   808→      <div className="p-6 flex items-center justify-center min-h-[400px]">
+   809→   809→        <Card className="w-full max-w-md">
+   810→   810→          <CardContent className="pt-6 text-center">
+   811→   811→            <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+   812→   812→            <h3 className="text-lg font-semibold">Access Restricted</h3>
+   813→   813→            <p className="text-muted-foreground text-sm mt-1">You do not have permission to view reports.</p>
+   814→   814→          </CardContent>
+   815→   815→        </Card>
+   816→   816→      </div>
+   817→   817→    );
+   818→   818→  }
+   819→   819→
+   820→   820→
+   821→   821→
+   822→   822→  // -------------------------------------------------------------------------
+   823→   823→  // Render
+   824→   824→  // -------------------------------------------------------------------------
+   825→   825→
+   826→   826→  return (
+   827→   827→    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+   828→   828→      {/* Header */}
+   829→   829→      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+   830→   830→        <div>
+   831→   831→          <h1 className="text-2xl font-bold flex items-center gap-2">
+   832→   832→            <BarChart3 className="h-6 w-6 text-primary" />
+   833→   833→            Reports &amp; Analytics
+   834→   834→          </h1>
+   835→   835→          <p className="text-muted-foreground mt-1">Quality metrics, dashboards, and analytics</p>
+   836→   836→        </div>
+   837→   837→        <div className="flex items-center gap-2">
+   838→   838→          <Select value={periodFilter} onValueChange={setPeriodFilter}>
+   839→   839→            <SelectTrigger className="w-[160px] h-9 text-xs">
+   840→   840→              <Calendar className="h-3 w-3 mr-1" />
+   841→   841→              <SelectValue />
+   842→   842→            </SelectTrigger>
+   843→   843→            <SelectContent>
+   844→   844→              <SelectItem value="3m">Last 3 Months</SelectItem>
+   845→   845→              <SelectItem value="6m">Last 6 Months</SelectItem>
+   846→   846→              <SelectItem value="12m">Last 12 Months</SelectItem>
+   847→   847→              <SelectItem value="all">All Time</SelectItem>
+   848→   848→            </SelectContent>
+   849→   849→          </Select>
+   850→   850→          {hasPermission('reports.export') && (
+   851→   851→            <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => handleExport('management-review')}>
+   852→   852→              <FileSpreadsheet className="h-3 w-3 mr-1" />Export All
+   853→   853→            </Button>
+   854→   854→          )}
+   855→   855→          <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => setImportDialogOpen(true)}>
+   856→   856→            <Upload className="h-3 w-3 mr-1" />Import
+   857→   857→          </Button>
+   858→   858→        </div>
+   859→   859→      </div>
+   860→   860→
+   861→   861→      {/* ----------------------------------------------------------------- */}
+   862→   862→      {/* Dashboard Metrics Summary - Enhanced KPI Cards                    */}
+   863→   863→      {/* ----------------------------------------------------------------- */}
+   864→   864→      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+   865→   865→        <MetricCard
+   866→   866→          icon={<FileText className="h-4 w-4 text-primary" />}
+   867→   867→          label="Total Records"
+   868→   868→          value={totalRecords}
+   869→   869→          colorClass="bg-primary/10"
+   870→   870→          trend="neutral"
+   871→   871→        />
+   872→   872→        <MetricCard
+   873→   873→          icon={<Clock className="h-4 w-4 text-red-600" />}
+   874→   874→          label="Overdue Items"
+   875→   875→          value={overdueItems}
+   876→   876→          colorClass="bg-red-100 dark:bg-red-900/30"
+   877→   877→          trend={overdueItems > 0 ? 'down' : 'up'}
+   878→   878→        />
+   879→   879→        <MetricCard
+   880→   880→          icon={<CheckCircle2 className="h-4 w-4 text-green-600" />}
+   881→   881→          label="Compliance %"
+   882→   882→          value={`${compliancePct}%`}
+   883→   883→          subValue={compliancePct >= 90 ? 'On target' : 'Needs attention'}
+   884→   884→          colorClass="bg-green-100 dark:bg-green-900/30"
+   885→   885→          trend={compliancePct >= 90 ? 'up' : 'down'}
+   886→   886→        />
+   887→   887→        <MetricCard
+   888→   888→          icon={<Activity className="h-4 w-4 text-amber-600" />}
+   889→   889→          label="Closed/Open"
+   890→   890→          value={closedOpenRatio}
+   891→   891→          subValue={`${closedItems} / ${openItems}`}
+   892→   892→          colorClass="bg-amber-100 dark:bg-amber-900/30"
+   893→   893→          trend={closedItems > openItems ? 'up' : 'down'}
+   894→   894→        />
+   895→   895→        <MetricCard
+   896→   896→          icon={<Shield className="h-4 w-4 text-red-600" />}
+   897→   897→          label="CAPAs"
+   898→   898→          value={capas.length}
+   899→   899→          subValue={`${capas.filter(c => c.status === 'Open').length} open`}
+   900→   900→          colorClass="bg-red-50 dark:bg-red-900/20"
+   901→   901→          trend="neutral"
+   902→   902→        />
+   903→   903→        <MetricCard
+   904→   904→          icon={<AlertTriangle className="h-4 w-4 text-amber-600" />}
+   905→   905→          label="NCRs"
+   906→   906→          value={ncrs.length}
+   907→   907→          subValue={`${ncrs.filter(n => n.severity === 'Critical').length} critical`}
+   908→   908→          colorClass="bg-amber-50 dark:bg-amber-900/20"
+   909→   909→          trend="neutral"
+   910→   910→        />
+   911→   911→        <MetricCard
+   912→   912→          icon={<GraduationCap className="h-4 w-4 text-blue-600" />}
+   913→   913→          label="Training"
+   914→   914→          value={`${trainingCompletionRate}%`}
+   915→   915→          subValue={`${overdueTrainingItems.length} overdue`}
+   916→   916→          colorClass="bg-blue-50 dark:bg-blue-900/20"
+   917→   917→          trend={trainingCompletionRate >= 85 ? 'up' : 'down'}
+   918→   918→        />
+   919→   919→        <MetricCard
+   920→   920→          icon={<Target className="h-4 w-4 text-orange-600" />}
+   921→   921→          label="High Risks"
+   922→   922→          value={risks.filter(r => r.riskLevel === 'High' || r.riskLevel === 'Critical').length}
+   923→   923→          subValue={`${riskMitigatedClosedRate}% mitigated`}
+   924→   924→          colorClass="bg-orange-50 dark:bg-orange-900/20"
+   925→   925→          trend={riskMitigatedClosedRate >= 70 ? 'up' : 'down'}
+   926→   926→        />
+   927→   927→      </div>
+   928→   928→
+   929→   929→      {/* ----------------------------------------------------------------- */}
+   930→   930→      {/* Compliance Overview Chart                                         */}
+   931→   931→      {/* ----------------------------------------------------------------- */}
+   932→   932→      <Card>
+   933→   933→        <CardHeader className="pb-2">
+   934→   934→          <div className="flex items-center justify-between">
+   935→   935→            <CardTitle className="text-sm font-semibold">Quality Metrics Overview</CardTitle>
+   936→   936→            <Badge variant="outline" className="text-[10px]">
+   937→   937→              {periodFilter === 'all' ? 'All Time' : `Last ${periodFilter.replace('m', ' Months')}`}
+   938→   938→            </Badge>
+   939→   939→          </div>
+   940→   940→        </CardHeader>
+   941→   941→        <CardContent>
+   942→   942→          <div className="h-64">
+   943→   943→            <ResponsiveContainer width="100%" height="100%">
+   944→   944→              <BarChart data={[
+   945→   945→                { name: 'Documents', Total: documents.length, Approved: documents.filter(d => d.status === 'Approved').length },
+   946→   946→                { name: 'CAPAs', Total: capas.length, Closed: capas.filter(c => c.status === 'Closed').length },
+   947→   947→                { name: 'NCRs', Total: ncrs.length, Closed: ncrs.filter(n => n.status === 'Closed').length },
+   948→   948→                { name: 'Audits', Total: audits.length, Completed: audits.filter(a => a.status === 'Completed').length },
+   949→   949→                { name: 'Training', Total: trainingItems.length, Completed: trainingItems.filter(t => t.status === 'Completed').length },
+   950→   950→                { name: 'Risks', Total: risks.length, Mitigated: risks.filter(r => r.status === 'Closed' || r.status === 'Mitigated').length },
+   951→   951→              ]}>
+   952→   952→                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+   953→   953→                <XAxis dataKey="name" className="text-xs" />
+   954→   954→                <YAxis className="text-xs" allowDecimals={false} />
+   955→   955→                <Tooltip content={<CustomTooltip />} />
+   956→   956→                <Legend className="text-xs" />
+   957→   957→                <Bar dataKey="Total" fill={CHART_COLORS.blue} radius={[2, 2, 0, 0]} name="Total" />
+   958→   958→                <Bar dataKey="Approved" fill={CHART_COLORS.green} radius={[2, 2, 0, 0]} name="Approved/Closed" />
+   959→   959→                <Bar dataKey="Closed" fill={CHART_COLORS.green} radius={[2, 2, 0, 0]} name="Closed" />
+   960→   960→                <Bar dataKey="Completed" fill={CHART_COLORS.green} radius={[2, 2, 0, 0]} name="Completed" />
+   961→   961→                <Bar dataKey="Mitigated" fill={CHART_COLORS.teal} radius={[2, 2, 0, 0]} name="Mitigated" />
+   962→   962→              </BarChart>
+   963→   963→            </ResponsiveContainer>
+   964→   964→          </div>
+   965→   965→        </CardContent>
+   966→   966→      </Card>
+   967→   967→
+   968→   968→      {/* ----------------------------------------------------------------- */}
+   969→   969→      {/* Report Templates                                                  */}
+   970→   970→      {/* ----------------------------------------------------------------- */}
+   971→   971→      <div>
+   972→   972→        <div className="flex items-center justify-between mb-3">
+   973→   973→          <h2 className="text-lg font-semibold">Report Templates</h2>
+   974→   974→          <Badge variant="secondary" className="text-xs">{REPORT_TEMPLATES.length} reports</Badge>
+   975→   975→        </div>
+   976→   976→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   977→   977→          {REPORT_TEMPLATES.map(template => (
+   978→   978→            <Card key={template.id} className="hover:shadow-md transition-shadow cursor-pointer group" onClick={() => setPreviewReport(template.id)}>
+   979→   979→              <CardContent className="pt-5 pb-5">
+   980→   980→                <div className="flex items-start gap-3">
+   981→   981→                  <div className={cn('p-2.5 rounded-lg shrink-0 group-hover:scale-105 transition-transform', template.color)}>
+   982→   982→                    {template.icon}
+   983→   983→                  </div>
+   984→   984→                  <div className="flex-1 min-w-0">
+   985→   985→                    <div className="flex items-center gap-2">
+   986→   986→                      <h3 className="text-sm font-semibold truncate">{template.title}</h3>
+   987→   987→                      <Badge variant="outline" className="text-[10px] shrink-0">{template.category}</Badge>
+   988→   988→                    </div>
+   989→   989→                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{template.description}</p>
+   990→   990→                    {template.recordCount !== undefined && (
+   991→   991→                      <p className="text-[10px] text-muted-foreground mt-1">{template.recordCount} records</p>
+   992→   992→                    )}
+   993→   993→                    <div className="flex items-center gap-2 mt-3" onClick={e => e.stopPropagation()}>
+   994→   994→                      <Button
+   995→   995→                        size="sm"
+   996→   996→                        variant="default"
+   997→   997→                        className="h-7 text-xs"
+   998→   998→                        onClick={() => setPreviewReport(template.id)}
+   999→   999→                      >
+  1000→  1000→                        <Eye className="h-3 w-3 mr-1" />Generate
+  1001→  1001→                      </Button>
+  1002→  1002→                      {hasPermission('reports.export') && (
+  1003→  1003→                        <Button
+  1004→  1004→                          size="sm"
+  1005→  1005→                          variant="outline"
+  1006→  1006→                          className="h-7 text-xs"
+  1007→  1007→                          onClick={() => handleExport(template.id)}
+  1008→  1008→                        >
+  1009→  1009→                          <Download className="h-3 w-3 mr-1" />Export
+  1010→  1010→                        </Button>
+  1011→  1011→                      )}
+  1012→  1012→                    </div>
+  1013→  1013→                  </div>
+  1014→  1014→                </div>
+  1015→  1015→              </CardContent>
+  1016→  1016→            </Card>
+  1017→  1017→          ))}
+  1018→  1018→        </div>
+  1019→  1019→      </div>
+  1020→  1020→
+  1021→  1021→      {/* ----------------------------------------------------------------- */}
+  1022→  1022→      {/* Report Preview Dialog                                             */}
+  1023→  1023→      {/* ----------------------------------------------------------------- */}
+  1024→  1024→      <Dialog open={!!previewReport} onOpenChange={() => setPreviewReport(null)}>
+  1025→  1025→        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+  1026→  1026→          <DialogHeader>
+  1027→  1027→            <div className="flex items-center justify-between flex-wrap gap-2">
+  1028→  1028→              <DialogTitle className="flex items-center gap-2">
+  1029→  1029→                {REPORT_TEMPLATES.find(t => t.id === previewReport)?.icon}
+  1030→  1030→                {REPORT_TEMPLATES.find(t => t.id === previewReport)?.title || 'Report'}
+  1031→  1031→              </DialogTitle>
+  1032→  1032→              <div className="flex items-center gap-2">
+  1033→  1033→                <Select value={periodFilter} onValueChange={setPeriodFilter}>
+  1034→  1034→                  <SelectTrigger className="w-[140px] h-8 text-xs">
+  1035→  1035→                    <Calendar className="h-3 w-3 mr-1" />
+  1036→  1036→                    <SelectValue />
+  1037→  1037→                  </SelectTrigger>
+  1038→  1038→                  <SelectContent>
+  1039→  1039→                    <SelectItem value="3m">Last 3 Months</SelectItem>
+  1040→  1040→                    <SelectItem value="6m">Last 6 Months</SelectItem>
+  1041→  1041→                    <SelectItem value="12m">Last 12 Months</SelectItem>
+  1042→  1042→                    <SelectItem value="all">All Time</SelectItem>
+  1043→  1043→                  </SelectContent>
+  1044→  1044→                </Select>
+  1045→  1045→                {hasPermission('reports.export') && previewReport && (
+  1046→  1046→                  <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => handleExport(previewReport)}>
+  1047→  1047→                    <Download className="h-3 w-3 mr-1" />Export CSV
+  1048→  1048→                  </Button>
+  1049→  1049→                )}
+  1050→  1050→              </div>
+  1051→  1051→            </div>
+  1052→  1052→            <p className="text-xs text-muted-foreground">
+  1053→  1053→              Generated on {formatDate(new Date().toISOString())} &middot; Data period: {periodFilter === 'all' ? 'All Time' : `Last ${periodFilter.replace('m', ' Months')}`}
+  1054→  1054→            </p>
+  1055→  1055→          </DialogHeader>
+  1056→  1056→
+  1057→  1057→          <Separator />
+  1058→  1058→
+  1059→  1059→          {/* ================================================================= */}
+  1060→  1060→          {/* CAPA Summary Report                                               */}
+  1061→  1061→          {/* ================================================================= */}
+  1062→  1062→          {previewReport === 'capa-summary' && (
+  1063→  1063→            <div className="space-y-6">
+  1064→  1064→              {/* Key metrics */}
+  1065→  1065→              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1066→  1066→                <MiniStat label="Total CAPAs" value={capas.length} />
+  1067→  1067→                <MiniStat label="Closure Rate" value={`${capaClosureRate}%`} color={capaClosureRate >= 80 ? 'text-green-600' : 'text-amber-600'} />
+  1068→  1068→                <MiniStat label="Closed" value={capas.filter(c => c.status === 'Closed').length} color="text-green-600" />
+  1069→  1069→                <MiniStat label="Overdue" value={capas.filter(c => c.status !== 'Closed' && new Date(c.dueDate) < new Date()).length} color="text-red-600" />
+  1070→  1070→              </div>
+  1071→  1071→
+  1072→  1072→              {/* Type breakdown */}
+  1073→  1073→              <div className="grid grid-cols-2 gap-3">
+  1074→  1074→                {capaByType.map(t => (
+  1075→  1075→                  <div key={t.name} className="flex items-center gap-2 p-2 rounded-lg bg-muted/20">
+  1076→  1076→                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: t.fill }} />
+  1077→  1077→                    <span className="text-xs font-medium">{t.name}</span>
+  1078→  1078→                    <Badge variant="secondary" className="text-[10px] ml-auto">{t.count}</Badge>
+  1079→  1079→                  </div>
+  1080→  1080→                ))}
+  1081→  1081→              </div>
+  1082→  1082→
+  1083→  1083→              {/* Charts */}
+  1084→  1084→              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  1085→  1085→                <Card>
+  1086→  1086→                  <CardHeader className="pb-2 pt-4 px-4">
+  1087→  1087→                    <SectionTitle subtitle="Distribution across workflow stages">CAPA by Status</SectionTitle>
+  1088→  1088→                  </CardHeader>
+  1089→  1089→                  <CardContent className="px-4 pb-4">
+  1090→  1090→                    <div className="h-56">
+  1091→  1091→                      <ResponsiveContainer width="100%" height="100%">
+  1092→  1092→                        <PieChart>
+  1093→  1093→                          <Pie data={capaByStatus} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+  1094→  1094→                            {capaByStatus.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+  1095→  1095→                          </Pie>
+  1096→  1096→                          <Tooltip content={<CustomTooltip />} />
+  1097→  1097→                          <Legend className="text-xs" />
+  1098→  1098→                        </PieChart>
+  1099→  1099→                      </ResponsiveContainer>
+  1100→  1100→                    </div>
+  1101→  1101→                  </CardContent>
+  1102→  1102→                </Card>
+  1103→  1103→                <Card>
+  1104→  1104→                  <CardHeader className="pb-2 pt-4 px-4">
+  1105→  1105→                    <SectionTitle subtitle="Priority classification breakdown">CAPA by Priority</SectionTitle>
+  1106→  1106→                  </CardHeader>
+  1107→  1107→                  <CardContent className="px-4 pb-4">
+  1108→  1108→                    <div className="h-56">
+  1109→  1109→                      <ResponsiveContainer width="100%" height="100%">
+  1110→  1110→                        <BarChart data={capaByPriority}>
+  1111→  1111→                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1112→  1112→                          <XAxis dataKey="name" className="text-xs" />
+  1113→  1113→                          <YAxis className="text-xs" allowDecimals={false} />
+  1114→  1114→                          <Tooltip content={<CustomTooltip />} />
+  1115→  1115→                          <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Count">
+  1116→  1116→                            {capaByPriority.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+  1117→  1117→                          </Bar>
+  1118→  1118→                        </BarChart>
+  1119→  1119→                      </ResponsiveContainer>
+  1120→  1120→                    </div>
+  1121→  1121→                  </CardContent>
+  1122→  1122→                </Card>
+  1123→  1123→              </div>
+  1124→  1124→
+  1125→  1125→              {/* Aging chart */}
+  1126→  1126→              <Card>
+  1127→  1127→                <CardHeader className="pb-2 pt-4 px-4">
+  1128→  1128→                  <SectionTitle subtitle="Open CAPAs grouped by age since creation">CAPA Aging Analysis (Open Items)</SectionTitle>
+  1129→  1129→                </CardHeader>
+  1130→  1130→                <CardContent className="px-4 pb-4">
+  1131→  1131→                  <div className="h-48">
+  1132→  1132→                    <ResponsiveContainer width="100%" height="100%">
+  1133→  1133→                      <BarChart data={capaAging}>
+  1134→  1134→                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1135→  1135→                        <XAxis dataKey="name" className="text-xs" />
+  1136→  1136→                        <YAxis className="text-xs" allowDecimals={false} />
+  1137→  1137→                        <Tooltip content={<CustomTooltip />} />
+  1138→  1138→                        <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Open CAPAs">
+  1139→  1139→                          {capaAging.map((entry, i) => (
+  1140→  1140→                            <Cell key={i} fill={i === capaAging.length - 1 ? CHART_COLORS.red : CHART_COLORS.amber} />
+  1141→  1141→                          ))}
+  1142→  1142→                        </Bar>
+  1143→  1143→                      </BarChart>
+  1144→  1144→                    </ResponsiveContainer>
+  1145→  1145→                  </div>
+  1146→  1146→                </CardContent>
+  1147→  1147→              </Card>
+  1148→  1148→
+  1149→  1149→              {/* CAPA Details Table */}
+  1150→  1150→              <Card>
+  1151→  1151→                <CardHeader className="pb-2 pt-4 px-4">
+  1152→  1152→                  <SectionTitle subtitle="Detailed list of all CAPAs">CAPA Details</SectionTitle>
+  1153→  1153→                </CardHeader>
+  1154→  1154→                <CardContent className="px-4 pb-4">
+  1155→  1155→                  <div className="max-h-72 overflow-y-auto">
+  1156→  1156→                    <Table>
+  1157→  1157→                      <TableHeader>
+  1158→  1158→                        <TableRow>
+  1159→  1159→                          <TableHead className="text-xs">CAPA #</TableHead>
+  1160→  1160→                          <TableHead className="text-xs">Title</TableHead>
+  1161→  1161→                          <TableHead className="text-xs">Type</TableHead>
+  1162→  1162→                          <TableHead className="text-xs">Status</TableHead>
+  1163→  1163→                          <TableHead className="text-xs">Priority</TableHead>
+  1164→  1164→                          <TableHead className="text-xs">Assigned To</TableHead>
+  1165→  1165→                          <TableHead className="text-xs">Due</TableHead>
+  1166→  1166→                          <TableHead className="text-xs">Root Cause</TableHead>
+  1167→  1167→                        </TableRow>
+  1168→  1168→                      </TableHeader>
+  1169→  1169→                      <TableBody>
+  1170→  1170→                        {capas.slice(0, 15).map(c => {
+  1171→  1171→                          const isOverdue = c.status !== 'Closed' && new Date(c.dueDate) < new Date();
+  1172→  1172→                          return (
+  1173→  1173→                            <TableRow key={c.id}>
+  1174→  1174→                              <TableCell className="font-mono text-xs">{c.capaNumber}</TableCell>
+  1175→  1175→                              <TableCell className="text-xs max-w-[180px] truncate">{c.title}</TableCell>
+  1176→  1176→                              <TableCell className="text-xs">{c.type}</TableCell>
+  1177→  1177→                              <TableCell className="text-xs">
+  1178→  1178→                                <Badge variant={c.status === 'Closed' ? 'default' : 'secondary'} className="text-[10px]">{c.status}</Badge>
+  1179→  1179→                              </TableCell>
+  1180→  1180→                              <TableCell className="text-xs">
+  1181→  1181→                                {c.priority && (
+  1182→  1182→                                  <Badge variant="outline" className="text-[10px]" style={{ borderColor: PRIORITY_COLORS[c.priority], color: PRIORITY_COLORS[c.priority] }}>
+  1183→  1183→                                    {c.priority}
+  1184→  1184→                                  </Badge>
+  1185→  1185→                                )}
+  1186→  1186→                              </TableCell>
+  1187→  1187→                              <TableCell className="text-xs">{c.assignedTo}</TableCell>
+  1188→  1188→                              <TableCell className={cn('text-xs', isOverdue && 'text-red-600 font-medium')}>
+  1189→  1189→                                {formatDate(c.dueDate, true)}
+  1190→  1190→                              </TableCell>
+  1191→  1191→                              <TableCell className="text-xs">{c.rootCauseCategory || '-'}</TableCell>
+  1192→  1192→                            </TableRow>
+  1193→  1193→                          );
+  1194→  1194→                        })}
+  1195→  1195→                      </TableBody>
+  1196→  1196→                    </Table>
+  1197→  1197→                  </div>
+  1198→  1198→                </CardContent>
+  1199→  1199→              </Card>
+  1200→  1200→            </div>
+  1201→  1201→          )}
+  1202→  1202→
+  1203→  1203→          {/* ================================================================= */}
+  1204→  1204→          {/* NCR Trend Report                                                  */}
+  1205→  1205→          {/* ================================================================= */}
+  1206→  1206→          {previewReport === 'ncr-trend' && (
+  1207→  1207→            <div className="space-y-6">
+  1208→  1208→              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1209→  1209→                <MiniStat label="Total NCRs" value={ncrs.length} />
+  1210→  1210→                <MiniStat label="Resolution Rate" value={`${pct(ncrs.filter(n => n.status === 'Closed').length, ncrs.length)}%`} color="text-green-600" />
+  1211→  1211→                <MiniStat label="Closed" value={ncrs.filter(n => n.status === 'Closed').length} color="text-green-600" />
+  1212→  1212→                <MiniStat label="Critical" value={ncrs.filter(n => n.severity === 'Critical').length} color="text-red-600" />
+  1213→  1213→              </div>
+  1214→  1214→
+  1215→  1215→              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  1216→  1216→                <Card>
+  1217→  1217→                  <CardHeader className="pb-2 pt-4 px-4">
+  1218→  1218→                    <SectionTitle subtitle="NCR classification by type">NCR by Type</SectionTitle>
+  1219→  1219→                  </CardHeader>
+  1220→  1220→                  <CardContent className="px-4 pb-4">
+  1221→  1221→                    <div className="h-56">
+  1222→  1222→                      <ResponsiveContainer width="100%" height="100%">
+  1223→  1223→                        <BarChart data={ncrByType}>
+  1224→  1224→                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1225→  1225→                          <XAxis dataKey="name" className="text-xs" />
+  1226→  1226→                          <YAxis className="text-xs" allowDecimals={false} />
+  1227→  1227→                          <Tooltip content={<CustomTooltip />} />
+  1228→  1228→                          <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Count">
+  1229→  1229→                            {ncrByType.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+  1230→  1230→                          </Bar>
+  1231→  1231→                        </BarChart>
+  1232→  1232→                      </ResponsiveContainer>
+  1233→  1233→                    </div>
+  1234→  1234→                  </CardContent>
+  1235→  1235→                </Card>
+  1236→  1236→                <Card>
+  1237→  1237→                  <CardHeader className="pb-2 pt-4 px-4">
+  1238→  1238→                    <SectionTitle subtitle="Severity distribution of all NCRs">NCR by Severity</SectionTitle>
+  1239→  1239→                  </CardHeader>
+  1240→  1240→                  <CardContent className="px-4 pb-4">
+  1241→  1241→                    <div className="h-56">
+  1242→  1242→                      <ResponsiveContainer width="100%" height="100%">
+  1243→  1243→                        <PieChart>
+  1244→  1244→                          <Pie data={ncrBySeverity} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+  1245→  1245→                            {ncrBySeverity.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+  1246→  1246→                          </Pie>
+  1247→  1247→                          <Tooltip content={<CustomTooltip />} />
+  1248→  1248→                          <Legend className="text-xs" />
+  1249→  1249→                        </PieChart>
+  1250→  1250→                      </ResponsiveContainer>
+  1251→  1251→                    </div>
+  1252→  1252→                  </CardContent>
+  1253→  1253→                </Card>
+  1254→  1254→              </div>
+  1255→  1255→
+  1256→  1256→              {/* Monthly Trend LineChart */}
+  1257→  1257→              <Card>
+  1258→  1258→                <CardHeader className="pb-2 pt-4 px-4">
+  1259→  1259→                  <SectionTitle subtitle="Monthly NCR creation and closure trend">Monthly Trend</SectionTitle>
+  1260→  1260→                </CardHeader>
+  1261→  1261→                <CardContent className="px-4 pb-4">
+  1262→  1262→                  <div className="h-56">
+  1263→  1263→                    {ncrMonthlyTrend.length > 0 ? (
+  1264→  1264→                      <ResponsiveContainer width="100%" height="100%">
+  1265→  1265→                        <LineChart data={ncrMonthlyTrend}>
+  1266→  1266→                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1267→  1267→                          <XAxis dataKey="month" className="text-xs" />
+  1268→  1268→                          <YAxis className="text-xs" allowDecimals={false} />
+  1269→  1269→                          <Tooltip content={<CustomTooltip />} />
+  1270→  1270→                          <Legend className="text-xs" />
+  1271→  1271→                          <Line type="monotone" dataKey="Total" stroke={CHART_COLORS.amber} strokeWidth={2} dot={{ fill: CHART_COLORS.amber, r: 3 }} name="Opened" />
+  1272→  1272→                          <Line type="monotone" dataKey="Closed" stroke={CHART_COLORS.green} strokeWidth={2} dot={{ fill: CHART_COLORS.green, r: 3 }} name="Closed" />
+  1273→  1273→                        </LineChart>
+  1274→  1274→                      </ResponsiveContainer>
+  1275→  1275→                    ) : (
+  1276→  1276→                      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No trend data available for selected period</div>
+  1277→  1277→                    )}
+  1278→  1278→                  </div>
+  1279→  1279→                </CardContent>
+  1280→  1280→              </Card>
+  1281→  1281→
+  1282→  1282→              {/* NCR by Status */}
+  1283→  1283→              <Card>
+  1284→  1284→                <CardHeader className="pb-2 pt-4 px-4">
+  1285→  1285→                  <SectionTitle subtitle="Current status distribution">NCR by Status</SectionTitle>
+  1286→  1286→                </CardHeader>
+  1287→  1287→                <CardContent className="px-4 pb-4">
+  1288→  1288→                  <div className="h-48">
+  1289→  1289→                    <ResponsiveContainer width="100%" height="100%">
+  1290→  1290→                      <BarChart data={ncrByStatus}>
+  1291→  1291→                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1292→  1292→                        <XAxis dataKey="name" className="text-xs" />
+  1293→  1293→                        <YAxis className="text-xs" allowDecimals={false} />
+  1294→  1294→                        <Tooltip content={<CustomTooltip />} />
+  1295→  1295→                        <Bar dataKey="count" fill={CHART_COLORS.amber} radius={[4, 4, 0, 0]} name="NCRs" />
+  1296→  1296→                      </BarChart>
+  1297→  1297→                    </ResponsiveContainer>
+  1298→  1298→                  </div>
+  1299→  1299→                </CardContent>
+  1300→  1300→              </Card>
+  1301→  1301→
+  1302→  1302→              {/* NCR Details Table */}
+  1303→  1303→              <Card>
+  1304→  1304→                <CardHeader className="pb-2 pt-4 px-4">
+  1305→  1305→                  <SectionTitle subtitle="Detailed list of all NCRs">NCR Details</SectionTitle>
+  1306→  1306→                </CardHeader>
+  1307→  1307→                <CardContent className="px-4 pb-4">
+  1308→  1308→                  <div className="max-h-72 overflow-y-auto">
+  1309→  1309→                    <Table>
+  1310→  1310→                      <TableHeader>
+  1311→  1311→                        <TableRow>
+  1312→  1312→                          <TableHead className="text-xs">NCR #</TableHead>
+  1313→  1313→                          <TableHead className="text-xs">Title</TableHead>
+  1314→  1314→                          <TableHead className="text-xs">Type</TableHead>
+  1315→  1315→                          <TableHead className="text-xs">Severity</TableHead>
+  1316→  1316→                          <TableHead className="text-xs">Status</TableHead>
+  1317→  1317→                          <TableHead className="text-xs">Disposition</TableHead>
+  1318→  1318→                          <TableHead className="text-xs">OOS/OOT</TableHead>
+  1319→  1319→                        </TableRow>
+  1320→  1320→                      </TableHeader>
+  1321→  1321→                      <TableBody>
+  1322→  1322→                        {ncrs.slice(0, 15).map(n => (
+  1323→  1323→                          <TableRow key={n.id}>
+  1324→  1324→                            <TableCell className="font-mono text-xs">{n.ncrNumber}</TableCell>
+  1325→  1325→                            <TableCell className="text-xs max-w-[180px] truncate">{n.title}</TableCell>
+  1326→  1326→                            <TableCell className="text-xs">{n.type}</TableCell>
+  1327→  1327→                            <TableCell className="text-xs">
+  1328→  1328→                              {n.severity && (
+  1329→  1329→                                <Badge variant="outline" className="text-[10px]" style={{ borderColor: SEVERITY_COLORS[n.severity], color: SEVERITY_COLORS[n.severity] }}>
+  1330→  1330→                                  {n.severity}
+  1331→  1331→                                </Badge>
+  1332→  1332→                              )}
+  1333→  1333→                            </TableCell>
+  1334→  1334→                            <TableCell className="text-xs">
+  1335→  1335→                              <Badge variant={n.status === 'Closed' ? 'default' : 'secondary'} className="text-[10px]">{n.status}</Badge>
+  1336→  1336→                            </TableCell>
+  1337→  1337→                            <TableCell className="text-xs">{n.disposition || '-'}</TableCell>
+  1338→  1338→                            <TableCell className="text-xs">{n.isOosOot ? <Badge variant="destructive" className="text-[10px]">Yes</Badge> : 'No'}</TableCell>
+  1339→  1339→                          </TableRow>
+  1340→  1340→                        ))}
+  1341→  1341→                      </TableBody>
+  1342→  1342→                    </Table>
+  1343→  1343→                  </div>
+  1344→  1344→                </CardContent>
+  1345→  1345→              </Card>
+  1346→  1346→            </div>
+  1347→  1347→          )}
+  1348→  1348→
+  1349→  1349→          {/* ================================================================= */}
+  1350→  1350→          {/* Training Compliance Report                                        */}
+  1351→  1351→          {/* ================================================================= */}
+  1352→  1352→          {previewReport === 'training-compliance' && (
+  1353→  1353→            <div className="space-y-6">
+  1354→  1354→              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1355→  1355→                <MiniStat label="Total Items" value={trainingItems.length} />
+  1356→  1356→                <MiniStat label="Completion Rate" value={`${trainingCompletionRate}%`} color={trainingCompletionRate >= 85 ? 'text-green-600' : 'text-amber-600'} />
+  1357→  1357→                <MiniStat label="Completed" value={trainingItems.filter(t => t.status === 'Completed').length} color="text-green-600" />
+  1358→  1358→                <MiniStat label="Overdue" value={overdueTrainingItems.length} color={overdueTrainingItems.length > 0 ? 'text-red-600' : 'text-green-600'} />
+  1359→  1359→              </div>
+  1360→  1360→
+  1361→  1361→              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  1362→  1362→                <Card>
+  1363→  1363→                  <CardHeader className="pb-2 pt-4 px-4">
+  1364→  1364→                    <SectionTitle subtitle="Training items by current status">Training by Status</SectionTitle>
+  1365→  1365→                  </CardHeader>
+  1366→  1366→                  <CardContent className="px-4 pb-4">
+  1367→  1367→                    <div className="h-56">
+  1368→  1368→                      <ResponsiveContainer width="100%" height="100%">
+  1369→  1369→                        <PieChart>
+  1370→  1370→                          <Pie data={trainingByStatus} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+  1371→  1371→                            {trainingByStatus.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+  1372→  1372→                          </Pie>
+  1373→  1373→                          <Tooltip content={<CustomTooltip />} />
+  1374→  1374→                          <Legend className="text-xs" />
+  1375→  1375→                        </PieChart>
+  1376→  1376→                      </ResponsiveContainer>
+  1377→  1377→                    </div>
+  1378→  1378→                  </CardContent>
+  1379→  1379→                </Card>
+  1380→  1380→                <Card>
+  1381→  1381→                  <CardHeader className="pb-2 pt-4 px-4">
+  1382→  1382→                    <SectionTitle subtitle="Training items by type category">Training by Type</SectionTitle>
+  1383→  1383→                  </CardHeader>
+  1384→  1384→                  <CardContent className="px-4 pb-4">
+  1385→  1385→                    <div className="h-56">
+  1386→  1386→                      <ResponsiveContainer width="100%" height="100%">
+  1387→  1387→                        <BarChart data={trainingByType}>
+  1388→  1388→                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1389→  1389→                          <XAxis dataKey="name" className="text-xs" />
+  1390→  1390→                          <YAxis className="text-xs" allowDecimals={false} />
+  1391→  1391→                          <Tooltip content={<CustomTooltip />} />
+  1392→  1392→                          <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Count">
+  1393→  1393→                            {trainingByType.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+  1394→  1394→                          </Bar>
+  1395→  1395→                        </BarChart>
+  1396→  1396→                      </ResponsiveContainer>
+  1397→  1397→                    </div>
+  1398→  1398→                  </CardContent>
+  1399→  1399→                </Card>
+  1400→  1400→              </div>
+  1401→  1401→
+  1402→  1402→              {/* Overdue Training List */}
+  1403→  1403→              <Card>
+  1404→  1404→                <CardHeader className="pb-2 pt-4 px-4">
+  1405→  1405→                  <SectionTitle subtitle={`${overdueTrainingItems.length} training items past due date`}>Overdue Training</SectionTitle>
+  1406→  1406→                </CardHeader>
+  1407→  1407→                <CardContent className="px-4 pb-4">
+  1408→  1408→                  <div className="max-h-72 overflow-y-auto">
+  1409→  1409→                    {overdueTrainingItems.length > 0 ? (
+  1410→  1410→                      <Table>
+  1411→  1411→                        <TableHeader>
+  1412→  1412→                          <TableRow>
+  1413→  1413→                            <TableHead className="text-xs">Title</TableHead>
+  1414→  1414→                            <TableHead className="text-xs">Type</TableHead>
+  1415→  1415→                            <TableHead className="text-xs">Assigned To</TableHead>
+  1416→  1416→                            <TableHead className="text-xs">Due Date</TableHead>
+  1417→  1417→                            <TableHead className="text-xs">Days Overdue</TableHead>
+  1418→  1418→                            <TableHead className="text-xs">Status</TableHead>
+  1419→  1419→                          </TableRow>
+  1420→  1420→                        </TableHeader>
+  1421→  1421→                        <TableBody>
+  1422→  1422→                          {overdueTrainingItems.slice(0, 15).map(t => {
+  1423→  1423→                            const daysOverdue = Math.floor((new Date().getTime() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24));
+  1424→  1424→                            return (
+  1425→  1425→                              <TableRow key={t.id}>
+  1426→  1426→                                <TableCell className="text-xs font-medium">{t.title}</TableCell>
+  1427→  1427→                                <TableCell className="text-xs">{t.type}</TableCell>
+  1428→  1428→                                <TableCell className="text-xs">{t.assignedTo}</TableCell>
+  1429→  1429→                                <TableCell className="text-xs text-red-600">{formatDate(t.dueDate, true)}</TableCell>
+  1430→  1430→                                <TableCell className="text-xs">
+  1431→  1431→                                  <Badge variant="destructive" className="text-[10px]">{daysOverdue}d</Badge>
+  1432→  1432→                                </TableCell>
+  1433→  1433→                                <TableCell className="text-xs">
+  1434→  1434→                                  <Badge variant="destructive" className="text-[10px]">Overdue</Badge>
+  1435→  1435→                                </TableCell>
+  1436→  1436→                              </TableRow>
+  1437→  1437→                            );
+  1438→  1438→                          })}
+  1439→  1439→                        </TableBody>
+  1440→  1440→                      </Table>
+  1441→  1441→                    ) : (
+  1442→  1442→                      <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
+  1443→  1443→                        <CheckCircle2 className="h-4 w-4 mr-2 text-green-600" />No overdue training items
+  1444→  1444→                      </div>
+  1445→  1445→                    )}
+  1446→  1446→                  </div>
+  1447→  1447→                </CardContent>
+  1448→  1448→              </Card>
+  1449→  1449→            </div>
+  1450→  1450→          )}
+  1451→  1451→
+  1452→  1452→          {/* ================================================================= */}
+  1453→  1453→          {/* Audit Findings Report                                             */}
+  1454→  1454→          {/* ================================================================= */}
+  1455→  1455→          {previewReport === 'audit-findings' && (
+  1456→  1456→            <div className="space-y-6">
+  1457→  1457→              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1458→  1458→                <MiniStat label="Total Audits" value={audits.length} />
+  1459→  1459→                <MiniStat label="Total Findings" value={totalAuditFindings} />
+  1460→  1460→                <MiniStat label="Completed" value={audits.filter(a => a.status === 'Completed').length} color="text-green-600" />
+  1461→  1461→                <MiniStat label="CAR Required" value={carRequiredCount} color={carRequiredCount > 0 ? 'text-red-600' : 'text-green-600'} />
+  1462→  1462→              </div>
+  1463→  1463→
+  1464→  1464→              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  1465→  1465→                <Card>
+  1466→  1466→                  <CardHeader className="pb-2 pt-4 px-4">
+  1467→  1467→                    <SectionTitle subtitle="Severity breakdown of all findings">Findings by Severity</SectionTitle>
+  1468→  1468→                  </CardHeader>
+  1469→  1469→                  <CardContent className="px-4 pb-4">
+  1470→  1470→                    <div className="h-56">
+  1471→  1471→                      <ResponsiveContainer width="100%" height="100%">
+  1472→  1472→                        <BarChart data={auditFindingsBySeverity}>
+  1473→  1473→                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1474→  1474→                          <XAxis dataKey="name" className="text-xs" />
+  1475→  1475→                          <YAxis className="text-xs" allowDecimals={false} />
+  1476→  1476→                          <Tooltip content={<CustomTooltip />} />
+  1477→  1477→                          <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Findings">
+  1478→  1478→                            {auditFindingsBySeverity.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+  1479→  1479→                          </Bar>
+  1480→  1480→                        </BarChart>
+  1481→  1481→                      </ResponsiveContainer>
+  1482→  1482→                    </div>
+  1483→  1483→                  </CardContent>
+  1484→  1484→                </Card>
+  1485→  1485→                <Card>
+  1486→  1486→                  <CardHeader className="pb-2 pt-4 px-4">
+  1487→  1487→                    <SectionTitle subtitle="Audit type distribution">Audit by Type</SectionTitle>
+  1488→  1488→                  </CardHeader>
+  1489→  1489→                  <CardContent className="px-4 pb-4">
+  1490→  1490→                    <div className="h-56">
+  1491→  1491→                      <ResponsiveContainer width="100%" height="100%">
+  1492→  1492→                        <PieChart>
+  1493→  1493→                          <Pie data={auditByType} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+  1494→  1494→                            {auditByType.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+  1495→  1495→                          </Pie>
+  1496→  1496→                          <Tooltip content={<CustomTooltip />} />
+  1497→  1497→                          <Legend className="text-xs" />
+  1498→  1498→                        </PieChart>
+  1499→  1499→                      </ResponsiveContainer>
+  1500→  1500→                    </div>
+  1501→  1501→                  </CardContent>
+  1502→  1502→                </Card>
+  1503→  1503→              </div>
+  1504→  1504→
+  1505→  1505→              {/* Audit Details Table */}
+  1506→  1506→              <Card>
+  1507→  1507→                <CardHeader className="pb-2 pt-4 px-4">
+  1508→  1508→                  <SectionTitle subtitle="Detailed list of all audits">Audit Details</SectionTitle>
+  1509→  1509→                </CardHeader>
+  1510→  1510→                <CardContent className="px-4 pb-4">
+  1511→  1511→                  <div className="max-h-72 overflow-y-auto">
+  1512→  1512→                    <Table>
+  1513→  1513→                      <TableHeader>
+  1514→  1514→                        <TableRow>
+  1515→  1515→                          <TableHead className="text-xs">Audit #</TableHead>
+  1516→  1516→                          <TableHead className="text-xs">Title</TableHead>
+  1517→  1517→                          <TableHead className="text-xs">Type</TableHead>
+  1518→  1518→                          <TableHead className="text-xs">Status</TableHead>
+  1519→  1519→                          <TableHead className="text-xs">Findings</TableHead>
+  1520→  1520→                          <TableHead className="text-xs">Critical</TableHead>
+  1521→  1521→                          <TableHead className="text-xs">CAR Req.</TableHead>
+  1522→  1522→                          <TableHead className="text-xs">Scheduled</TableHead>
+  1523→  1523→                        </TableRow>
+  1524→  1524→                      </TableHeader>
+  1525→  1525→                      <TableBody>
+  1526→  1526→                        {audits.map(a => (
+  1527→  1527→                          <TableRow key={a.id}>
+  1528→  1528→                            <TableCell className="font-mono text-xs">{a.auditNumber}</TableCell>
+  1529→  1529→                            <TableCell className="text-xs max-w-[180px] truncate">{a.title}</TableCell>
+  1530→  1530→                            <TableCell className="text-xs">{a.type}</TableCell>
+  1531→  1531→                            <TableCell className="text-xs">
+  1532→  1532→                              <Badge variant={a.status === 'Completed' ? 'default' : 'secondary'} className="text-[10px]">{a.status}</Badge>
+  1533→  1533→                            </TableCell>
+  1534→  1534→                            <TableCell className="text-xs">{a.findings?.length || 0}</TableCell>
+  1535→  1535→                            <TableCell className="text-xs text-red-600">{a.findings?.filter(f => f.severity === 'Critical').length || 0}</TableCell>
+  1536→  1536→                            <TableCell className="text-xs">{a.findings?.filter(f => f.correctiveActionRequired).length || 0}</TableCell>
+  1537→  1537→                            <TableCell className="text-xs">{formatDate(a.scheduledDate, true)}</TableCell>
+  1538→  1538→                          </TableRow>
+  1539→  1539→                        ))}
+  1540→  1540→                      </TableBody>
+  1541→  1541→                    </Table>
+  1542→  1542→                  </div>
+  1543→  1543→                </CardContent>
+  1544→  1544→              </Card>
+  1545→  1545→            </div>
+  1546→  1546→          )}
+  1547→  1547→
+  1548→  1548→          {/* ================================================================= */}
+  1549→  1549→          {/* Risk Assessment Report                                            */}
+  1550→  1550→          {/* ================================================================= */}
+  1551→  1551→          {previewReport === 'risk-assessment' && (
+  1552→  1552→            <div className="space-y-6">
+  1553→  1553→              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1554→  1554→                <MiniStat label="Total Risks" value={risks.length} />
+  1555→  1555→                <MiniStat label="High / Critical" value={risks.filter(r => r.riskLevel === 'High' || r.riskLevel === 'Critical').length} color="text-red-600" />
+  1556→  1556→                <MiniStat label="Avg RPN" value={risks.length > 0 ? Math.round(risks.reduce((a, r) => a + r.rpn, 0) / risks.length) : 0} />
+  1557→  1557→                <MiniStat label="Mitigated/Closed" value={`${riskMitigatedClosedRate}%`} color={riskMitigatedClosedRate >= 70 ? 'text-green-600' : 'text-amber-600'} />
+  1558→  1558→              </div>
+  1559→  1559→
+  1560→  1560→              {/* Risk status breakdown */}
+  1561→  1561→              <div className="grid grid-cols-4 gap-3">
+  1562→  1562→                {(['Open', 'Mitigated', 'Accepted', 'Closed'] as const).map(status => {
+  1563→  1563→                  const count = risks.filter(r => r.status === status).length;
+  1564→  1564→                  const colors: Record<string, string> = { Open: 'text-red-600', Mitigated: 'text-green-600', Accepted: 'text-amber-600', Closed: 'text-blue-600' };
+  1565→  1565→                  return (
+  1566→  1566→                    <div key={status} className="flex items-center gap-2 p-2 rounded-lg bg-muted/20 border">
+  1567→  1567→                      <span className={cn('text-lg font-bold', colors[status])}>{count}</span>
+  1568→  1568→                      <span className="text-xs text-muted-foreground">{status}</span>
+  1569→  1569→                    </div>
+  1570→  1570→                  );
+  1571→  1571→                })}
+  1572→  1572→              </div>
+  1573→  1573→
+  1574→  1574→              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  1575→  1575→                <Card>
+  1576→  1576→                  <CardHeader className="pb-2 pt-4 px-4">
+  1577→  1577→                    <SectionTitle subtitle="Distribution by risk level">Risk by Level</SectionTitle>
+  1578→  1578→                  </CardHeader>
+  1579→  1579→                  <CardContent className="px-4 pb-4">
+  1580→  1580→                    <div className="h-56">
+  1581→  1581→                      <ResponsiveContainer width="100%" height="100%">
+  1582→  1582→                        <PieChart>
+  1583→  1583→                          <Pie data={riskByLevel} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+  1584→  1584→                            {riskByLevel.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+  1585→  1585→                          </Pie>
+  1586→  1586→                          <Tooltip content={<CustomTooltip />} />
+  1587→  1587→                          <Legend className="text-xs" />
+  1588→  1588→                        </PieChart>
+  1589→  1589→                      </ResponsiveContainer>
+  1590→  1590→                    </div>
+  1591→  1591→                  </CardContent>
+  1592→  1592→                </Card>
+  1593→  1593→                <Card>
+  1594→  1594→                  <CardHeader className="pb-2 pt-4 px-4">
+  1595→  1595→                    <SectionTitle subtitle="Risk Priority Number distribution">RPN Distribution</SectionTitle>
+  1596→  1596→                  </CardHeader>
+  1597→  1597→                  <CardContent className="px-4 pb-4">
+  1598→  1598→                    <div className="h-56">
+  1599→  1599→                      <ResponsiveContainer width="100%" height="100%">
+  1600→  1600→                        <BarChart data={rpnDistribution}>
+  1601→  1601→                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1602→  1602→                          <XAxis dataKey="name" className="text-xs" />
+  1603→  1603→                          <YAxis className="text-xs" allowDecimals={false} />
+  1604→  1604→                          <Tooltip content={<CustomTooltip />} />
+  1605→  1605→                          <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Risks">
+  1606→  1606→                            {rpnDistribution.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+  1607→  1607→                          </Bar>
+  1608→  1608→                        </BarChart>
+  1609→  1609→                      </ResponsiveContainer>
+  1610→  1610→                    </div>
+  1611→  1611→                  </CardContent>
+  1612→  1612→                </Card>
+  1613→  1613→              </div>
+  1614→  1614→
+  1615→  1615→              {/* Risk by Category */}
+  1616→  1616→              {riskByCategory.length > 0 && (
+  1617→  1617→                <Card>
+  1618→  1618→                  <CardHeader className="pb-2 pt-4 px-4">
+  1619→  1619→                    <SectionTitle subtitle="Risk distribution by category">Risk by Category</SectionTitle>
+  1620→  1620→                  </CardHeader>
+  1621→  1621→                  <CardContent className="px-4 pb-4">
+  1622→  1622→                    <div className="h-48">
+  1623→  1623→                      <ResponsiveContainer width="100%" height="100%">
+  1624→  1624→                        <BarChart data={riskByCategory}>
+  1625→  1625→                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1626→  1626→                          <XAxis dataKey="name" className="text-xs" />
+  1627→  1627→                          <YAxis className="text-xs" allowDecimals={false} />
+  1628→  1628→                          <Tooltip content={<CustomTooltip />} />
+  1629→  1629→                          <Bar dataKey="count" fill={CHART_COLORS.orange} radius={[4, 4, 0, 0]} name="Risks" />
+  1630→  1630→                        </BarChart>
+  1631→  1631→                      </ResponsiveContainer>
+  1632→  1632→                    </div>
+  1633→  1633→                  </CardContent>
+  1634→  1634→                </Card>
+  1635→  1635→              )}
+  1636→  1636→
+  1637→  1637→              {/* Risk Details Table */}
+  1638→  1638→              <Card>
+  1639→  1639→                <CardHeader className="pb-2 pt-4 px-4">
+  1640→  1640→                  <SectionTitle subtitle="Detailed list of all risk assessments">Risk Details</SectionTitle>
+  1641→  1641→                </CardHeader>
+  1642→  1642→                <CardContent className="px-4 pb-4">
+  1643→  1643→                  <div className="max-h-72 overflow-y-auto">
+  1644→  1644→                    <Table>
+  1645→  1645→                      <TableHeader>
+  1646→  1646→                        <TableRow>
+  1647→  1647→                          <TableHead className="text-xs">Risk #</TableHead>
+  1648→  1648→                          <TableHead className="text-xs">Title</TableHead>
+  1649→  1649→                          <TableHead className="text-xs">Category</TableHead>
+  1650→  1650→                          <TableHead className="text-xs">P/I/D</TableHead>
+  1651→  1651→                          <TableHead className="text-xs">RPN</TableHead>
+  1652→  1652→                          <TableHead className="text-xs">Level</TableHead>
+  1653→  1653→                          <TableHead className="text-xs">Status</TableHead>
+  1654→  1654→                        </TableRow>
+  1655→  1655→                      </TableHeader>
+  1656→  1656→                      <TableBody>
+  1657→  1657→                        {risks.sort((a, b) => b.rpn - a.rpn).slice(0, 15).map(r => {
+  1658→  1658→                          const levelColors: Record<string, string> = { Low: 'text-green-600', Medium: 'text-amber-600', High: 'text-red-600', Critical: 'text-purple-600' };
+  1659→  1659→                          return (
+  1660→  1660→                            <TableRow key={r.id}>
+  1661→  1661→                              <TableCell className="font-mono text-xs">{r.riskNumber}</TableCell>
+  1662→  1662→                              <TableCell className="text-xs max-w-[180px] truncate">{r.title}</TableCell>
+  1663→  1663→                              <TableCell className="text-xs">{r.category || '-'}</TableCell>
+  1664→  1664→                              <TableCell className="text-xs font-mono">{r.probability}/{r.impact}/{r.detectability}</TableCell>
+  1665→  1665→                              <TableCell className="text-xs font-bold">{r.rpn}</TableCell>
+  1666→  1666→                              <TableCell className="text-xs">
+  1667→  1667→                                <span className={cn('font-medium', levelColors[r.riskLevel])}>{r.riskLevel}</span>
+  1668→  1668→                              </TableCell>
+  1669→  1669→                              <TableCell className="text-xs">
+  1670→  1670→                                <Badge variant={r.status === 'Closed' || r.status === 'Mitigated' ? 'default' : 'secondary'} className="text-[10px]">{r.status}</Badge>
+  1671→  1671→                              </TableCell>
+  1672→  1672→                            </TableRow>
+  1673→  1673→                          );
+  1674→  1674→                        })}
+  1675→  1675→                      </TableBody>
+  1676→  1676→                    </Table>
+  1677→  1677→                  </div>
+  1678→  1678→                </CardContent>
+  1679→  1679→              </Card>
+  1680→  1680→            </div>
+  1681→  1681→          )}
+  1682→  1682→
+  1683→  1683→          {/* ================================================================= */}
+  1684→  1684→          {/* Document Status Report                                            */}
+  1685→  1685→          {/* ================================================================= */}
+  1686→  1686→          {previewReport === 'document-status' && (
+  1687→  1687→            <div className="space-y-6">
+  1688→  1688→              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1689→  1689→                <MiniStat label="Total Documents" value={documents.length} />
+  1690→  1690→                <MiniStat label="Approval Rate" value={`${docApprovalRate}%`} color={docApprovalRate >= 80 ? 'text-green-600' : 'text-amber-600'} />
+  1691→  1691→                <MiniStat label="Approved" value={documents.filter(d => d.status === 'Approved').length} color="text-green-600" />
+  1692→  1692→                <MiniStat label="Obsolete" value={documents.filter(d => d.status === 'Obsolete').length} color="text-red-600" />
+  1693→  1693→              </div>
+  1694→  1694→
+  1695→  1695→              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  1696→  1696→                <Card>
+  1697→  1697→                  <CardHeader className="pb-2 pt-4 px-4">
+  1698→  1698→                    <SectionTitle subtitle="Current lifecycle status">Document by Status</SectionTitle>
+  1699→  1699→                  </CardHeader>
+  1700→  1700→                  <CardContent className="px-4 pb-4">
+  1701→  1701→                    <div className="h-56">
+  1702→  1702→                      <ResponsiveContainer width="100%" height="100%">
+  1703→  1703→                        <PieChart>
+  1704→  1704→                          <Pie data={docByStatus} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+  1705→  1705→                            {docByStatus.map((entry, i) => <Cell key={i} fill={entry.color || COLORS[i % COLORS.length]} />)}
+  1706→  1706→                          </Pie>
+  1707→  1707→                          <Tooltip content={<CustomTooltip />} />
+  1708→  1708→                          <Legend className="text-xs" />
+  1709→  1709→                        </PieChart>
+  1710→  1710→                      </ResponsiveContainer>
+  1711→  1711→                    </div>
+  1712→  1712→                  </CardContent>
+  1713→  1713→                </Card>
+  1714→  1714→                <Card>
+  1715→  1715→                  <CardHeader className="pb-2 pt-4 px-4">
+  1716→  1716→                    <SectionTitle subtitle="Document count by type classification">Document by Type</SectionTitle>
+  1717→  1717→                  </CardHeader>
+  1718→  1718→                  <CardContent className="px-4 pb-4">
+  1719→  1719→                    <div className="h-56">
+  1720→  1720→                      <ResponsiveContainer width="100%" height="100%">
+  1721→  1721→                        <BarChart data={docByType}>
+  1722→  1722→                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1723→  1723→                          <XAxis dataKey="name" className="text-xs" angle={-20} textAnchor="end" height={50} />
+  1724→  1724→                          <YAxis className="text-xs" allowDecimals={false} />
+  1725→  1725→                          <Tooltip content={<CustomTooltip />} />
+  1726→  1726→                          <Bar dataKey="count" fill={CHART_COLORS.teal} radius={[4, 4, 0, 0]} name="Documents" />
+  1727→  1727→                        </BarChart>
+  1728→  1728→                      </ResponsiveContainer>
+  1729→  1729→                    </div>
+  1730→  1730→                  </CardContent>
+  1731→  1731→                </Card>
+  1732→  1732→              </div>
+  1733→  1733→
+  1734→  1734→              {/* Document Details Table */}
+  1735→  1735→              <Card>
+  1736→  1736→                <CardHeader className="pb-2 pt-4 px-4">
+  1737→  1737→                  <SectionTitle subtitle="Detailed list of all documents">Document Details</SectionTitle>
+  1738→  1738→                </CardHeader>
+  1739→  1739→                <CardContent className="px-4 pb-4">
+  1740→  1740→                  <div className="max-h-72 overflow-y-auto">
+  1741→  1741→                    <Table>
+  1742→  1742→                      <TableHeader>
+  1743→  1743→                        <TableRow>
+  1744→  1744→                          <TableHead className="text-xs">Doc #</TableHead>
+  1745→  1745→                          <TableHead className="text-xs">Title</TableHead>
+  1746→  1746→                          <TableHead className="text-xs">Type</TableHead>
+  1747→  1747→                          <TableHead className="text-xs">Status</TableHead>
+  1748→  1748→                          <TableHead className="text-xs">Version</TableHead>
+  1749→  1749→                          <TableHead className="text-xs">Owner</TableHead>
+  1750→  1750→                          <TableHead className="text-xs">Effective</TableHead>
+  1751→  1751→                        </TableRow>
+  1752→  1752→                      </TableHeader>
+  1753→  1753→                      <TableBody>
+  1754→  1754→                        {documents.slice(0, 15).map(d => (
+  1755→  1755→                          <TableRow key={d.id}>
+  1756→  1756→                            <TableCell className="font-mono text-xs">{d.documentNumber}</TableCell>
+  1757→  1757→                            <TableCell className="text-xs max-w-[180px] truncate">{d.title}</TableCell>
+  1758→  1758→                            <TableCell className="text-xs">{d.type}</TableCell>
+  1759→  1759→                            <TableCell className="text-xs">
+  1760→  1760→                              <Badge variant={d.status === 'Approved' ? 'default' : d.status === 'Obsolete' ? 'destructive' : 'secondary'} className="text-[10px]">{d.status}</Badge>
+  1761→  1761→                            </TableCell>
+  1762→  1762→                            <TableCell className="text-xs font-mono">{d.version}</TableCell>
+  1763→  1763→                            <TableCell className="text-xs">{d.owner || '-'}</TableCell>
+  1764→  1764→                            <TableCell className="text-xs">{d.effectiveDate ? formatDate(d.effectiveDate, true) : '-'}</TableCell>
+  1765→  1765→                          </TableRow>
+  1766→  1766→                        ))}
+  1767→  1767→                      </TableBody>
+  1768→  1768→                    </Table>
+  1769→  1769→                  </div>
+  1770→  1770→                </CardContent>
+  1771→  1771→              </Card>
+  1772→  1772→            </div>
+  1773→  1773→          )}
+  1774→  1774→
+  1775→  1775→          {/* ================================================================= */}
+  1776→  1776→          {/* Supplier Performance Report                                       */}
+  1777→  1777→          {/* ================================================================= */}
+  1778→  1778→          {previewReport === 'supplier-performance' && (
+  1779→  1779→            <div className="space-y-6">
+  1780→  1780→              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1781→  1781→                <MiniStat label="Total Suppliers" value={suppliers.length} />
+  1782→  1782→                <MiniStat label="Avg Score" value={`${avgSupplierScore}%`} color={avgSupplierScore >= 80 ? 'text-green-600' : 'text-amber-600'} />
+  1783→  1783→                <MiniStat label="Qualified" value={suppliers.filter(s => s.status === 'Qualified').length} color="text-green-600" />
+  1784→  1784→                <MiniStat label="Disqualified" value={suppliers.filter(s => s.status === 'Disqualified').length} color="text-red-600" />
+  1785→  1785→              </div>
+  1786→  1786→
+  1787→  1787→              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  1788→  1788→                <Card>
+  1789→  1789→                  <CardHeader className="pb-2 pt-4 px-4">
+  1790→  1790→                    <SectionTitle subtitle="Supplier qualification status distribution">Supplier by Status</SectionTitle>
+  1791→  1791→                  </CardHeader>
+  1792→  1792→                  <CardContent className="px-4 pb-4">
+  1793→  1793→                    <div className="h-56">
+  1794→  1794→                      <ResponsiveContainer width="100%" height="100%">
+  1795→  1795→                        <PieChart>
+  1796→  1796→                          <Pie data={supplierByStatus} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+  1797→  1797→                            {supplierByStatus.map((entry, i) => <Cell key={i} fill={entry.color || COLORS[i % COLORS.length]} />)}
+  1798→  1798→                          </Pie>
+  1799→  1799→                          <Tooltip content={<CustomTooltip />} />
+  1800→  1800→                          <Legend className="text-xs" />
+  1801→  1801→                        </PieChart>
+  1802→  1802→                      </ResponsiveContainer>
+  1803→  1803→                    </div>
+  1804→  1804→                  </CardContent>
+  1805→  1805→                </Card>
+  1806→  1806→                <Card>
+  1807→  1807→                  <CardHeader className="pb-2 pt-4 px-4">
+  1808→  1808→                    <SectionTitle subtitle="Performance scores by supplier">Performance Scores</SectionTitle>
+  1809→  1809→                  </CardHeader>
+  1810→  1810→                  <CardContent className="px-4 pb-4">
+  1811→  1811→                    <div className="h-56">
+  1812→  1812→                      <ResponsiveContainer width="100%" height="100%">
+  1813→  1813→                        <BarChart data={supplierPerformance} layout="vertical">
+  1814→  1814→                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1815→  1815→                          <XAxis type="number" domain={[0, 100]} className="text-xs" />
+  1816→  1816→                          <YAxis dataKey="name" type="category" className="text-xs" width={80} />
+  1817→  1817→                          <Tooltip content={<CustomTooltip />} />
+  1818→  1818→                          <Bar dataKey="score" radius={[0, 4, 4, 0]} name="Score">
+  1819→  1819→                            {supplierPerformance.map((entry, i) => (
+  1820→  1820→                              <Cell key={i} fill={entry.score >= 80 ? CHART_COLORS.green : entry.score >= 60 ? CHART_COLORS.amber : CHART_COLORS.red} />
+  1821→  1821→                            ))}
+  1822→  1822→                          </Bar>
+  1823→  1823→                        </BarChart>
+  1824→  1824→                      </ResponsiveContainer>
+  1825→  1825→                    </div>
+  1826→  1826→                  </CardContent>
+  1827→  1827→                </Card>
+  1828→  1828→              </div>
+  1829→  1829→
+  1830→  1830→              {/* Supplier Details Table */}
+  1831→  1831→              <Card>
+  1832→  1832→                <CardHeader className="pb-2 pt-4 px-4">
+  1833→  1833→                  <SectionTitle subtitle="Detailed list of all suppliers">Supplier Details</SectionTitle>
+  1834→  1834→                </CardHeader>
+  1835→  1835→                <CardContent className="px-4 pb-4">
+  1836→  1836→                  <div className="max-h-72 overflow-y-auto">
+  1837→  1837→                    <Table>
+  1838→  1838→                      <TableHeader>
+  1839→  1839→                        <TableRow>
+  1840→  1840→                          <TableHead className="text-xs">Code</TableHead>
+  1841→  1841→                          <TableHead className="text-xs">Name</TableHead>
+  1842→  1842→                          <TableHead className="text-xs">Category</TableHead>
+  1843→  1843→                          <TableHead className="text-xs">Status</TableHead>
+  1844→  1844→                          <TableHead className="text-xs">Score</TableHead>
+  1845→  1845→                          <TableHead className="text-xs">Next Review</TableHead>
+  1846→  1846→                        </TableRow>
+  1847→  1847→                      </TableHeader>
+  1848→  1848→                      <TableBody>
+  1849→  1849→                        {suppliers.map(s => (
+  1850→  1850→                          <TableRow key={s.id}>
+  1851→  1851→                            <TableCell className="font-mono text-xs">{s.supplierCode}</TableCell>
+  1852→  1852→                            <TableCell className="text-xs font-medium">{s.name}</TableCell>
+  1853→  1853→                            <TableCell className="text-xs">{s.category || '-'}</TableCell>
+  1854→  1854→                            <TableCell className="text-xs">
+  1855→  1855→                              <Badge variant={s.status === 'Qualified' ? 'default' : s.status === 'Disqualified' ? 'destructive' : 'secondary'} className="text-[10px]">{s.status}</Badge>
+  1856→  1856→                            </TableCell>
+  1857→  1857→                            <TableCell className="text-xs">
+  1858→  1858→                              <span className={cn('font-medium', (s.performanceScore || 0) >= 80 ? 'text-green-600' : (s.performanceScore || 0) >= 60 ? 'text-amber-600' : 'text-red-600')}>
+  1859→  1859→                                {s.performanceScore || 0}%
+  1860→  1860→                              </span>
+  1861→  1861→                            </TableCell>
+  1862→  1862→                            <TableCell className="text-xs">{s.nextReviewDate ? formatDate(s.nextReviewDate, true) : '-'}</TableCell>
+  1863→  1863→                          </TableRow>
+  1864→  1864→                        ))}
+  1865→  1865→                      </TableBody>
+  1866→  1866→                    </Table>
+  1867→  1867→                  </div>
+  1868→  1868→                </CardContent>
+  1869→  1869→              </Card>
+  1870→  1870→            </div>
+  1871→  1871→          )}
+  1872→  1872→
+  1873→  1873→          {/* ================================================================= */}
+  1874→  1874→          {/* Batch Release Report                                              */}
+  1875→  1875→          {/* ================================================================= */}
+  1876→  1876→          {previewReport === 'batch-release' && (
+  1877→  1877→            <div className="space-y-6">
+  1878→  1878→              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1879→  1879→                <MiniStat label="Total Batches" value={batchRecords.length} />
+  1880→  1880→                <MiniStat label="Release Rate" value={`${batchReleaseRate}%`} color={batchReleaseRate >= 80 ? 'text-green-600' : 'text-amber-600'} />
+  1881→  1881→                <MiniStat label="Released" value={batchRecords.filter(b => b.status === 'Released').length} color="text-green-600" />
+  1882→  1882→                <MiniStat label="Rejected" value={batchRecords.filter(b => b.status === 'Rejected').length} color="text-red-600" />
+  1883→  1883→              </div>
+  1884→  1884→
+  1885→  1885→              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  1886→  1886→                <Card>
+  1887→  1887→                  <CardHeader className="pb-2 pt-4 px-4">
+  1888→  1888→                    <SectionTitle subtitle="Batch status distribution">Batch by Status</SectionTitle>
+  1889→  1889→                  </CardHeader>
+  1890→  1890→                  <CardContent className="px-4 pb-4">
+  1891→  1891→                    <div className="h-56">
+  1892→  1892→                      <ResponsiveContainer width="100%" height="100%">
+  1893→  1893→                        <PieChart>
+  1894→  1894→                          <Pie data={batchByStatus} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+  1895→  1895→                            {batchByStatus.map((entry, i) => <Cell key={i} fill={entry.color || COLORS[i % COLORS.length]} />)}
+  1896→  1896→                          </Pie>
+  1897→  1897→                          <Tooltip content={<CustomTooltip />} />
+  1898→  1898→                          <Legend className="text-xs" />
+  1899→  1899→                        </PieChart>
+  1900→  1900→                      </ResponsiveContainer>
+  1901→  1901→                    </div>
+  1902→  1902→                  </CardContent>
+  1903→  1903→                </Card>
+  1904→  1904→                <Card>
+  1905→  1905→                  <CardHeader className="pb-2 pt-4 px-4">
+  1906→  1906→                    <SectionTitle subtitle="Batch counts by current status">Batch Status Counts</SectionTitle>
+  1907→  1907→                  </CardHeader>
+  1908→  1908→                  <CardContent className="px-4 pb-4">
+  1909→  1909→                    <div className="h-56">
+  1910→  1910→                      <ResponsiveContainer width="100%" height="100%">
+  1911→  1911→                        <BarChart data={batchByStatusBar}>
+  1912→  1912→                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+  1913→  1913→                          <XAxis dataKey="name" className="text-xs" />
+  1914→  1914→                          <YAxis className="text-xs" allowDecimals={false} />
+  1915→  1915→                          <Tooltip content={<CustomTooltip />} />
+  1916→  1916→                          <Bar dataKey="count" fill={CHART_COLORS.teal} radius={[4, 4, 0, 0]} name="Batches" />
+  1917→  1917→                        </BarChart>
+  1918→  1918→                      </ResponsiveContainer>
+  1919→  1919→                    </div>
+  1920→  1920→                  </CardContent>
+  1921→  1921→                </Card>
+  1922→  1922→              </div>
+  1923→  1923→
+  1924→  1924→              {/* Batch Details Table */}
+  1925→  1925→              <Card>
+  1926→  1926→                <CardHeader className="pb-2 pt-4 px-4">
+  1927→  1927→                  <SectionTitle subtitle="Detailed list of all batch records">Batch Details</SectionTitle>
+  1928→  1928→                </CardHeader>
+  1929→  1929→                <CardContent className="px-4 pb-4">
+  1930→  1930→                  <div className="max-h-72 overflow-y-auto">
+  1931→  1931→                    <Table>
+  1932→  1932→                      <TableHeader>
+  1933→  1933→                        <TableRow>
+  1934→  1934→                          <TableHead className="text-xs">Lot #</TableHead>
+  1935→  1935→                          <TableHead className="text-xs">Product</TableHead>
+  1936→  1936→                          <TableHead className="text-xs">Status</TableHead>
+  1937→  1937→                          <TableHead className="text-xs">Batch Size</TableHead>
+  1938→  1938→                          <TableHead className="text-xs">Mfg Date</TableHead>
+  1939→  1939→                          <TableHead className="text-xs">Expiry</TableHead>
+  1940→  1940→                          <TableHead className="text-xs">QA Release</TableHead>
+  1941→  1941→                        </TableRow>
+  1942→  1942→                      </TableHeader>
+  1943→  1943→                      <TableBody>
+  1944→  1944→                        {batchRecords.map(b => (
+  1945→  1945→                          <TableRow key={b.id}>
+  1946→  1946→                            <TableCell className="font-mono text-xs">{b.lotNumber}</TableCell>
+  1947→  1947→                            <TableCell className="text-xs">{b.productName}</TableCell>
+  1948→  1948→                            <TableCell className="text-xs">
+  1949→  1949→                              <Badge variant={b.status === 'Released' ? 'default' : b.status === 'Rejected' ? 'destructive' : 'secondary'} className="text-[10px]">{b.status}</Badge>
+  1950→  1950→                            </TableCell>
+  1951→  1951→                            <TableCell className="text-xs">{b.batchSize ? `${b.batchSize} ${b.batchSizeUnit || ''}` : '-'}</TableCell>
+  1952→  1952→                            <TableCell className="text-xs">{formatDate(b.manufacturingDate, true)}</TableCell>
+  1953→  1953→                            <TableCell className="text-xs">{b.expiryDate ? formatDate(b.expiryDate, true) : '-'}</TableCell>
+  1954→  1954→                            <TableCell className="text-xs">{b.qaReleaseDate ? formatDate(b.qaReleaseDate, true) : '-'}</TableCell>
+  1955→  1955→                          </TableRow>
+  1956→  1956→                        ))}
+  1957→  1957→                      </TableBody>
+  1958→  1958→                    </Table>
+  1959→  1959→                  </div>
+  1960→  1960→                </CardContent>
+  1961→  1961→              </Card>
+  1962→  1962→            </div>
+  1963→  1963→          )}
+  1964→  1964→
+  1965→  1965→          {/* ================================================================= */}
+  1966→  1966→          {/* Management Review Report                                          */}
+  1967→  1967→          {/* ================================================================= */}
+  1968→  1968→          {previewReport === 'management-review' && (
+  1969→  1969→            <div className="space-y-6">
+  1970→  1970→              {/* ISO reference */}
+  1971→  1971→              <div className="p-4 rounded-lg border bg-muted/10">
+  1972→  1972→                <div className="flex items-center gap-2 mb-1">
+  1973→  1973→                  <LayoutDashboard className="h-4 w-4 text-primary" />
+  1974→  1974→                  <h4 className="text-sm font-semibold">Management Review Summary</h4>
+  1975→  1975→                </div>
+  1976→  1976→                <p className="text-xs text-muted-foreground">
+  1977→  1977→                  This comprehensive QMS overview aggregates key quality indicators for management review
+  1978→  1978→                  as required by ISO 13485:2016 §5.6 and ICH Q10. Data covers the period:{' '}
+  1979→  1979→                  {periodFilter === 'all' ? 'All Time' : `Last ${periodFilter.replace('m', ' Months')}`}.
+  1980→  1980→                </p>
+  1981→  1981→              </div>
+  1982→  1982→
+  1983→  1983→              {/* Top-level KPIs */}
+  1984→  1984→              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1985→  1985→                <MiniStat label="Docs Approved" value={`${documents.filter(d => d.status === 'Approved').length}/${documents.length}`} />
+  1986→  1986→                <MiniStat label="CAPAs Closed" value={`${capas.filter(c => c.status === 'Closed').length}/${capas.length}`} color={capaClosureRate >= 80 ? 'text-green-600' : 'text-amber-600'} />
+  1987→  1987→                <MiniStat label="NCRs Closed" value={`${ncrs.filter(n => n.status === 'Closed').length}/${ncrs.length}`} />
+  1988→  1988→                <MiniStat label="Overdue Items" value={overdueItems} color={overdueItems > 0 ? 'text-red-600' : 'text-green-600'} />
+  1989→  1989→              </div>
+  1990→  1990→
+  1991→  1991→              {/* Combined trend chart */}
+  1992→  1992→              <Card>
+  1993→  1993→                <CardHeader className="pb-2 pt-4 px-4">
+  1994→  1994→                  <SectionTitle subtitle="CAPAs closed, NCRs closed, and Documents approved over time">Combined Quality Trend</SectionTitle>
+  1995→  1995→                </CardHeader>
+  1996→  1996→                <CardContent className="px-4 pb-4">
+  1997→  1997→                  <div className="h-64">
+  1998→  1998→                    {managementTrendData.length > 0 ? (
+  1999→  1999→                      <ResponsiveContainer width="100%" height="100%">
+  2000→  2000→                        <AreaChart data={managementTrendData}>
+
+[showing lines 1-2000 of 2002; use offset=2001 with limit to continue reading]
