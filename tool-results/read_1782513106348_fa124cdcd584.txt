@@ -1,0 +1,743 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useMemo, useCallback } from 'react';
+     4→import { useQMSStore } from '@/lib/demo-store';
+     5→import { cn, formatDate } from '@/lib/utils';
+     6→import type {
+     7→  ScheduledReport,
+     8→  ReportFrequency,
+     9→  ReportType,
+    10→  ReportFormat,
+    11→  ScheduledReportStatus,
+    12→} from '@/types/qms';
+    13→import {
+    14→  CalendarClock,
+    15→  Plus,
+    16→  Play,
+    17→  Pause,
+    18→  Trash2,
+    19→  Edit,
+    20→  MoreHorizontal,
+    21→  Mail,
+    22→  Filter,
+    23→  CheckCircle2,
+    24→  AlertCircle,
+    25→  Clock,
+    26→  Loader2,
+    27→  X,
+    28→} from 'lucide-react';
+    29→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    30→import { Badge } from '@/components/ui/badge';
+    31→import { Button } from '@/components/ui/button';
+    32→import {
+    33→  Dialog,
+    34→  DialogContent,
+    35→  DialogHeader,
+    36→  DialogTitle,
+    37→} from '@/components/ui/dialog';
+    38→import {
+    39→  Select,
+    40→  SelectContent,
+    41→  SelectItem,
+    42→  SelectTrigger,
+    43→  SelectValue,
+    44→} from '@/components/ui/select';
+    45→import {
+    46→  Table,
+    47→  TableBody,
+    48→  TableCell,
+    49→  TableHead,
+    50→  TableHeader,
+    51→  TableRow,
+    52→} from '@/components/ui/table';
+    53→import {
+    54→  DropdownMenu,
+    55→  DropdownMenuContent,
+    56→  DropdownMenuItem,
+    57→  DropdownMenuTrigger,
+    58→} from '@/components/ui/dropdown-menu';
+    59→import {
+    60→  AlertDialog,
+    61→  AlertDialogContent,
+    62→  AlertDialogHeader,
+    63→  AlertDialogTitle,
+    64→  AlertDialogDescription,
+    65→  AlertDialogFooter,
+    66→  AlertDialogCancel,
+    67→  AlertDialogAction,
+    68→} from '@/components/ui/alert-dialog';
+    69→import { Input } from '@/components/ui/input';
+    70→import { Label } from '@/components/ui/label';
+    71→import { Separator } from '@/components/ui/separator';
+    72→import { ScrollArea } from '@/components/ui/scroll-area';
+    73→
+    74→// ---------------------------------------------------------------------------
+    75→// Constants
+    76→// ---------------------------------------------------------------------------
+    77→
+    78→const REPORT_TYPE_OPTIONS: { value: ReportType; label: string }[] = [
+    79→  // TODO i18n: "Management Review"
+    80→  { value: 'management-review', label: 'Management Review' },
+    81→  // TODO i18n: "CAPA Summary"
+    82→  { value: 'capa-summary', label: 'CAPA Summary' },
+    83→  // TODO i18n: "Audit Summary"
+    84→  { value: 'audit-summary', label: 'Audit Summary' },
+    85→  // TODO i18n: "Compliance Overview"
+    86→  { value: 'compliance-overview', label: 'Compliance Overview' },
+    87→  // TODO i18n: "Training Status"
+    88→  { value: 'training-status', label: 'Training Status' },
+    89→  // TODO i18n: "Risk Profile"
+    90→  { value: 'risk-profile', label: 'Risk Profile' },
+    91→];
+    92→
+    93→const FREQUENCY_OPTIONS: { value: ReportFrequency; label: string }[] = [
+    94→  // TODO i18n: "Daily"
+    95→  { value: 'daily', label: 'Daily' },
+    96→  // TODO i18n: "Weekly"
+    97→  { value: 'weekly', label: 'Weekly' },
+    98→  // TODO i18n: "Monthly"
+    99→  { value: 'monthly', label: 'Monthly' },
+   100→  // TODO i18n: "Quarterly"
+   101→  { value: 'quarterly', label: 'Quarterly' },
+   102→];
+   103→
+   104→const FORMAT_OPTIONS: { value: ReportFormat; label: string }[] = [
+   105→  { value: 'csv', label: 'CSV' },
+   106→  { value: 'html', label: 'HTML' },
+   107→  { value: 'pdf', label: 'PDF' },
+   108→];
+   109→
+   110→const STATUS_COLORS: Record<ScheduledReportStatus, string> = {
+   111→  active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+   112→  paused: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+   113→  completed: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+   114→  error: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+   115→};
+   116→
+   117→const STATUS_ICONS: Record<ScheduledReportStatus, React.ReactNode> = {
+   118→  active: <CheckCircle2 className="h-3 w-3" />,
+   119→  paused: <Clock className="h-3 w-3" />,
+   120→  completed: <CheckCircle2 className="h-3 w-3" />,
+   121→  error: <AlertCircle className="h-3 w-3" />,
+   122→};
+   123→
+   124→// ---------------------------------------------------------------------------
+   125→// Helpers
+   126→// ---------------------------------------------------------------------------
+   127→
+   128→function getReportTypeLabel(type: ReportType): string {
+   129→  return REPORT_TYPE_OPTIONS.find(o => o.value === type)?.label || type;
+   130→}
+   131→
+   132→function getFrequencyLabel(freq: ReportFrequency): string {
+   133→  return FREQUENCY_OPTIONS.find(o => o.value === freq)?.label || freq;
+   134→}
+   135→
+   136→// ---------------------------------------------------------------------------
+   137→// Create/Edit Dialog
+   138→// ---------------------------------------------------------------------------
+   139→
+   140→interface ReportFormDialogProps {
+   141→  open: boolean;
+   142→  onOpenChange: (open: boolean) => void;
+   143→  report?: ScheduledReport | null;
+   144→  onSave: (data: Partial<ScheduledReport>) => void;
+   145→}
+   146→
+   147→function ReportFormDialog({ open, onOpenChange, report, onSave }: ReportFormDialogProps) {
+   148→  const isEditing = !!report;
+   149→
+   150→  const [name, setName] = useState(report?.name || '');
+   151→  const [reportType, setReportType] = useState<ReportType>(report?.reportType || 'capa-summary');
+   152→  const [format, setFormat] = useState<ReportFormat>(report?.format || 'csv');
+   153→  const [frequency, setFrequency] = useState<ReportFrequency>(report?.frequency || 'monthly');
+   154→  const [recipients, setRecipients] = useState(report?.recipients?.join(', ') || '');
+   155→  const [filterKey, setFilterKey] = useState('');
+   156→  const [filterValue, setFilterValue] = useState('');
+   157→  const [filters, setFilters] = useState<Record<string, string>>(report?.filters || {});
+   158→  const [saving, setSaving] = useState(false);
+   159→
+   160→  const handleSave = useCallback(async () => {
+   161→    if (!name.trim() || !recipients.trim()) return;
+   162→
+   163→    setSaving(true);
+   164→    const emailList = recipients.split(',').map(e => e.trim()).filter(e => e.length > 0);
+   165→
+   166→    onSave({
+   167→      name: name.trim(),
+   168→      reportType,
+   169→      format,
+   170→      frequency,
+   171→      recipients: emailList,
+   172→      filters: Object.keys(filters).length > 0 ? filters : undefined,
+   173→    });
+   174→
+   175→    setSaving(false);
+   176→    onOpenChange(false);
+   177→  }, [name, reportType, format, frequency, recipients, filters, onSave, onOpenChange]);
+   178→
+   179→  const addFilter = useCallback(() => {
+   180→    if (filterKey.trim() && filterValue.trim()) {
+   181→      setFilters(prev => ({ ...prev, [filterKey.trim()]: filterValue.trim() }));
+   182→      setFilterKey('');
+   183→      setFilterValue('');
+   184→    }
+   185→  }, [filterKey, filterValue]);
+   186→
+   187→  const removeFilter = useCallback((key: string) => {
+   188→    setFilters(prev => {
+   189→      const next = { ...prev };
+   190→      delete next[key];
+   191→      return next;
+   192→    });
+   193→  }, []);
+   194→
+   195→  return (
+   196→    <Dialog open={open} onOpenChange={onOpenChange}>
+   197→      <DialogContent className="sm:max-w-[520px]">
+   198→        <DialogHeader>
+   199→          {/* TODO i18n: "Edit Scheduled Report" / "Create Scheduled Report" */}
+   200→          <DialogTitle>{isEditing ? 'Edit Scheduled Report' : 'Create Scheduled Report'}</DialogTitle>
+   201→        </DialogHeader>
+   202→        <div className="space-y-4">
+   203→          {/* Name */}
+   204→          <div className="space-y-2">
+   205→            <Label>{/* TODO i18n: "Name" */}Name</Label>
+   206→            <Input
+   207→              value={name}
+   208→              onChange={e => setName(e.target.value)}
+   209→              placeholder="e.g., Monthly CAPA Summary"
+   210→            />
+   211→          </div>
+   212→
+   213→          {/* Report Type */}
+   214→          <div className="space-y-2">
+   215→            <Label>{/* TODO i18n: "Report Type" */}Report Type</Label>
+   216→            <Select value={reportType} onValueChange={(v) => setReportType(v as ReportType)}>
+   217→              <SelectTrigger>
+   218→                <SelectValue />
+   219→              </SelectTrigger>
+   220→              <SelectContent>
+   221→                {REPORT_TYPE_OPTIONS.map(opt => (
+   222→                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+   223→                ))}
+   224→              </SelectContent>
+   225→            </Select>
+   226→          </div>
+   227→
+   228→          {/* Format & Frequency */}
+   229→          <div className="grid grid-cols-2 gap-4">
+   230→            <div className="space-y-2">
+   231→              <Label>{/* TODO i18n: "Format" */}Format</Label>
+   232→              <Select value={format} onValueChange={(v) => setFormat(v as ReportFormat)}>
+   233→                <SelectTrigger>
+   234→                  <SelectValue />
+   235→                </SelectTrigger>
+   236→                <SelectContent>
+   237→                  {FORMAT_OPTIONS.map(opt => (
+   238→                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+   239→                  ))}
+   240→                </SelectContent>
+   241→              </Select>
+   242→            </div>
+   243→            <div className="space-y-2">
+   244→              <Label>{/* TODO i18n: "Frequency" */}Frequency</Label>
+   245→              <Select value={frequency} onValueChange={(v) => setFrequency(v as ReportFrequency)}>
+   246→                <SelectTrigger>
+   247→                  <SelectValue />
+   248→                </SelectTrigger>
+   249→                <SelectContent>
+   250→                  {FREQUENCY_OPTIONS.map(opt => (
+   251→                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+   252→                  ))}
+   253→                </SelectContent>
+   254→              </Select>
+   255→            </div>
+   256→          </div>
+   257→
+   258→          {/* Recipients */}
+   259→          <div className="space-y-2">
+   260→            <Label>{/* TODO i18n: "Recipients (comma-separated emails)" */}Recipients (comma-separated emails)</Label>
+   261→            <Input
+   262→              value={recipients}
+   263→              onChange={e => setRecipients(e.target.value)}
+   264→              placeholder="user1@example.com, user2@example.com"
+   265→            />
+   266→          </div>
+   267→
+   268→          {/* Filters */}
+   269→          <div className="space-y-2">
+   270→            <Label className="flex items-center gap-1">
+   271→              <Filter className="h-3 w-3" />
+   272→              {/* TODO i18n: "Filters (optional)" */}
+   273→              Filters (optional)
+   274→            </Label>
+   275→            <div className="flex gap-2">
+   276→              <Input
+   277→                value={filterKey}
+   278→                onChange={e => setFilterKey(e.target.value)}
+   279→                placeholder="Key (e.g., department)"
+   280→                className="flex-1"
+   281→              />
+   282→              <Input
+   283→                value={filterValue}
+   284→                onChange={e => setFilterValue(e.target.value)}
+   285→                placeholder="Value (e.g., Quality)"
+   286→                className="flex-1"
+   287→              />
+   288→              <Button variant="outline" size="sm" onClick={addFilter} className="px-3">
+   289→                <Plus className="h-3 w-3" />
+   290→              </Button>
+   291→            </div>
+   292→            {Object.keys(filters).length > 0 && (
+   293→              <div className="flex flex-wrap gap-2 mt-2">
+   294→                {Object.entries(filters).map(([key, value]) => (
+   295→                  <Badge key={key} variant="outline" className="gap-1 text-xs">
+   296→                    {key}: {value}
+   297→                    <button onClick={() => removeFilter(key)} className="ml-1 hover:text-destructive">
+   298→                      <X className="h-2.5 w-2.5" />
+   299→                    </button>
+   300→                  </Badge>
+   301→                ))}
+   302→              </div>
+   303→            )}
+   304→          </div>
+   305→
+   306→          {/* Actions */}
+   307→          <div className="flex justify-end gap-2 pt-2">
+   308→            {/* TODO i18n: "Cancel" */}
+   309→            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+   310→            <Button onClick={handleSave} disabled={!name.trim() || !recipients.trim() || saving}>
+   311→              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+   312→              {/* TODO i18n: "Update" / "Create" */}
+   313→              {isEditing ? 'Update' : 'Create'}
+   314→            </Button>
+   315→          </div>
+   316→        </div>
+   317→      </DialogContent>
+   318→    </Dialog>
+   319→  );
+   320→}
+   321→
+   322→// ---------------------------------------------------------------------------
+   323→// Main Component
+   324→// ---------------------------------------------------------------------------
+   325→
+   326→export function ScheduledReportsView() {
+   327→  const store = useQMSStore();
+   328→  const scheduledReports = store.scheduledReports;
+   329→
+   330→  const [formOpen, setFormOpen] = useState(false);
+   331→  const [editingReport, setEditingReport] = useState<ScheduledReport | null>(null);
+   332→  const [deleteId, setDeleteId] = useState<string | null>(null);
+   333→  const [runningId, setRunningId] = useState<string | null>(null);
+   334→  const [statusFilter, setStatusFilter] = useState<string>('all');
+   335→  const [typeFilter, setTypeFilter] = useState<string>('all');
+   336→
+   337→  // Filter reports
+   338→  const filteredReports = useMemo(() => {
+   339→    let reports = [...scheduledReports];
+   340→    if (statusFilter !== 'all') {
+   341→      reports = reports.filter(r => r.status === statusFilter);
+   342→    }
+   343→    if (typeFilter !== 'all') {
+   344→      reports = reports.filter(r => r.reportType === typeFilter);
+   345→    }
+   346→    return reports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+   347→  }, [scheduledReports, statusFilter, typeFilter]);
+   348→
+   349→  // Create report
+   350→  const handleCreate = useCallback(async (data: Partial<ScheduledReport>) => {
+   351→    try {
+   352→      const response = await fetch('/api/scheduled-reports', {
+   353→        method: 'POST',
+   354→        headers: { 'Content-Type': 'application/json' },
+   355→        body: JSON.stringify(data),
+   356→      });
+   357→      const result = await response.json();
+   358→      if (result.success) {
+   359→        store.addScheduledReport(result.data);
+   360→      }
+   361→    } catch (err) {
+   362→      console.error('Failed to create scheduled report:', err);
+   363→    }
+   364→  }, [store]);
+   365→
+   366→  // Update report
+   367→  const handleUpdate = useCallback(async (data: Partial<ScheduledReport>) => {
+   368→    if (!editingReport) return;
+   369→    try {
+   370→      const response = await fetch(`/api/scheduled-reports/${editingReport.id}`, {
+   371→        method: 'PUT',
+   372→        headers: { 'Content-Type': 'application/json' },
+   373→        body: JSON.stringify(data),
+   374→      });
+   375→      const result = await response.json();
+   376→      if (result.success) {
+   377→        store.updateScheduledReport(editingReport.id, result.data);
+   378→      }
+   379→    } catch (err) {
+   380→      console.error('Failed to update scheduled report:', err);
+   381→    }
+   382→    setEditingReport(null);
+   383→  }, [editingReport, store]);
+   384→
+   385→  // Toggle active/paused
+   386→  const handleToggle = useCallback(async (id: string) => {
+   387→    try {
+   388→      const response = await fetch(`/api/scheduled-reports/${id}/toggle`, {
+   389→        method: 'POST',
+   390→      });
+   391→      const result = await response.json();
+   392→      if (result.success) {
+   393→        store.updateScheduledReport(id, result.data);
+   394→      }
+   395→    } catch (err) {
+   396→      console.error('Failed to toggle scheduled report:', err);
+   397→    }
+   398→  }, [store]);
+   399→
+   400→  // Run now
+   401→  const handleRunNow = useCallback(async (id: string) => {
+   402→    setRunningId(id);
+   403→    try {
+   404→      const response = await fetch(`/api/scheduled-reports/${id}/execute`, {
+   405→        method: 'POST',
+   406→      });
+   407→
+   408→      // If CSV format, download the file
+   409→      const contentType = response.headers.get('content-type');
+   410→      if (contentType?.includes('text/csv')) {
+   411→        const blob = await response.blob();
+   412→        const url = URL.createObjectURL(blob);
+   413→        const a = document.createElement('a');
+   414→        a.href = url;
+   415→        a.download = `report-${new Date().toISOString().split('T')[0]}.csv`;
+   416→        a.click();
+   417→        URL.revokeObjectURL(url);
+   418→      } else {
+   419→        const result = await response.json();
+   420→        if (result.success && result.data) {
+   421→          // Update the report in store with new lastRunAt
+   422→          store.updateScheduledReport(id, {
+   423→            lastRunAt: result.data.lastRunAt,
+   424→            lastResult: result.data.lastResult || { success: true, recordCount: result.data.recordCount || 0 },
+   425→          });
+   426→        }
+   427→      }
+   428→    } catch (err) {
+   429→      console.error('Failed to execute scheduled report:', err);
+   430→    } finally {
+   431→      setRunningId(null);
+   432→    }
+   433→  }, [store]);
+   434→
+   435→  // Delete
+   436→  const handleDelete = useCallback(async () => {
+   437→    if (!deleteId) return;
+   438→    try {
+   439→      const response = await fetch(`/api/scheduled-reports/${deleteId}`, {
+   440→        method: 'DELETE',
+   441→      });
+   442→      const result = await response.json();
+   443→      if (result.success) {
+   444→        store.deleteScheduledReport(deleteId);
+   445→      }
+   446→    } catch (err) {
+   447→      console.error('Failed to delete scheduled report:', err);
+   448→    }
+   449→    setDeleteId(null);
+   450→  }, [deleteId, store]);
+   451→
+   452→  // Stats
+   453→  const activeCount = scheduledReports.filter(r => r.status === 'active').length;
+   454→  const pausedCount = scheduledReports.filter(r => r.status === 'paused').length;
+   455→  const errorCount = scheduledReports.filter(r => r.status === 'error').length;
+   456→
+   457→  return (
+   458→    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+   459→      {/* Header */}
+   460→      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+   461→        <div>
+   462→          <h1 className="text-2xl font-bold flex items-center gap-2">
+   463→            <CalendarClock className="h-6 w-6 text-primary" />
+   464→            {/* TODO i18n: "Scheduled Reports" */}
+   465→            Scheduled Reports
+   466→          </h1>
+   467→          {/* TODO i18n: "Configure recurring report generation and delivery" */}
+   468→          <p className="text-muted-foreground mt-1">Configure recurring report generation and delivery</p>
+   469→        </div>
+   470→        <Button onClick={() => { setEditingReport(null); setFormOpen(true); }} className="gap-2">
+   471→          <Plus className="h-4 w-4" />
+   472→          {/* TODO i18n: "New Report" */}
+   473→          New Report
+   474→        </Button>
+   475→      </div>
+   476→
+   477→      {/* Stats Cards */}
+   478→      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+   479→        <Card>
+   480→          <CardContent className="pt-4 pb-4 text-center">
+   481→            <p className="text-2xl font-bold">{scheduledReports.length}</p>
+   482→            <p className="text-xs text-muted-foreground">{/* TODO i18n: "Total Reports" */}Total Reports</p>
+   483→          </CardContent>
+   484→        </Card>
+   485→        <Card>
+   486→          <CardContent className="pt-4 pb-4 text-center">
+   487→            <p className="text-2xl font-bold text-green-600">{activeCount}</p>
+   488→            <p className="text-xs text-muted-foreground">{/* TODO i18n: "Active" */}Active</p>
+   489→          </CardContent>
+   490→        </Card>
+   491→        <Card>
+   492→          <CardContent className="pt-4 pb-4 text-center">
+   493→            <p className="text-2xl font-bold text-amber-600">{pausedCount}</p>
+   494→            <p className="text-xs text-muted-foreground">{/* TODO i18n: "Paused" */}Paused</p>
+   495→          </CardContent>
+   496→        </Card>
+   497→        <Card>
+   498→          <CardContent className="pt-4 pb-4 text-center">
+   499→            <p className="text-2xl font-bold text-red-600">{errorCount}</p>
+   500→            <p className="text-xs text-muted-foreground">{/* TODO i18n: "Errors" */}Errors</p>
+   501→          </CardContent>
+   502→        </Card>
+   503→      </div>
+   504→
+   505→      {/* Filters */}
+   506→      <div className="flex items-center gap-3">
+   507→        <Select value={statusFilter} onValueChange={setStatusFilter}>
+   508→          <SelectTrigger className="w-[150px] h-9 text-xs">
+   509→            <SelectValue placeholder="All Statuses" />
+   510→          </SelectTrigger>
+   511→          <SelectContent>
+   512→            <SelectItem value="all">{/* TODO i18n: "All Statuses" */}All Statuses</SelectItem>
+   513→            <SelectItem value="active">{/* TODO i18n: "Active" */}Active</SelectItem>
+   514→            <SelectItem value="paused">{/* TODO i18n: "Paused" */}Paused</SelectItem>
+   515→            <SelectItem value="completed">{/* TODO i18n: "Completed" */}Completed</SelectItem>
+   516→            <SelectItem value="error">{/* TODO i18n: "Error" */}Error</SelectItem>
+   517→          </SelectContent>
+   518→        </Select>
+   519→        <Select value={typeFilter} onValueChange={setTypeFilter}>
+   520→          <SelectTrigger className="w-[180px] h-9 text-xs">
+   521→            <SelectValue placeholder="All Types" />
+   522→          </SelectTrigger>
+   523→          <SelectContent>
+   524→            <SelectItem value="all">{/* TODO i18n: "All Report Types" */}All Report Types</SelectItem>
+   525→            {REPORT_TYPE_OPTIONS.map(opt => (
+   526→              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+   527→            ))}
+   528→          </SelectContent>
+   529→        </Select>
+   530→        {(statusFilter !== 'all' || typeFilter !== 'all') && (
+   531→          <Button
+   532→            variant="ghost"
+   533→            size="sm"
+   534→            className="text-xs"
+   535→            onClick={() => { setStatusFilter('all'); setTypeFilter('all'); }}
+   536→          >
+   537→            {/* TODO i18n: "Clear Filters" */}
+   538→            Clear Filters
+   539→          </Button>
+   540→        )}
+   541→      </div>
+   542→
+   543→      {/* Reports Table */}
+   544→      {filteredReports.length === 0 ? (
+   545→        <Card>
+   546→          <CardContent className="pt-8 pb-8 text-center">
+   547→            <CalendarClock className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+   548→            <h3 className="text-lg font-semibold">{/* TODO i18n: "No Scheduled Reports" */}No Scheduled Reports</h3>
+   549→            <p className="text-muted-foreground text-sm mt-1">
+   550→              {scheduledReports.length === 0
+   551→                ? 'Create your first scheduled report to automate report generation.'
+   552→                : 'No reports match the current filters.'}
+   553→            </p>
+   554→            {scheduledReports.length === 0 && (
+   555→              <Button
+   556→                onClick={() => { setEditingReport(null); setFormOpen(true); }}
+   557→                className="mt-4 gap-2"
+   558→              >
+   559→                <Plus className="h-4 w-4" />
+   560→                {/* TODO i18n: "Create Report" */}
+   561→                Create Report
+   562→              </Button>
+   563→            )}
+   564→          </CardContent>
+   565→        </Card>
+   566→      ) : (
+   567→        <Card>
+   568→          <CardContent className="p-0">
+   569→            <ScrollArea className="max-h-[600px]">
+   570→              <Table>
+   571→                <TableHeader>
+   572→                  <TableRow>
+   573→                    <TableHead>{/* TODO i18n: "Name" */}Name</TableHead>
+   574→                    <TableHead>{/* TODO i18n: "Type" */}Type</TableHead>
+   575→                    <TableHead>{/* TODO i18n: "Frequency" */}Frequency</TableHead>
+   576→                    <TableHead>{/* TODO i18n: "Format" */}Format</TableHead>
+   577→                    <TableHead>{/* TODO i18n: "Status" */}Status</TableHead>
+   578→                    <TableHead>{/* TODO i18n: "Next Run" */}Next Run</TableHead>
+   579→                    <TableHead>{/* TODO i18n: "Last Run" */}Last Run</TableHead>
+   580→                    <TableHead>{/* TODO i18n: "Recipients" */}Recipients</TableHead>
+   581→                    <TableHead className="w-[60px]">{/* TODO i18n: "Actions" */}Actions</TableHead>
+   582→                  </TableRow>
+   583→                </TableHeader>
+   584→                <TableBody>
+   585→                  {filteredReports.map(report => (
+   586→                    <TableRow key={report.id}>
+   587→                      <TableCell className="font-medium text-sm">{report.name}</TableCell>
+   588→                      <TableCell className="text-xs">{getReportTypeLabel(report.reportType)}</TableCell>
+   589→                      <TableCell className="text-xs">{getFrequencyLabel(report.frequency)}</TableCell>
+   590→                      <TableCell>
+   591→                        <Badge variant="outline" className="text-xs uppercase">{report.format}</Badge>
+   592→                      </TableCell>
+   593→                      <TableCell>
+   594→                        <Badge
+   595→                          variant="outline"
+   596→                          className={cn('gap-1 text-xs', STATUS_COLORS[report.status])}
+   597→                        >
+   598→                          {STATUS_ICONS[report.status]}
+   599→                          {report.status}
+   600→                        </Badge>
+   601→                      </TableCell>
+   602→                      <TableCell className="text-xs text-muted-foreground">
+   603→                        {formatDate(report.nextRunAt, true)}
+   604→                      </TableCell>
+   605→                      <TableCell className="text-xs text-muted-foreground">
+   606→                        {report.lastRunAt ? formatDate(report.lastRunAt, true) : '—'}
+   607→                      </TableCell>
+   608→                      <TableCell>
+   609→                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+   610→                          <Mail className="h-3 w-3" />
+   611→                          {report.recipients.length}
+   612→                        </div>
+   613→                      </TableCell>
+   614→                      <TableCell>
+   615→                        <DropdownMenu>
+   616→                          <DropdownMenuTrigger asChild>
+   617→                            <Button variant="ghost" size="icon" className="h-8 w-8">
+   618→                              <MoreHorizontal className="h-4 w-4" />
+   619→                            </Button>
+   620→                          </DropdownMenuTrigger>
+   621→                          <DropdownMenuContent align="end">
+   622→                            <DropdownMenuItem
+   623→                              onClick={() => handleRunNow(report.id)}
+   624→                              disabled={runningId === report.id}
+   625→                            >
+   626→                              {runningId === report.id ? (
+   627→                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+   628→                              ) : (
+   629→                                <Play className="h-4 w-4 mr-2" />
+   630→                              )}
+   631→                              {/* TODO i18n: "Run Now" */}
+   632→                              Run Now
+   633→                            </DropdownMenuItem>
+   634→                            <DropdownMenuItem onClick={() => handleToggle(report.id)}>
+   635→                              {report.status === 'active' ? (
+   636→                                <>
+   637→                                  <Pause className="h-4 w-4 mr-2" />
+   638→                                  {/* TODO i18n: "Pause" */}
+   639→                                  Pause
+   640→                                </>
+   641→                              ) : (
+   642→                                <>
+   643→                                  <Play className="h-4 w-4 mr-2" />
+   644→                                  {/* TODO i18n: "Activate" */}
+   645→                                  Activate
+   646→                                </>
+   647→                              )}
+   648→                            </DropdownMenuItem>
+   649→                            <DropdownMenuItem
+   650→                              onClick={() => { setEditingReport(report); setFormOpen(true); }}
+   651→                            >
+   652→                              <Edit className="h-4 w-4 mr-2" />
+   653→                              {/* TODO i18n: "Edit" */}
+   654→                              Edit
+   655→                            </DropdownMenuItem>
+   656→                            <DropdownMenuItem
+   657→                              onClick={() => setDeleteId(report.id)}
+   658→                              className="text-destructive focus:text-destructive"
+   659→                            >
+   660→                              <Trash2 className="h-4 w-4 mr-2" />
+   661→                              {/* TODO i18n: "Delete" */}
+   662→                              Delete
+   663→                            </DropdownMenuItem>
+   664→                          </DropdownMenuContent>
+   665→                        </DropdownMenu>
+   666→                      </TableCell>
+   667→                    </TableRow>
+   668→                  ))}
+   669→                </TableBody>
+   670→              </Table>
+   671→            </ScrollArea>
+   672→          </CardContent>
+   673→        </Card>
+   674→      )}
+   675→
+   676→      {/* Last Result Info */}
+   677→      {filteredReports.some(r => r.lastResult) && (
+   678→        <div className="space-y-2">
+   679→          <h3 className="text-sm font-semibold">{/* TODO i18n: "Last Run Results" */}Last Run Results</h3>
+   680→          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+   681→            {filteredReports.filter(r => r.lastResult).map(report => (
+   682→              <Card key={report.id} className="overflow-hidden">
+   683→                <CardContent className="pt-3 pb-3">
+   684→                  <div className="flex items-center justify-between mb-2">
+   685→                    <span className="text-sm font-medium truncate mr-2">{report.name}</span>
+   686→                    <Badge
+   687→                      variant="outline"
+   688→                      className={cn(
+   689→                        'text-xs flex-shrink-0',
+   690→                        report.lastResult!.success
+   691→                          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+   692→                          : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+   693→                      )}
+   694→                    >
+   695→                      {report.lastResult!.success ? 'Success' : 'Error'}
+   696→                    </Badge>
+   697→                  </div>
+   698→                  <p className="text-xs text-muted-foreground">
+   699→                    {report.lastResult!.success
+   700→                      ? `${report.lastResult!.recordCount} records generated`
+   701→                      : report.lastResult!.error || 'Unknown error'}
+   702→                  </p>
+   703→                  {report.lastRunAt && (
+   704→                    <p className="text-xs text-muted-foreground mt-1">
+   705→                      Run at: {formatDate(report.lastRunAt, true)}
+   706→                    </p>
+   707→                  )}
+   708→                </CardContent>
+   709→              </Card>
+   710→            ))}
+   711→          </div>
+   712→        </div>
+   713→      )}
+   714→
+   715→      {/* Create/Edit Dialog */}
+   716→      <ReportFormDialog
+   717→        open={formOpen}
+   718→        onOpenChange={setFormOpen}
+   719→        report={editingReport}
+   720→        onSave={editingReport ? handleUpdate : handleCreate}
+   721→      />
+   722→
+   723→      {/* Delete Confirmation */}
+   724→      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+   725→        <AlertDialogContent>
+   726→          <AlertDialogHeader>
+   727→            <AlertDialogTitle>{/* TODO i18n: "Delete Scheduled Report" */}Delete Scheduled Report</AlertDialogTitle>
+   728→            <AlertDialogDescription>
+   729→              Are you sure you want to delete this scheduled report? This action cannot be undone.
+   730→            </AlertDialogDescription>
+   731→          </AlertDialogHeader>
+   732→          <AlertDialogFooter>
+   733→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+   734→            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+   735→              Delete
+   736→            </AlertDialogAction>
+   737→          </AlertDialogFooter>
+   738→        </AlertDialogContent>
+   739→      </AlertDialog>
+   740→    </div>
+   741→  );
+   742→}
+   743→
