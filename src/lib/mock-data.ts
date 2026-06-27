@@ -8,7 +8,7 @@ import type { Profile, Organization, Document, Capa, NonConformance, BatchRecord
 export const mockProfiles: Profile[] = [
   {
     id: 'user-001',
-    email: 'admin@qms-demo.com',
+    email: 'user001@example.org',
     fullName: 'Marie Dupont',
     role: 'admin',
     department: 'Quality Assurance',
@@ -19,7 +19,7 @@ export const mockProfiles: Profile[] = [
   },
   {
     id: 'user-002',
-    email: 'qm@qms-demo.com',
+    email: 'qm@example.org',
     fullName: 'Jean Martin',
     role: 'quality_manager',
     department: 'Quality Assurance',
@@ -30,7 +30,7 @@ export const mockProfiles: Profile[] = [
   },
   {
     id: 'user-003',
-    email: 'auditor@qms-demo.com',
+    email: 'auditor@example.org',
     fullName: 'Sophie Laurent',
     role: 'auditor',
     department: 'Internal Audit',
@@ -40,7 +40,7 @@ export const mockProfiles: Profile[] = [
   },
   {
     id: 'user-004',
-    email: 'dc@qms-demo.com',
+    email: 'dc@example.org',
     fullName: 'Pierre Bernard',
     role: 'document_controller',
     department: 'Document Control',
@@ -50,7 +50,7 @@ export const mockProfiles: Profile[] = [
   },
   {
     id: 'user-005',
-    email: 'exec@qms-demo.com',
+    email: 'exec@example.org',
     fullName: 'Claire Moreau',
     role: 'executive',
     department: 'Executive',
@@ -60,7 +60,7 @@ export const mockProfiles: Profile[] = [
   },
   {
     id: 'user-006',
-    email: 'operator@qms-demo.com',
+    email: 'operator@example.org',
     fullName: 'Lucas Petit',
     role: 'operator',
     department: 'Production',
@@ -1045,14 +1045,14 @@ export const mockRisks: Risk[] = [
 // ============================================================================
 
 export const mockAuditTrails: AuditTrail[] = [
-  { id: 'at-001', action: 'APPROVE', tableName: 'Document', recordId: 'doc-001', userId: 'user-004', userEmail: 'dc@qms-demo.com', newValues: { status: 'Approved', version: '3.0' }, organizationId: 'org-001', createdAt: '2024-01-15T10:00:00Z' },
-  { id: 'at-002', action: 'CREATE', tableName: 'Capa', recordId: 'capa-001', userId: 'user-002', userEmail: 'qm@qms-demo.com', newValues: { capaNumber: 'CAPA-2024-001', status: 'Open' }, organizationId: 'org-001', createdAt: '2024-03-16T08:00:00Z' },
-  { id: 'at-003', action: 'UPDATE', tableName: 'Capa', recordId: 'capa-001', userId: 'user-002', userEmail: 'qm@qms-demo.com', oldValues: { status: 'Open' }, newValues: { status: 'Investigation' }, organizationId: 'org-001', createdAt: '2024-03-20T10:00:00Z' },
-  { id: 'at-004', action: 'CREATE', tableName: 'NonConformance', recordId: 'ncr-002', userId: 'user-002', userEmail: 'qm@qms-demo.com', newValues: { ncrNumber: 'NCR-2024-002', type: 'OOS' }, organizationId: 'org-001', createdAt: '2024-04-05T08:00:00Z' },
-  { id: 'at-005', action: 'SIGN', tableName: 'BatchRecord', recordId: 'batch-002', userId: 'user-002', userEmail: 'qm@qms-demo.com', newValues: { status: 'Released', qaReleaseDate: '2024-04-20T14:00:00Z' }, organizationId: 'org-001', createdAt: '2024-04-20T14:00:00Z' },
-  { id: 'at-006', action: 'UPDATE', tableName: 'Document', recordId: 'doc-006', userId: 'user-004', userEmail: 'dc@qms-demo.com', oldValues: { status: 'Approved' }, newValues: { status: 'Under Review' }, organizationId: 'org-001', createdAt: '2024-05-15T10:00:00Z' },
-  { id: 'at-007', action: 'CREATE', tableName: 'BatchRecord', recordId: 'batch-001', userId: 'user-006', userEmail: 'operator@qms-demo.com', newValues: { lotNumber: 'BN-2024-055', status: 'In Progress' }, organizationId: 'org-001', createdAt: '2024-05-01T08:00:00Z' },
-  { id: 'at-008', action: 'LOGIN', tableName: 'Profile', recordId: 'user-001', userId: 'user-001', userEmail: 'admin@qms-demo.com', organizationId: 'org-001', createdAt: '2024-06-01T08:00:00Z' },
+  { id: 'at-001', action: 'APPROVE', tableName: 'Document', recordId: 'doc-001', userId: 'user-004', userEmail: 'dc@example.org', newValues: { status: 'Approved', version: '3.0' }, organizationId: 'org-001', createdAt: '2024-01-15T10:00:00Z' },
+  { id: 'at-002', action: 'CREATE', tableName: 'Capa', recordId: 'capa-001', userId: 'user-002', userEmail: 'qm@example.org', newValues: { capaNumber: 'CAPA-2024-001', status: 'Open' }, organizationId: 'org-001', createdAt: '2024-03-16T08:00:00Z' },
+  { id: 'at-003', action: 'UPDATE', tableName: 'Capa', recordId: 'capa-001', userId: 'user-002', userEmail: 'qm@example.org', oldValues: { status: 'Open' }, newValues: { status: 'Investigation' }, organizationId: 'org-001', createdAt: '2024-03-20T10:00:00Z' },
+  { id: 'at-004', action: 'CREATE', tableName: 'NonConformance', recordId: 'ncr-002', userId: 'user-002', userEmail: 'qm@example.org', newValues: { ncrNumber: 'NCR-2024-002', type: 'OOS' }, organizationId: 'org-001', createdAt: '2024-04-05T08:00:00Z' },
+  { id: 'at-005', action: 'SIGN', tableName: 'BatchRecord', recordId: 'batch-002', userId: 'user-002', userEmail: 'qm@example.org', newValues: { status: 'Released', qaReleaseDate: '2024-04-20T14:00:00Z' }, organizationId: 'org-001', createdAt: '2024-04-20T14:00:00Z' },
+  { id: 'at-006', action: 'UPDATE', tableName: 'Document', recordId: 'doc-006', userId: 'user-004', userEmail: 'dc@example.org', oldValues: { status: 'Approved' }, newValues: { status: 'Under Review' }, organizationId: 'org-001', createdAt: '2024-05-15T10:00:00Z' },
+  { id: 'at-007', action: 'CREATE', tableName: 'BatchRecord', recordId: 'batch-001', userId: 'user-006', userEmail: 'operator@example.org', newValues: { lotNumber: 'BN-2024-055', status: 'In Progress' }, organizationId: 'org-001', createdAt: '2024-05-01T08:00:00Z' },
+  { id: 'at-008', action: 'LOGIN', tableName: 'Profile', recordId: 'user-001', userId: 'user-001', userEmail: 'user001@example.org', organizationId: 'org-001', createdAt: '2024-06-01T08:00:00Z' },
 ];
 
 // ============================================================================

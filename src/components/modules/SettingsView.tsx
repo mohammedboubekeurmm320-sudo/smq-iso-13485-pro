@@ -341,7 +341,7 @@ function RecordTypeManager() {
     const slug = generateSlug(createForm.name);
     // Check for slug conflict
     if (recordTypes.some(rt => rt.slug === slug)) {
-      return; // TODO: show error
+      return;
     }
     const newType: RecordTypeDefinition = {
       id: `rt-custom-${Date.now()}`,

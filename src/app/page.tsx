@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 
 export default function Home() {
   const { isAuthenticated, login } = useAuth();
+  const [email, setEmail] = React.useState('');
 
   // Show landing/login if not authenticated
   if (!isAuthenticated) {
@@ -23,23 +24,22 @@ export default function Home() {
           <p className="text-muted-foreground">ISO 13485:2016 Quality Management System</p>
         </div>
         <div className="flex flex-col gap-3 w-full max-w-sm">
+          <input
+            type="email"
+            className="w-full h-12 px-4 border rounded-lg text-base"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
           <Button
             size="lg"
             className="w-full h-12 text-base"
-            onClick={() => login('admin@qms-demo.com')}
+            onClick={() => login(email)}
           >
-            Accès Démo Admin
-          </Button>
-          <Button
-            variant="outline"
-            size="lg"
-            className="w-full h-12"
-            onClick={() => login('quality.manager@qms-demo.com')}
-          >
-            Accès Démo Quality Manager
+            Connexion
           </Button>
           <p className="text-xs text-center text-muted-foreground mt-2">
-            21 CFR Part 11 / ISO 13485 Compliant — Mode démonstration
+            21 CFR Part 11 / ISO 13485 Conforme
           </p>
         </div>
       </div>

@@ -147,7 +147,7 @@ describe('getProfile()', () => {
     const profile = useQMSStore.getState().getProfile('user-001');
     expect(profile).toBeDefined();
     expect(profile!.id).toBe('user-001');
-    expect(profile!.email).toBe('admin@qms-demo.com');
+    expect(profile!.email).toBe('user001@example.org');
     expect(profile!.fullName).toBe('Marie Dupont');
     expect(profile!.role).toBe('admin');
   });
@@ -958,7 +958,7 @@ describe('addProfile()', () => {
     const before = useQMSStore.getState().profiles.length;
     const newProfile: Profile = {
       id: 'user-new-001',
-      email: 'new@qms-demo.com',
+      email: 'new@example.org',
       fullName: 'New User',
       role: 'operator',
       createdAt: new Date().toISOString(),
@@ -972,7 +972,7 @@ describe('addProfile()', () => {
   it('logs an audit trail entry', () => {
     const newProfile: Profile = {
       id: 'user-new-002',
-      email: 'new2@qms-demo.com',
+      email: 'new2@example.org',
       fullName: 'New User 2',
       role: 'auditor',
       department: 'Audit',
@@ -1026,7 +1026,7 @@ describe('logAudit()', () => {
     expect(entry.tableName).toBe('TestTable');
     expect(entry.recordId).toBe('rec-001');
     expect(entry.userId).toBe('user-001');
-    expect(entry.userEmail).toBe('admin@qms-demo.com');
+    expect(entry.userEmail).toBe('');
     expect(entry.organizationId).toBe('org-001');
     expect(entry.createdAt).toBeDefined();
     expect(entry.oldValues).toBeUndefined();

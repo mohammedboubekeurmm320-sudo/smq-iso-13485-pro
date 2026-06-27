@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  /* config options here */
+  poweredByHeader: false,
   typescript: {
     ignoreBuildErrors: true,
   },

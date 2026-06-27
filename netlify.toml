@@ -1,6 +1,4 @@
 [build]
-  # Netlify exécute automatiquement `npm install` avant la commande.
-  # L'option --legacy-peer-deps est définie via NPM_FLAGS ci-dessous.
   command = "npm run build"
   publish = ".next"
 
@@ -11,22 +9,14 @@
   NODE_VERSION = "20"
   NPM_FLAGS = "--legacy-peer-deps"
 
-# ===== En-têtes de sécurité =====
+# ===== Security Headers (Re-audit #REAUDIT-2026-0627 corrective action) =====
 [[headers]]
   for = "/*"
   [headers.values]
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
-    # X-XSS-Protection est déprécié, nous le supprimons.
-    # CSP : ajustez les sources selon vos besoins.
-    Content-Security-Policy = """
-      default-src 'self';
-      script-src 'self' 'unsafe-eval' 'unsafe-inline';
-      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-      font-src 'self' https://fonts.gstatic.com;
-      img-src 'self' data: https:;
-      connect-src 'self' https://*.supabase.co;
-      frame-ancestors 'none';
-    """
+    X-XSS-Protection = "1; mode=block"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://*.supabase.co; frame-ancestors 'none';"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"

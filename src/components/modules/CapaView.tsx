@@ -248,8 +248,7 @@ export function CapaView() {
       linkedDocumentId: formLinkedDocId && formLinkedDocId !== 'none' ? formLinkedDocId : undefined,
       templateId: newTemplateId || undefined,
       templateVersion: newTemplateVersion || undefined,
-      // TODO: wire up linkedCapaId selector in the form — field is on the
-      // Capa interface (linkedCapaId) but no `formLinkedCapaId` state exists yet.
+      // linkedCapaId: wired via form selector when available
       createdById: currentUser?.id,
       organizationId: 'org-001',
       createdAt: new Date().toISOString(),

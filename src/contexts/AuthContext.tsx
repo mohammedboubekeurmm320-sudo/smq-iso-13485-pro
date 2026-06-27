@@ -19,7 +19,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Initialize demo user from mock data directly
 function getInitialUser(profiles: Profile[]): Profile | null {
-  return profiles.find(p => p.email === 'admin@qms-demo.com') || null;
+  return profiles[0] || null;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
