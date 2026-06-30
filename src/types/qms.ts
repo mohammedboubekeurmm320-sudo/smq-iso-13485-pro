@@ -704,6 +704,7 @@ export interface Profile {
   jobTitle?: string;
   phone?: string;
   avatarUrl?: string;
+  organizationId?: string;
   createdAt: string;
   updatedAt: string;
 }

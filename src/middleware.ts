@@ -4,23 +4,18 @@ import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
 import { updateSession } from '@/lib/supabase/supabase-auth';
 
 /**
- * Next.js Middleware — Supabase session refresh + API rate limiting.
+ * Next.js Middleware — Supabase session refresh + API rate limiting + auth enforcement.
  *
- * Two responsibilities, in order:
+ * Three responsibilities, in order:
  *   1. `updateSession()` — refreshes the Supabase auth session on every
  *      request and syncs cookies (no-op in demo mode; see
  *      `src/lib/supabase/supabase-auth.ts`). This is required for SSR auth
  *      to work in Supabase mode, as specified in agent-ctx/3+4-supabase-integration.md.
- *   2. Rate limiting — applies token bucket throttling to all /api/* routes:
- *        - Auth routes: 10 req/min per IP
- *        - Write operations (POST/PUT/DELETE/PATCH): 30 req/min per IP
- *        - Read operations (GET/HEAD): 100 req/min per IP
- *      On success: adds X-RateLimit-* headers to the response.
- *      On failure: returns 429 Too Many Requests with Retry-After header.
+ *   2. Rate limiting — applies token bucket throttling to all /api/* routes.
+ *   3. Auth enforcement (Supabase mode only) — redirects unauthenticated users
+ *      to /auth/login for non-API, non-auth routes. API routes return 401.
  *
- * The matcher covers every route except Next.js internals and static assets,
- * so that Supabase sessions are refreshed on page navigations as well as
- * API calls. Rate limiting is enforced only for /api/*.
+ * The matcher covers every route except Next.js internals and static assets.
  */
 export async function middleware(request: NextRequest) {
   // 1) Refresh Supabase session (no-op in demo mode). When Supabase is
@@ -29,6 +24,58 @@ export async function middleware(request: NextRequest) {
   const supabaseResponse = await updateSession(request);
 
   const { pathname } = request.nextUrl;
+
+  // Determine if we're in Supabase live mode
+  const isLive = !!process.env.NEXT_PUBLIC_SUPABASE_URL
+    && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your-project')
+    && !process.env.NEXT_PUBLIC_SUPABASE_URL.includes('localhost');
+
+  // -----------------------------------------------------------------------
+  // Auth enforcement (Supabase mode only)
+  // -----------------------------------------------------------------------
+  if (isLive) {
+    // Skip auth checks for these paths
+    const publicPaths = [
+      '/auth/login',
+      '/auth/signup',
+      '/auth/callback',
+      '/api/auth/login',
+      '/api/auth/signup',
+      '/api/auth/session',
+    ];
+
+    const isPublicPath = publicPaths.some(
+      (p) => pathname === p || pathname.startsWith(p + '/'),
+    );
+
+    if (!isPublicPath) {
+      // Check for Supabase auth cookie — the updateSession response should
+      // have set cookies if the user had a valid session.
+      // We look for sb-access-token or sb-refresh-token cookies.
+      const cookies = supabaseResponse.cookies.getAll();
+      const hasAuthToken = cookies.some(
+        (c) =>
+          c.name.includes('sb-') &&
+          (c.name.includes('access-token') || c.name.includes('auth-token')),
+      );
+
+      if (!hasAuthToken) {
+        // No auth token found
+        if (pathname.startsWith('/api/')) {
+          // API routes: return 401
+          return NextResponse.json(
+            { success: false, error: 'Authentication required' },
+            { status: 401, headers: supabaseResponse.headers },
+          );
+        } else {
+          // Page routes: redirect to login
+          const loginUrl = new URL('/auth/login', request.url);
+          loginUrl.searchParams.set('redirect', pathname);
+          return NextResponse.redirect(loginUrl);
+        }
+      }
+    }
+  }
 
   // 2) Rate-limit only API routes. Non-API routes have already been handled
   //    by updateSession and can be returned as-is.
@@ -48,7 +95,6 @@ export async function middleware(request: NextRequest) {
   const config = getRateLimitConfig(method, pathname);
 
   // Create a unique identifier combining IP, method group, and route prefix
-  // This prevents write operations from consuming the read quota and vice-versa
   const methodGroup = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method.toUpperCase())
     ? 'write'
     : 'read';
@@ -78,10 +124,10 @@ export async function middleware(request: NextRequest) {
           'X-RateLimit-Remaining': '0',
           'X-RateLimit-Reset': String(Math.ceil(result.resetAt / 1000)),
         },
-      }
+      },
     );
     // Copy any auth cookies that updateSession may have set on its response
-    supabaseResponse.cookies.getAll().forEach(c => response.cookies.set(c));
+    supabaseResponse.cookies.getAll().forEach((c) => response.cookies.set(c));
     return response;
   }
 

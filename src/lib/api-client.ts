@@ -150,6 +150,12 @@ export const organizationsApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  /** On-demand org creation: creates org + adds user as owner */
+  onboard: (data: { name: string; slug?: string; industryType?: string }) =>
+    apiFetch<ApiResponse<Organization>>('/api/organizations/onboard', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
 // ---------------------------------------------------------------------------
