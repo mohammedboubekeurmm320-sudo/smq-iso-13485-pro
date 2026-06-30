@@ -15,12 +15,14 @@ import { AuditTrailService } from '@/lib/supabase/services/audit-trail-service';
 import { DeviationService } from '@/lib/supabase/services/deviation-service';
 import { ChangeControlService } from '@/lib/supabase/services/change-control-service';
 import { FormService } from '@/lib/supabase/services/form-service';
+import { OrganizationService } from '@/lib/supabase/services/organization-service';
 import type { BaseService } from '@/lib/supabase/services/base-service';
 
 /** True when NEXT_PUBLIC_SUPABASE_URL is set (live mode with real DB). */
 export const isLiveMode = (): boolean => !!process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 type ServiceMap = {
+  organization: OrganizationService;
   capa: CapaService;
   ncr: NcrService;
   document: DocumentService;
@@ -36,6 +38,7 @@ type ServiceMap = {
 };
 
 const SERVICE_CLASSES: Record<keyof ServiceMap, new (orgId?: string) => BaseService & ServiceMap[keyof ServiceMap]> = {
+  organization: OrganizationService,
   capa: CapaService,
   ncr: NcrService,
   document: DocumentService,
