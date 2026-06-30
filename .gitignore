@@ -76,3 +76,5 @@ vitest.config.ts
 keep-alive.sh
 bun.lock
 worklog.md
+scripts/
+tool-results/
