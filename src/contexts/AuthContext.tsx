@@ -89,9 +89,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const res = await fetch('/api/auth/session');
         const json = await res.json();
 
-        if (json.success && json.data?.user?.profile) {
-          const p = json.data.user.profile;
-          const mappedProfile: AuthUserProfile = {
+        if (json.success && json.data?.session) {
+          const user = json.data.user;
+
+          // Profile may be null — create a minimal profile from auth data
+          const p = user?.profile;
+          const mappedProfile: AuthUserProfile = p ? {
             id: p.id,
             email: p.email,
             fullName: p.full_name,
@@ -103,15 +106,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             organizationId: p.organization_id,
             createdAt: p.created_at,
             updatedAt: p.updated_at,
+          } : {
+            id: session.user.id,
+            email: session.user.email || '',
+            fullName: session.user.user_metadata?.full_name || null,
+            role: 'admin' as UserRole,
+            department: null,
+            jobTitle: null,
+            phone: null,
+            avatarUrl: null,
+            organizationId: user?.organization?.id || null,
+            createdAt: null,
+            updatedAt: null,
           };
           setSupabaseUser(mappedProfile);
 
           // Store org info for OrganizationContext
-          if (json.data.user.organization) {
-            sessionStorage.setItem('auth_org', JSON.stringify(json.data.user.organization));
+          if (user?.organization) {
+            sessionStorage.setItem('auth_org', JSON.stringify(user.organization));
           }
-          if (json.data.user.memberships) {
-            sessionStorage.setItem('auth_memberships', JSON.stringify(json.data.user.memberships));
+          if (user?.memberships) {
+            sessionStorage.setItem('auth_memberships', JSON.stringify(user.memberships));
           }
         }
       }
@@ -181,7 +196,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const userData = json.data.user;
         const p = userData.profile;
-        const mappedProfile: AuthUserProfile = {
+
+        // Profile may be null if the profiles table has no row for this user
+        const mappedProfile: AuthUserProfile = p ? {
           id: p.id,
           email: p.email,
           fullName: p.full_name,
@@ -193,6 +210,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           organizationId: p.organization_id,
           createdAt: p.created_at,
           updatedAt: p.updated_at,
+        } : {
+          id: json.data.user.id,
+          email: json.data.user.email,
+          fullName: null,
+          role: 'admin' as UserRole,
+          department: null,
+          jobTitle: null,
+          phone: null,
+          avatarUrl: null,
+          organizationId: userData.organization?.id || null,
+          createdAt: null,
+          updatedAt: null,
         };
 
         setSupabaseUser(mappedProfile);

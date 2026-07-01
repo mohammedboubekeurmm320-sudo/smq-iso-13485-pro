@@ -18,7 +18,7 @@ export abstract class BaseService {
   async init(): Promise<void> {
     const client = await createClient();
     if (!client) {
-      throw new Error('Supabase is not configured. Cannot initialize service.');
+      throw new Error('Supabase client unavailable — check env vars or server config');
     }
     this.supabase = client;
   }
@@ -61,16 +61,20 @@ export abstract class BaseService {
     newValues?: Record<string, unknown>,
     userId?: string,
   ) {
-    const { error } = await this.supabase.from('audit_trails').insert({
-      audit_action: action,
-      table_name: tableName,
-      record_id: recordId,
-      user_id: userId || null,
-      old_values: oldValues ? JSON.stringify(oldValues) : null,
-      new_values: newValues ? JSON.stringify(newValues) : null,
-      organization_id: this.orgId || null,
-    });
-    if (error) console.error('Audit trail insert failed:', error.message);
+    try {
+      const { error } = await this.supabase.from('audit_trails').insert({
+        audit_action: action,
+        table_name: tableName,
+        record_id: recordId,
+        user_id: userId || null,
+        old_values: oldValues ? JSON.stringify(oldValues) : null,
+        new_values: newValues ? JSON.stringify(newValues) : null,
+        organization_id: this.orgId || null,
+      });
+      if (error) console.warn('[AuditTrail] Insert failed:', error.message);
+    } catch (err) {
+      console.warn('[AuditTrail] Insert error (non-fatal):', err);
+    }
   }
 
   // -----------------------------------------------------------------------
