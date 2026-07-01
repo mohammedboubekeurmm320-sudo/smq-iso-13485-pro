@@ -45,6 +45,8 @@ export async function middleware(request: NextRequest) {
       '/api/auth/login',
       '/api/auth/signup',
       '/api/auth/session',
+      '/api/auth/logout',
+      '/api/health',
     ];
 
     const isPublicPath = publicPaths.some(

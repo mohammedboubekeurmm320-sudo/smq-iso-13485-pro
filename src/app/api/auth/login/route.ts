@@ -1,53 +1,83 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { apiSuccess, apiError } from '../../_lib/response';
-import { createClient } from '@/lib/supabase/server';
+import { createServerClient } from '@supabase/ssr';
 import { isLiveMode } from '../../_lib/supabase';
 
 // ---------------------------------------------------------------------------
 // POST /api/auth/login
 //
 // Authenticates a user with email + password against Supabase Auth.
-// Sets session cookies via the server client (handled by createClient cookie
-// sync). Returns the user profile and their organization membership.
+// Uses request-based cookie pattern (same as middleware) to guarantee that
+// session cookies are properly set on the HTTP response.
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
   try {
     if (!isLiveMode()) {
-      return apiError('Login is handled client-side in demo mode', 400);
+      return NextResponse.json(
+        { success: false, error: 'Login is handled client-side in demo mode' },
+        { status: 400 },
+      );
     }
 
     const body = await request.json();
     const { email, password } = body as { email?: string; password?: string };
 
     if (!email || !password) {
-      return apiError('Email and password are required', 400);
+      return NextResponse.json(
+        { success: false, error: 'Email and password are required' },
+        { status: 400 },
+      );
     }
 
-    const serverClient = await createClient();
-    if (!serverClient) {
-      console.error('[Login] createClient returned null — check env vars');
-      return apiError('Server configuration error', 500);
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('[Login] Missing env vars');
+      return NextResponse.json(
+        { success: false, error: 'Server configuration error' },
+        { status: 500 },
+      );
     }
+
+    // --- Request-based cookie pattern (same as middleware) ---
+    // This guarantees cookies are set on the response object.
+    let cookieResponse = NextResponse.next({ request });
+
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          cookieResponse = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieResponse.cookies.set(name, value, options),
+          );
+        },
+      },
+    });
 
     console.log('[Login] Attempting signInWithPassword for:', email.trim().toLowerCase());
 
-    const { data, error } = await serverClient.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
     });
 
     if (error) {
       console.warn('[Login] Auth error:', error.message);
-      return apiError('Invalid email or password', 401);
+      return NextResponse.json(
+        { success: false, error: 'Invalid email or password' },
+        { status: 401 },
+      );
     }
 
     console.log('[Login] Auth succeeded for user:', data.user.id);
 
-    // Fetch user profile — non-fatal: if the profiles table doesn't exist
-    // or the user has no profile row, continue without it.
+    // Fetch user profile — non-fatal
     let profile = null;
     try {
-      const result = await serverClient
+      const result = await supabase
         .from('profiles')
         .select('*')
         .eq('id', data.user.id)
@@ -64,7 +94,7 @@ export async function POST(request: NextRequest) {
     let organization = null;
     if (profile?.organization_id) {
       try {
-        const { data: org } = await serverClient
+        const { data: org } = await supabase
           .from('organizations')
           .select('*')
           .eq('id', profile.organization_id)
@@ -88,9 +118,9 @@ export async function POST(request: NextRequest) {
     // Fetch organization memberships — non-fatal
     let memberships: unknown[] = [];
     try {
-      const { data: mems } = await serverClient
+      const { data: mems } = await supabase
         .from('organization_members')
-        .select('organization_id, role, status')
+        .select('organization_id, role, status, organizations( id, name, slug )')
         .eq('user_id', data.user.id)
         .eq('status', 'active');
       memberships = mems || [];
@@ -98,21 +128,36 @@ export async function POST(request: NextRequest) {
       console.warn('[Login] Memberships fetch failed (non-fatal):', err);
     }
 
-    return apiSuccess({
-      user: {
-        id: data.user.id,
-        email: data.user.email,
-        profile,
-        memberships,
-        organization,
-      },
-      session: {
-        accessToken: data.session.access_token,
-        expiresIn: data.session.expires_in,
+    // Build the JSON response
+    const response = NextResponse.json({
+      success: true,
+      data: {
+        user: {
+          id: data.user.id,
+          email: data.user.email,
+          profile,
+          memberships,
+          organization,
+        },
+        session: {
+          accessToken: data.session.access_token,
+          expiresIn: data.session.expires_in,
+        },
       },
     });
+
+    // CRITICAL: Transfer session cookies from the Supabase-managed response
+    // to the actual JSON response we're returning.
+    cookieResponse.cookies.getAll().forEach((cookie) => {
+      response.cookies.set(cookie.name, cookie.value);
+    });
+
+    return response;
   } catch (error) {
     console.error('[Login] Unhandled error:', error);
-    return apiError('Login failed', 500, error instanceof Error ? error.message : undefined);
+    return NextResponse.json(
+      { success: false, error: 'Login failed' },
+      { status: 500 },
+    );
   }
 }

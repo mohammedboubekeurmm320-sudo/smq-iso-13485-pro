@@ -1,42 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { apiSuccess, apiError } from '../../_lib/response';
+import { createServerClient } from '@supabase/ssr';
+import { apiError } from '../../_lib/response';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createClient } from '@/lib/supabase/server';
 import { isLiveMode } from '../../_lib/supabase';
 
-// ---------------------------------------------------------------------------
-// Zod-style inline validation (keeps this route self-contained)
-// ---------------------------------------------------------------------------
+async function createRequestClient(request: NextRequest) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createServerClient(url, key, {
+    cookies: {
+      getAll() { return request.cookies.getAll(); },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+      },
+    },
+  });
+}
+
 function validateOnboardInput(body: Record<string, unknown>) {
   const errors: string[] = [];
-
   const name = body.name;
   if (!name || typeof name !== 'string' || name.trim().length < 2) {
     errors.push('name: required, minimum 2 characters');
   }
-
-  // Auto-generate slug from name if not provided
   let slug = body.slug;
   if (!slug || typeof slug !== 'string' || slug.trim().length < 2) {
     if (typeof name === 'string' && name.trim().length >= 2) {
-      slug = name
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '')
-        .slice(0, 60);
+      slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
     } else {
       errors.push('slug: required (auto-generated from name when omitted)');
     }
   } else {
     slug = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
   }
-
   const industryType = body.industryType;
   if (industryType && !['medical_device', 'pharmaceutical', 'biotech', 'ivd', 'combination_product'].includes(industryType as string)) {
     errors.push('industryType: must be one of medical_device, pharmaceutical, biotech, ivd, combination_product');
   }
-
   return {
     valid: errors.length === 0,
     errors,
@@ -52,24 +53,19 @@ function validateOnboardInput(body: Record<string, unknown>) {
 // POST /api/organizations/onboard
 //
 // Creates an organization AND adds the authenticated user as owner.
-// Uses the admin client (service_role) for the organization + membership insert
-// so RLS doesn't block the initial creation, but validates the user's session
-// first via the regular server client.
+// Uses admin client (service_role) for inserts (bypasses RLS), but validates
+// the user's session first via the request-based server client.
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
   try {
-    // --- Demo mode: not applicable ---
     if (!isLiveMode()) {
-      return apiError(
-        'On-demand organization creation requires Supabase (live mode).',
-        400,
-      );
+      return apiError('On-demand organization creation requires Supabase (live mode).', 400);
     }
 
-    // 1) Authenticate the requesting user via session cookie
-    const serverClient = await createClient();
+    // 1) Authenticate the requesting user via session cookies
+    const serverClient = await createRequestClient(request);
     if (!serverClient) {
-      console.error('[Onboard] createClient returned null');
+      console.error('[Onboard] createRequestClient returned null');
       return apiError('Server configuration error', 500);
     }
 
@@ -101,7 +97,7 @@ export async function POST(request: NextRequest) {
     // 3) Use admin client (bypasses RLS)
     const admin = createAdminClient();
     if (!admin) {
-      console.error('[Onboard] createAdminClient returned null — missing SUPABASE_SERVICE_ROLE_KEY?');
+      console.error('[Onboard] createAdminClient returned null');
       return apiError('Server configuration error — admin client unavailable', 500);
     }
 
@@ -120,7 +116,7 @@ export async function POST(request: NextRequest) {
       return apiError('An organization with this slug already exists', 409);
     }
 
-    // 3c) Create organization with default settings
+    // 3b) Create organization with default settings
     const defaultSettings = {
       setup_completed: false,
       industry_type: industryType,
@@ -158,7 +154,7 @@ export async function POST(request: NextRequest) {
 
     console.log('[Onboard] Organization created:', newOrg.id, newOrg.name);
 
-    // 3d) Add the user as organization owner
+    // 3c) Add the user as organization owner
     const { error: memberError } = await admin.from('organization_members').insert({
       organization_id: newOrg.id,
       user_id: authUser.id,
@@ -168,12 +164,11 @@ export async function POST(request: NextRequest) {
 
     if (memberError) {
       console.error('[Onboard] Member insert failed:', memberError.message);
-      // Rollback: delete the organization
       await admin.from('organizations').delete().eq('id', newOrg.id);
       return apiError('Failed to add user as organization member', 500);
     }
 
-    // 3e) Update the user's profile with the new organization_id
+    // 3d) Update the user's profile with the new organization_id
     try {
       await admin
         .from('profiles')
@@ -181,12 +176,10 @@ export async function POST(request: NextRequest) {
         .eq('id', authUser.id)
         .is('organization_id', null);
     } catch (err) {
-      // Non-fatal: org was created and membership exists
       console.warn('[Onboard] Profile update failed (non-fatal):', err);
     }
 
-    // 3f) Log audit trail — NON-FATAL: don't break the request if the table
-    //     doesn't exist or RLS blocks it
+    // 3e) Audit trail — non-fatal
     try {
       await admin.from('audit_trails').insert({
         audit_action: 'CREATE',
@@ -212,8 +205,7 @@ export async function POST(request: NextRequest) {
     };
 
     console.log('[Onboard] Success — returning org:', org.id);
-
-    return apiSuccess(org, 201);
+    return NextResponse.json({ success: true, data: org }, { status: 201 });
   } catch (error) {
     console.error('[Onboard] Unhandled error:', error);
     return apiError('Failed to onboard organization', 500, error instanceof Error ? error.message : undefined);
