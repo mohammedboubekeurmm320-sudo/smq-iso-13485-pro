@@ -1,9 +1,9 @@
 // Backward-compatibility alias: /api/organisations/onboard → /api/organizations/onboard
 
 import { NextRequest, NextResponse } from 'next/server';
-import { apiError } from '../../../_lib/response';
+import { apiError } from '../../_lib/response';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { isLiveMode } from '../../../_lib/supabase';
+import { isLiveMode } from '../../_lib/supabase';
 import { createServerClient } from '@supabase/ssr';
 
 function validateOnboardInput(body: Record<string, unknown>) {

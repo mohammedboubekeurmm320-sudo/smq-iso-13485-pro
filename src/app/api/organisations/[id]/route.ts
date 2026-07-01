@@ -1,8 +1,8 @@
 // Backward-compatibility alias: /api/organisations/[id] → /api/organizations/[id]
 
 import { NextRequest } from 'next/server';
-import { apiSuccess, apiError } from '../../../_lib/response';
-import { getService } from '../../../_lib/supabase';
+import { apiSuccess, apiError } from '../../_lib/response';
+import { getService } from '../../_lib/supabase';
 
 export async function GET(
   _request: NextRequest,
