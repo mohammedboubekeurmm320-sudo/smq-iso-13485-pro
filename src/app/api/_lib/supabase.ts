@@ -18,8 +18,17 @@ import { FormService } from '@/lib/supabase/services/form-service';
 import { OrganizationService } from '@/lib/supabase/services/organization-service';
 import type { BaseService } from '@/lib/supabase/services/base-service';
 
-/** True when NEXT_PUBLIC_SUPABASE_URL is set (live mode with real DB). */
-export const isLiveMode = (): boolean => !!process.env.NEXT_PUBLIC_SUPABASE_URL;
+/** True when NEXT_PUBLIC_SUPABASE_URL is a valid HTTP(S) URL (live mode). */
+export const isLiveMode = (): boolean => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) return false;
+  try {
+    const p = new URL(url);
+    return p.protocol === 'http:' || p.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
 
 type ServiceMap = {
   organization: OrganizationService;

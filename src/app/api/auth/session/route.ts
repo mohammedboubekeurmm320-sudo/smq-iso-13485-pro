@@ -17,55 +17,80 @@ export async function GET() {
 
     const serverClient = await createClient();
     if (!serverClient) {
+      console.error('[Session] createClient returned null');
       return apiSuccess({ session: null, user: null, source: 'supabase' });
     }
+
     const {
       data: { session },
       error: sessionError,
     } = await serverClient.auth.getSession();
 
-    if (sessionError || !session) {
+    if (sessionError) {
+      console.warn('[Session] getSession error:', sessionError.message);
+      return apiSuccess({ session: null, user: null, source: 'supabase' });
+    }
+
+    if (!session) {
       return apiSuccess({ session: null, user: null, source: 'supabase' });
     }
 
     const authUser = session.user;
 
-    // Fetch profile
-    const { data: profile } = await serverClient
-      .from('profiles')
-      .select('*')
-      .eq('id', authUser.id)
-      .single();
-
-    // Fetch organization if linked
-    let organization = null;
-    let membership = null;
-    if (profile?.organization_id) {
-      const { data: org } = await serverClient
-        .from('organizations')
+    // Fetch profile — non-fatal
+    let profile = null;
+    try {
+      const result = await serverClient
+        .from('profiles')
         .select('*')
-        .eq('id', profile.organization_id)
+        .eq('id', authUser.id)
         .single();
+      profile = result.data;
+      if (result.error) {
+        console.warn('[Session] Profile fetch warning:', result.error.message);
+      }
+    } catch (err) {
+      console.warn('[Session] Profile fetch failed (non-fatal):', err);
+    }
 
-      if (org) {
-        organization = {
-          id: org.id,
-          name: org.name,
-          slug: org.slug,
-          subscriptionStatus: org.subscription_status,
-          settings: org.settings,
-          createdAt: org.created_at,
-          updatedAt: org.updated_at,
-        };
+    // Fetch organization — non-fatal
+    let organization = null;
+    if (profile?.organization_id) {
+      try {
+        const { data: org } = await serverClient
+          .from('organizations')
+          .select('*')
+          .eq('id', profile.organization_id)
+          .single();
+
+        if (org) {
+          organization = {
+            id: org.id,
+            name: org.name,
+            slug: org.slug,
+            subscriptionStatus: org.subscription_status,
+            settings: org.settings,
+            createdAt: org.created_at,
+            updatedAt: org.updated_at,
+          };
+        }
+      } catch (err) {
+        console.warn('[Session] Organization fetch failed (non-fatal):', err);
       }
     }
 
-    // Fetch all memberships for org switching
-    const { data: memberships } = await serverClient
-      .from('organization_members')
-      .select('organization_id, role, status, organizations(id, name, slug)')
-      .eq('user_id', authUser.id)
-      .eq('status', 'active');
+    // Fetch all memberships — non-fatal
+    let memberships: unknown[] = [];
+    try {
+      const { data: mems } = await serverClient
+        .from('organization_members')
+        .select('organization_id, role, status, organizations(id, name, slug)')
+        .eq('user_id', authUser.id)
+        .eq('status', 'active');
+      memberships = mems || [];
+    } catch (err) {
+      console.warn('[Session] Memberships fetch failed (non-fatal):', err);
+    }
 
     return apiSuccess({
       session: {
@@ -77,11 +102,12 @@ export async function GET() {
         email: authUser.email,
         profile,
         organization,
-        memberships: memberships || [],
+        memberships,
       },
       source: 'supabase',
     });
   } catch (error) {
+    console.error('[Session] Unhandled error:', error);
     return apiError('Failed to fetch session', 500, error instanceof Error ? error.message : undefined);
   }
 }

@@ -71,86 +71,98 @@ export async function POST(request: NextRequest) {
     //     ensure it exists as a safety net.
     const admin = createAdminClient();
     if (!admin) {
+      console.error('[Signup] createAdminClient returned null');
       return apiError('Server configuration error', 500);
     }
 
-    // Check if profile was auto-created by trigger
-    const { data: existingProfile } = await admin
-      .from('profiles')
-      .select('id')
-      .eq('id', data.user.id)
-      .maybeSingle();
+    // Check if profile was auto-created by trigger — non-fatal
+    try {
+      const { data: existingProfile } = await admin
+        .from('profiles')
+        .select('id')
+        .eq('id', data.user.id)
+        .maybeSingle();
 
-    if (!existingProfile) {
-      // Create profile manually
-      await admin.from('profiles').insert({
-        id: data.user.id,
-        email: emailNormalized,
-        full_name: fullName || null,
-        role: 'admin', // First user in an org is always admin
-        department: department || null,
-        job_title: jobTitle || null,
-      });
+      if (!existingProfile) {
+        // Create profile manually
+        const { error: profileErr } = await admin.from('profiles').insert({
+          id: data.user.id,
+          email: emailNormalized,
+          full_name: fullName || null,
+          role: 'admin',
+          department: department || null,
+          job_title: jobTitle || null,
+        });
+        if (profileErr) {
+          console.warn('[Signup] Profile insert failed (non-fatal):', profileErr.message);
+        }
+      }
+    } catch (err) {
+      console.warn('[Signup] Profile setup failed (non-fatal):', err);
     }
 
-    // --- 3) Optionally create organization ---
+    // --- 3) Optionally create organization — non-fatal ---
     let organization = null;
     if (createOrganization && organizationName) {
-      const slug = organizationName
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '')
-        .slice(0, 60);
+      try {
+        const slug = organizationName
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
+          .slice(0, 60);
 
-      const defaultSettings = {
-        setup_completed: false,
-        industry_type: 'medical_device',
-        applicable_standards: [],
-        active_modules: ['documents', 'capa', 'ncr', 'audits', 'training', 'reports', 'compliance'],
-        company_name: organizationName.trim(),
-        require_electronic_signatures: true,
-        require_prerequisite_docs: false,
-        audit_trail_enabled: true,
-        notification_settings: {
-          email_notifications: true,
-          due_date_reminders: true,
-          approval_requests: true,
-        },
-      };
-
-      const { data: newOrg, error: orgError } = await admin
-        .from('organizations')
-        .insert({
-          name: organizationName.trim(),
-          slug,
-          subscription_status: 'trial',
-          settings: defaultSettings,
-        })
-        .select()
-        .single();
-
-      if (!orgError && newOrg) {
-        // Add as owner
-        await admin.from('organization_members').insert({
-          organization_id: newOrg.id,
-          user_id: data.user.id,
-          role: 'owner',
-          status: 'active',
-        });
-
-        // Update profile with org
-        await admin
-          .from('profiles')
-          .update({ organization_id: newOrg.id })
-          .eq('id', data.user.id);
-
-        organization = {
-          id: newOrg.id,
-          name: newOrg.name,
-          slug: newOrg.slug,
-          subscriptionStatus: newOrg.subscription_status,
+        const defaultSettings = {
+          setup_completed: false,
+          industry_type: 'medical_device',
+          applicable_standards: [],
+          active_modules: ['documents', 'capa', 'ncr', 'audits', 'training', 'reports', 'compliance'],
+          company_name: organizationName.trim(),
+          require_electronic_signatures: true,
+          require_prerequisite_docs: false,
+          audit_trail_enabled: true,
+          notification_settings: {
+            email_notifications: true,
+            due_date_reminders: true,
+            approval_requests: true,
+          },
         };
+
+        const { data: newOrg, error: orgError } = await admin
+          .from('organizations')
+          .insert({
+            name: organizationName.trim(),
+            slug,
+            subscription_status: 'trial',
+            settings: defaultSettings,
+          })
+          .select()
+          .single();
+
+        if (!orgError && newOrg) {
+          await admin.from('organization_members').insert({
+            organization_id: newOrg.id,
+            user_id: data.user.id,
+            role: 'owner',
+            status: 'active',
+          });
+
+          await admin
+            .from('profiles')
+            .update({ organization_id: newOrg.id })
+            .eq('id', data.user.id);
+
+          organization = {
+            id: newOrg.id,
+            name: newOrg.name,
+            slug: newOrg.slug,
+            subscriptionStatus: newOrg.subscription_status,
+          };
+        } else if (orgError) {
+          console.warn('[Signup] Org creation failed (non-fatal):', orgError.message);
+        }
+      } catch (err) {
+        console.warn('[Signup] Org creation error (non-fatal):', err);
       }
     }
 

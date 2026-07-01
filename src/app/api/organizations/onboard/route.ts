@@ -58,10 +58,10 @@ function validateOnboardInput(body: Record<string, unknown>) {
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
   try {
-    // --- Demo mode: not applicable, fall back to existing POST /api/organizations ---
+    // --- Demo mode: not applicable ---
     if (!isLiveMode()) {
       return apiError(
-        'On-demand organization creation requires Supabase (live mode). In demo mode, use the existing organizations API.',
+        'On-demand organization creation requires Supabase (live mode).',
         400,
       );
     }
@@ -69,16 +69,26 @@ export async function POST(request: NextRequest) {
     // 1) Authenticate the requesting user via session cookie
     const serverClient = await createClient();
     if (!serverClient) {
+      console.error('[Onboard] createClient returned null');
       return apiError('Server configuration error', 500);
     }
+
     const {
       data: { user: authUser },
       error: authError,
     } = await serverClient.auth.getUser();
 
-    if (authError || !authUser) {
+    if (authError) {
+      console.error('[Onboard] getUser error:', authError.message);
       return apiError('Authentication required', 401);
     }
+
+    if (!authUser) {
+      console.warn('[Onboard] No user in session');
+      return apiError('Authentication required', 401);
+    }
+
+    console.log('[Onboard] Authenticated user:', authUser.id, authUser.email);
 
     // 2) Parse and validate request body
     const body = await request.json();
@@ -88,10 +98,11 @@ export async function POST(request: NextRequest) {
     }
     const { name, slug, industryType } = validation.data;
 
-    // 3) Use admin client (bypasses RLS) for the atomic org+membership creation
+    // 3) Use admin client (bypasses RLS)
     const admin = createAdminClient();
     if (!admin) {
-      return apiError('Server configuration error', 500);
+      console.error('[Onboard] createAdminClient returned null — missing SUPABASE_SERVICE_ROLE_KEY?');
+      return apiError('Server configuration error — admin client unavailable', 500);
     }
 
     // 3a) Check slug uniqueness
@@ -102,14 +113,12 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (slugCheckErr) {
+      console.error('[Onboard] Slug check failed:', slugCheckErr.message);
       return apiError('Failed to check organization availability', 500);
     }
     if (existingOrg) {
       return apiError('An organization with this slug already exists', 409);
     }
-
-    // 3b) Check user doesn't already own an org (optional: allow multiple)
-    //     We allow multiple orgs per user, so we skip this check.
 
     // 3c) Create organization with default settings
     const defaultSettings = {
@@ -140,12 +149,14 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (orgError) {
-      // Duplicate slug (race condition)
+      console.error('[Onboard] Org insert failed:', orgError.message, orgError.code);
       if (orgError.code === '23505') {
         return apiError('An organization with this slug already exists', 409);
       }
       return apiError('Failed to create organization', 500);
     }
+
+    console.log('[Onboard] Organization created:', newOrg.id, newOrg.name);
 
     // 3d) Add the user as organization owner
     const { error: memberError } = await admin.from('organization_members').insert({
@@ -156,28 +167,38 @@ export async function POST(request: NextRequest) {
     });
 
     if (memberError) {
-      // Rollback: delete the organization we just created
+      console.error('[Onboard] Member insert failed:', memberError.message);
+      // Rollback: delete the organization
       await admin.from('organizations').delete().eq('id', newOrg.id);
       return apiError('Failed to add user as organization member', 500);
     }
 
     // 3e) Update the user's profile with the new organization_id
-    //     (only if they don't already have one)
-    await admin
-      .from('profiles')
-      .update({ organization_id: newOrg.id, updated_at: new Date().toISOString() })
-      .eq('id', authUser.id)
-      .is('organization_id', null);
+    try {
+      await admin
+        .from('profiles')
+        .update({ organization_id: newOrg.id, updated_at: new Date().toISOString() })
+        .eq('id', authUser.id)
+        .is('organization_id', null);
+    } catch (err) {
+      // Non-fatal: org was created and membership exists
+      console.warn('[Onboard] Profile update failed (non-fatal):', err);
+    }
 
-    // 3f) Log audit trail
-    await admin.from('audit_trails').insert({
-      audit_action: 'CREATE',
-      table_name: 'organizations',
-      record_id: newOrg.id,
-      user_id: authUser.id,
-      new_values: JSON.stringify({ name, slug, industryType }),
-      organization_id: newOrg.id,
-    });
+    // 3f) Log audit trail — NON-FATAL: don't break the request if the table
+    //     doesn't exist or RLS blocks it
+    try {
+      await admin.from('audit_trails').insert({
+        audit_action: 'CREATE',
+        table_name: 'organizations',
+        record_id: newOrg.id,
+        user_id: authUser.id,
+        new_values: JSON.stringify({ name, slug, industryType }),
+        organization_id: newOrg.id,
+      });
+    } catch (err) {
+      console.warn('[Onboard] Audit trail insert failed (non-fatal):', err);
+    }
 
     // 4) Return the created organization
     const org = {
@@ -190,8 +211,11 @@ export async function POST(request: NextRequest) {
       updatedAt: newOrg.updated_at,
     };
 
+    console.log('[Onboard] Success — returning org:', org.id);
+
     return apiSuccess(org, 201);
   } catch (error) {
+    console.error('[Onboard] Unhandled error:', error);
     return apiError('Failed to onboard organization', 500, error instanceof Error ? error.message : undefined);
   }
 }

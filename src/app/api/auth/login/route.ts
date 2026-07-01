@@ -25,60 +25,85 @@ export async function POST(request: NextRequest) {
 
     const serverClient = await createClient();
     if (!serverClient) {
-      return apiError('Login is handled client-side in demo mode', 400);
+      console.error('[Login] createClient returned null — check env vars');
+      return apiError('Server configuration error', 500);
     }
+
+    console.log('[Login] Attempting signInWithPassword for:', email.trim().toLowerCase());
+
     const { data, error } = await serverClient.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
     });
 
     if (error) {
-      // Don't leak specific auth error details
+      console.warn('[Login] Auth error:', error.message);
       return apiError('Invalid email or password', 401);
     }
 
-    // Fetch user profile
-    const { data: profile } = await serverClient
-      .from('profiles')
-      .select('*')
-      .eq('id', data.user.id)
-      .single();
+    console.log('[Login] Auth succeeded for user:', data.user.id);
 
-    // Fetch organization membership
-    let membership = null;
+    // Fetch user profile — non-fatal: if the profiles table doesn't exist
+    // or the user has no profile row, continue without it.
+    let profile = null;
+    try {
+      const result = await serverClient
+        .from('profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
+      profile = result.data;
+      if (result.error) {
+        console.warn('[Login] Profile fetch warning:', result.error.message);
+      }
+    } catch (err) {
+      console.warn('[Login] Profile fetch failed (non-fatal):', err);
+    }
+
+    // Fetch organization — non-fatal
     let organization = null;
     if (profile?.organization_id) {
-      const { data: org } = await serverClient
-        .from('organizations')
-        .select('*')
-        .eq('id', profile.organization_id)
-        .single();
-      if (org) {
-        organization = {
-          id: org.id,
-          name: org.name,
-          slug: org.slug,
-          subscriptionStatus: org.subscription_status,
-          settings: org.settings,
-          createdAt: org.created_at,
-          updatedAt: org.updated_at,
-        };
+      try {
+        const { data: org } = await serverClient
+          .from('organizations')
+          .select('*')
+          .eq('id', profile.organization_id)
+          .single();
+        if (org) {
+          organization = {
+            id: org.id,
+            name: org.name,
+            slug: org.slug,
+            subscriptionStatus: org.subscription_status,
+            settings: org.settings,
+            createdAt: org.created_at,
+            updatedAt: org.updated_at,
+          };
+        }
+      } catch (err) {
+        console.warn('[Login] Organization fetch failed (non-fatal):', err);
       }
     }
 
-    // Also check organization_members for any orgs this user belongs to
-    const { data: memberships } = await serverClient
-      .from('organization_members')
-      .select('organization_id, role, status')
-      .eq('user_id', data.user.id)
-      .eq('status', 'active');
+    // Fetch organization memberships — non-fatal
+    let memberships: unknown[] = [];
+    try {
+      const { data: mems } = await serverClient
+        .from('organization_members')
+        .select('organization_id, role, status')
+        .eq('user_id', data.user.id)
+        .eq('status', 'active');
+      memberships = mems || [];
+    } catch (err) {
+      console.warn('[Login] Memberships fetch failed (non-fatal):', err);
+    }
 
     return apiSuccess({
       user: {
         id: data.user.id,
         email: data.user.email,
         profile,
-        memberships: memberships || [],
+        memberships,
         organization,
       },
       session: {
@@ -87,6 +112,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    console.error('[Login] Unhandled error:', error);
     return apiError('Login failed', 500, error instanceof Error ? error.message : undefined);
   }
 }
