@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Shield, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { isSupabaseConfigured } from '@/lib/supabase/mode';
+import { useAuth } from '@/contexts/AuthContext';
 
 /**
  * Login page — real Supabase auth.
@@ -11,6 +13,8 @@ import { isSupabaseConfigured } from '@/lib/supabase/mode';
  * In demo mode, the root page.tsx handles login via AuthContext.
  */
 export default function LoginPage() {
+  const router = useRouter();
+  const { loginWithPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -31,37 +35,16 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (!data.success) {
-        setError(data.error || 'Login failed');
+      const ok = await loginWithPassword(email, password);
+      if (!ok) {
+        setError('Email ou mot de passe incorrect');
         return;
       }
-
-      // Store org info for the auth context to pick up
-      if (data.data?.user?.organization) {
-        sessionStorage.setItem(
-          'auth_org',
-          JSON.stringify(data.data.user.organization),
-        );
-      }
-      if (data.data?.user?.memberships) {
-        sessionStorage.setItem(
-          'auth_memberships',
-          JSON.stringify(data.data.user.memberships),
-        );
-      }
-
-      // Redirect to app
-      window.location.href = '/';
+      // Use client-side navigation — avoids full page reload and
+      // lets AuthContext + OrganizationContext pick up state from memory/sessionStorage.
+      router.push('/');
     } catch {
-      setError('Network error. Please try again.');
+      setError('Erreur reseau. Veuillez reessayer.');
     } finally {
       setLoading(false);
     }
