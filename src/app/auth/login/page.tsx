@@ -16,10 +16,12 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // If somehow loaded in demo mode, redirect
+  // If loaded in demo mode, show a message instead of redirecting
+  // (redirecting here causes infinite loop with middleware auth enforcement)
+  const [demoMode, setDemoMode] = React.useState(false);
   React.useEffect(() => {
     if (!isSupabaseConfigured()) {
-      window.location.href = '/';
+      setDemoMode(true);
     }
   }, []);
 
