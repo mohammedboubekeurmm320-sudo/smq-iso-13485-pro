@@ -23,5 +23,10 @@ export function createClient() {
     return null;
   }
 
-  return _createBrowserClient(url, key);
+  try {
+    return _createBrowserClient(url, key);
+  } catch (err) {
+    console.error('[Supabase Browser] Failed to create client:', err);
+    return null;
+  }
 }

@@ -31,21 +31,17 @@ export function createAdminClient(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!isValidSupabaseUrl(url)) {
-    console.error('[AdminClient] NEXT_PUBLIC_SUPABASE_URL is not a valid URL');
+  if (!isValidSupabaseUrl(url) || !key) {
     return null;
   }
 
-  if (!key) {
-    console.error(
-      '[AdminClient] SUPABASE_SERVICE_ROLE_KEY is not configured. ' +
-      'This client must only be used in server-side code with proper env vars.',
-    );
+  try {
+    adminClient = _createClient(url, key, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    return adminClient;
+  } catch (err) {
+    console.error('[Supabase Admin] Failed to create client:', err);
     return null;
   }
-
-  adminClient = _createClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  return adminClient;
 }
