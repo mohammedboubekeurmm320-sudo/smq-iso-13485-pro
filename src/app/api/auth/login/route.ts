@@ -24,6 +24,9 @@ export async function POST(request: NextRequest) {
     }
 
     const serverClient = await createClient();
+    if (!serverClient) {
+      return apiError('Login is handled client-side in demo mode', 400);
+    }
     const { data, error } = await serverClient.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,

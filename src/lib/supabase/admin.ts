@@ -1,7 +1,17 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient as _createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 let adminClient: SupabaseClient | null = null;
+
+function isValidSupabaseUrl(url: string | undefined): url is string {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Create a Supabase client with the service_role key.
@@ -12,21 +22,30 @@ let adminClient: SupabaseClient | null = null;
  *
  * The SUPABASE_SERVICE_ROLE_KEY env var has no NEXT_PUBLIC_ prefix,
  * so it is automatically excluded from the client-side bundle by Next.js.
+ *
+ * Returns null when env vars are missing or invalid.
  */
-export function createAdminClient(): SupabaseClient {
+export function createAdminClient(): SupabaseClient | null {
   if (adminClient) return adminClient;
 
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error(
-      'SUPABASE_SERVICE_ROLE_KEY is not configured. ' +
-      'This client must only be used in server-side code with proper env vars.'
-    );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!isValidSupabaseUrl(url)) {
+    console.error('[AdminClient] NEXT_PUBLIC_SUPABASE_URL is not a valid URL');
+    return null;
   }
 
-  adminClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
+  if (!key) {
+    console.error(
+      '[AdminClient] SUPABASE_SERVICE_ROLE_KEY is not configured. ' +
+      'This client must only be used in server-side code with proper env vars.',
+    );
+    return null;
+  }
+
+  adminClient = _createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
   return adminClient;
 }

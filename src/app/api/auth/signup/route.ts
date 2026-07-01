@@ -39,6 +39,9 @@ export async function POST(request: NextRequest) {
 
     // --- 1) Create Supabase Auth user ---
     const serverClient = await createClient();
+    if (!serverClient) {
+      return apiError('Registration is handled client-side in demo mode', 400);
+    }
     const { data, error } = await serverClient.auth.signUp({
       email: emailNormalized,
       password,
@@ -67,6 +70,9 @@ export async function POST(request: NextRequest) {
     //     The profile trigger in migration 004 should handle this, but we
     //     ensure it exists as a safety net.
     const admin = createAdminClient();
+    if (!admin) {
+      return apiError('Server configuration error', 500);
+    }
 
     // Check if profile was auto-created by trigger
     const { data: existingProfile } = await admin

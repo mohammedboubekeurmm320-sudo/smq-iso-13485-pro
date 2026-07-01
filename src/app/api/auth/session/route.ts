@@ -16,6 +16,9 @@ export async function GET() {
     }
 
     const serverClient = await createClient();
+    if (!serverClient) {
+      return apiSuccess({ session: null, user: null, source: 'supabase' });
+    }
     const {
       data: { session },
       error: sessionError,

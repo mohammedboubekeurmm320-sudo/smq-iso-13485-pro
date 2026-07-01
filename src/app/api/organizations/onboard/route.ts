@@ -68,6 +68,9 @@ export async function POST(request: NextRequest) {
 
     // 1) Authenticate the requesting user via session cookie
     const serverClient = await createClient();
+    if (!serverClient) {
+      return apiError('Server configuration error', 500);
+    }
     const {
       data: { user: authUser },
       error: authError,
@@ -87,6 +90,9 @@ export async function POST(request: NextRequest) {
 
     // 3) Use admin client (bypasses RLS) for the atomic org+membership creation
     const admin = createAdminClient();
+    if (!admin) {
+      return apiError('Server configuration error', 500);
+    }
 
     // 3a) Check slug uniqueness
     const { data: existingOrg, error: slugCheckErr } = await admin

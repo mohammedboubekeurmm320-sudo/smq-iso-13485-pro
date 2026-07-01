@@ -10,6 +10,9 @@ export async function GET() {
     // Supabase mode: fetch from profiles table
     if (isLiveMode()) {
       const supabase = await createClient();
+      if (!supabase) {
+        return apiError('Server configuration error', 500);
+      }
       const { data, error } = await supabase.from('profiles').select('*');
       if (error) throw new Error(error.message);
       // Convert snake_case to camelCase

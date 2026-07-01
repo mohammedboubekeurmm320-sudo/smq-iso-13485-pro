@@ -16,7 +16,11 @@ export abstract class BaseService {
   }
 
   async init(): Promise<void> {
-    this.supabase = await createClient();
+    const client = await createClient();
+    if (!client) {
+      throw new Error('Supabase is not configured. Cannot initialize service.');
+    }
+    this.supabase = client;
   }
 
   // -----------------------------------------------------------------------

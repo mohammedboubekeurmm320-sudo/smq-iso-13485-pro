@@ -1,8 +1,27 @@
 import { createBrowserClient as _createBrowserClient } from '@supabase/ssr';
 
+function isValidSupabaseUrl(url: string | undefined): url is string {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Create a Supabase browser client.
+ * Returns null when env vars are missing or invalid (demo mode).
+ * Callers MUST check the return value before using the client.
+ */
 export function createClient() {
-  return _createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!isValidSupabaseUrl(url) || !key) {
+    return null;
+  }
+
+  return _createBrowserClient(url, key);
 }

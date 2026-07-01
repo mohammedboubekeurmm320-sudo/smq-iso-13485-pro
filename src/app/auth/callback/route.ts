@@ -12,14 +12,16 @@ export async function GET(request: NextRequest) {
   const next = searchParams.get('next') ?? '/';
 
   if (code) {
-    // We need to create a server client and exchange the code
     const { createClient } = await import('@/lib/supabase/server');
     const supabase = await createClient();
+
+    if (!supabase) {
+      return NextResponse.redirect(`${origin}/auth/login?error=no_supabase_config`);
+    }
+
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      // Successfully exchanged code for session
-      // If there's no organization, redirect to org creation
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -39,6 +41,5 @@ export async function GET(request: NextRequest) {
     console.error('[Auth Callback] Code exchange error:', error.message);
   }
 
-  // Error or no code — redirect to login with error
   return NextResponse.redirect(`${origin}/auth/login?error=auth_callback_failed`);
 }

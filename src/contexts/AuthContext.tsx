@@ -75,6 +75,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!isLive) return;
     try {
       const supabase = createClient();
+      if (!supabase) {
+        console.warn('[Auth] Supabase client unavailable — falling back to demo');
+        setLoading(false);
+        return;
+      }
       const {
         data: { session },
       } = await supabase.auth.getSession();
