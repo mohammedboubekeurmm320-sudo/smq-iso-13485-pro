@@ -146,10 +146,22 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // CRITICAL: Transfer session cookies from the Supabase-managed response
-    // to the actual JSON response we're returning.
+    // CRITICAL: Transfer session cookies WITH ALL OPTIONS (httpOnly, secure,
+    // sameSite, path, etc.) from the Supabase-managed response to the JSON
+    // response.  Passing only (name, value) strips security attributes and
+    // causes the browser to silently reject the Set-Cookie headers.
     cookieResponse.cookies.getAll().forEach((cookie) => {
-      response.cookies.set(cookie.name, cookie.value);
+      response.cookies.set({
+        name: cookie.name,
+        value: cookie.value,
+        path: cookie.path ?? '/',
+        domain: cookie.domain ?? undefined,
+        httpOnly: cookie.httpOnly ?? true,
+        secure: cookie.secure ?? true,
+        sameSite: cookie.sameSite ?? 'lax',
+        maxAge: cookie.maxAge,
+        expires: cookie.expires,
+      });
     });
 
     return response;

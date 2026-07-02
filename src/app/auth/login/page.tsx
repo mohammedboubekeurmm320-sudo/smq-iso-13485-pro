@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Shield, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { isSupabaseConfigured } from '@/lib/supabase/mode';
@@ -13,7 +12,6 @@ import { useAuth } from '@/contexts/AuthContext';
  * In demo mode, the root page.tsx handles login via AuthContext.
  */
 export default function LoginPage() {
-  const router = useRouter();
   const { loginWithPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,9 +38,9 @@ export default function LoginPage() {
         setError('Email ou mot de passe incorrect');
         return;
       }
-      // Use client-side navigation — avoids full page reload and
-      // lets AuthContext + OrganizationContext pick up state from memory/sessionStorage.
-      router.push('/');
+      // Full page reload — guarantees the browser sends the new session
+      // cookies that were just set by the login API response.
+      window.location.href = '/';
     } catch {
       setError('Erreur reseau. Veuillez reessayer.');
     } finally {
