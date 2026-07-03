@@ -49,7 +49,7 @@ export async function GET() {
 
     // Test Supabase Auth connectivity
     let authOk = false;
-    let authError = null;
+    let authError: string | null = null;
     try {
       const { error } = await serverClient.auth.getSession();
       authOk = !error;
@@ -61,7 +61,7 @@ export async function GET() {
 
     // Test database connectivity (try to query organizations table)
     let dbOk = false;
-    let dbError = null;
+    let dbError: string | null = null;
     try {
       const { error } = await serverClient.from('organizations').select('id').limit(1);
       dbOk = !error;
@@ -78,7 +78,7 @@ export async function GET() {
 
     // Test profiles table
     let profilesOk = false;
-    let profilesError = null;
+    let profilesError: string | null = null;
     try {
       const { error } = await serverClient.from('profiles').select('id').limit(1);
       profilesOk = !error;

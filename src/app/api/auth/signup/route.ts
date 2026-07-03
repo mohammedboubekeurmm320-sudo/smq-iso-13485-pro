@@ -63,6 +63,10 @@ export async function POST(request: NextRequest) {
       return apiError('Registration failed', 400);
     }
 
+    if (!data.user) {
+      return apiError('Registration failed — no user returned', 500);
+    }
+
     // If email confirmation is enabled, we get a user but no session
     const requiresConfirmation = !data.session;
 
@@ -102,7 +106,7 @@ export async function POST(request: NextRequest) {
     }
 
     // --- 3) Optionally create organization — non-fatal ---
-    let organization = null;
+    let organization: Record<string, unknown> | null = null;
     if (createOrganization && organizationName) {
       try {
         const slug = organizationName

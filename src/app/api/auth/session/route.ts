@@ -38,7 +38,7 @@ export async function GET() {
     const authUser = session.user;
 
     // Fetch profile — non-fatal
-    let profile = null;
+    let profile: Record<string, unknown> | null = null;
     try {
       const result = await serverClient
         .from('profiles')
@@ -54,13 +54,13 @@ export async function GET() {
     }
 
     // Fetch organization — non-fatal
-    let organization = null;
+    let organization: Record<string, unknown> | null = null;
     if (profile?.organization_id) {
       try {
         const { data: org } = await serverClient
           .from('organizations')
           .select('*')
-          .eq('id', profile.organization_id)
+          .eq('id', profile.organization_id as string)
           .single();
 
         if (org) {
@@ -72,7 +72,7 @@ export async function GET() {
             settings: org.settings,
             createdAt: org.created_at,
             updatedAt: org.updated_at,
-          };
+          } as Record<string, unknown>;
         }
       } catch (err) {
         console.warn('[Session] Organization fetch failed (non-fatal):', err);

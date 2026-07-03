@@ -120,8 +120,8 @@ export async function getService<K extends keyof ServiceMap>(
   const service = new ServiceClass(orgId) as BaseService & ServiceMap[K];
   try {
     await service.init();
-    // FIX: do NOT spread — mutating the instance preserves prototype methods
-    (service as { initialized: true }).initialized = true;
+    // FIX: do NOT spread — use Object.defineProperty to preserve prototype chain
+    Object.defineProperty(service, 'initialized', { value: true, writable: false, enumerable: true });
     return service as ServiceMap[K] & { initialized: true };
   } catch (error) {
     console.error(`[Supabase] Failed to initialize ${key} service:`, error);

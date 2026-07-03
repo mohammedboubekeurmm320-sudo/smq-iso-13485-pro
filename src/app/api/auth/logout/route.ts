@@ -15,6 +15,9 @@ export async function POST() {
     }
 
     const serverClient = await createClient();
+    if (!serverClient) {
+      return apiError('Authentication service unavailable', 503);
+    }
     const { error } = await serverClient.auth.signOut({ scope: 'global' });
 
     if (error) {

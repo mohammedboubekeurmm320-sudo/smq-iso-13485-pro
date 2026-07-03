@@ -75,14 +75,14 @@ export async function POST(request: NextRequest) {
     console.log('[Login] Auth succeeded for user:', data.user.id);
 
     // Fetch user profile — non-fatal
-    let profile = null;
+    let profile: Record<string, unknown> | null = null;
     try {
       const result = await supabase
         .from('profiles')
         .select('*')
         .eq('id', data.user.id)
         .single();
-      profile = result.data;
+      profile = result.data as Record<string, unknown> | null;
       if (result.error) {
         console.warn('[Login] Profile fetch warning:', result.error.message);
       }
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch organization — non-fatal
-    let organization = null;
+    let organization: Record<string, unknown> | null = null;
     if (profile?.organization_id) {
       try {
         const { data: org } = await supabase
