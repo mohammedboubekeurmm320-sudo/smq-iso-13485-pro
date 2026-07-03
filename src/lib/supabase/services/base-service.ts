@@ -9,8 +9,6 @@ export abstract class BaseService {
   protected orgId: string | undefined;
 
   constructor(orgId?: string) {
-    // createClient is async but we store a promise
-    // Services should call init() before use
     this.supabase = null as unknown as SupabaseClient;
     this.orgId = orgId;
   }
@@ -23,8 +21,26 @@ export abstract class BaseService {
     this.supabase = client;
   }
 
+  /**
+   * Ensure the service is ready to use (client initialized + orgId set).
+   * Throws a clear error if init() was skipped or orgId is missing.
+   */
+  protected requireReady(): void {
+    if (!this.supabase) {
+      throw new Error('Service not initialized — call init() first');
+    }
+    if (!this.orgId) {
+      throw new Error(
+        'orgId is required for this operation. ' +
+        'The authenticated user has no organization_id in profiles, ' +
+        'and no current_org_id cookie was set. ' +
+        'Ensure the user belongs to at least one organization.'
+      );
+    }
+  }
+
   // -----------------------------------------------------------------------
-  // CamelCase ↔ snake_case helpers
+  // CamelCase ↔ snake_case helpers (recursive for nested objects/arrays)
   // -----------------------------------------------------------------------
   protected toSnakeCase(str: string): string {
     return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
@@ -34,10 +50,21 @@ export abstract class BaseService {
     return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
   }
 
-  protected mapToSnake<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
+  protected mapToSnake(obj: Record<string, unknown>): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
-      result[this.toSnakeCase(key)] = value;
+      const snakeKey = this.toSnakeCase(key);
+      if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+        result[snakeKey] = this.mapToSnake(value as Record<string, unknown>);
+      } else if (Array.isArray(value)) {
+        result[snakeKey] = value.map(v =>
+          v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)
+            ? this.mapToSnake(v as Record<string, unknown>)
+            : v
+        );
+      } else {
+        result[snakeKey] = value;
+      }
     }
     return result;
   }
@@ -45,13 +72,25 @@ export abstract class BaseService {
   protected mapToCamel<T>(obj: Record<string, unknown>): T {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
-      result[this.toCamelCase(key)] = value;
+      const camelKey = this.toCamelCase(key);
+      if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+        result[camelKey] = this.mapToCamel<Record<string, unknown>>(value as Record<string, unknown>);
+      } else if (Array.isArray(value)) {
+        result[camelKey] = value.map(v =>
+          v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)
+            ? this.mapToCamel<Record<string, unknown>>(v as Record<string, unknown>)
+            : v
+        );
+      } else {
+        result[camelKey] = value;
+      }
     }
     return result as T;
   }
 
   // -----------------------------------------------------------------------
-  // Audit trail logging
+  // Audit trail logging (no longer needed — DB trigger log_audit_trail
+  // captures everything automatically. Kept for backward compat.)
   // -----------------------------------------------------------------------
   protected async logAudit(
     action: string,
@@ -61,33 +100,29 @@ export abstract class BaseService {
     newValues?: Record<string, unknown>,
     userId?: string,
   ) {
-    try {
-      const { error } = await this.supabase.from('audit_trails').insert({
-        audit_action: action,
-        table_name: tableName,
-        record_id: recordId,
-        user_id: userId || null,
-        old_values: oldValues ? JSON.stringify(oldValues) : null,
-        new_values: newValues ? JSON.stringify(newValues) : null,
-        organization_id: this.orgId || null,
-      });
-      if (error) console.warn('[AuditTrail] Insert failed:', error.message);
-    } catch (err) {
-      console.warn('[AuditTrail] Insert error (non-fatal):', err);
-    }
+    // NOTE: Since migration 007, the DB trigger log_audit_trail() handles
+    // audit automatically with HMAC hash chain. This method is kept only
+    // for backward compatibility — it is now a no-op.
+    void action; void tableName; void recordId;
+    void oldValues; void newValues; void userId;
   }
 
   // -----------------------------------------------------------------------
-  // Common queries
+  // Common queries (all org-scoped — fail-fast if orgId missing)
   // -----------------------------------------------------------------------
   public async getAll<T>(tableName: string, page = 1, pageSize = 20): Promise<{ data: T[]; total: number }> {
+    this.requireReady();
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    let query = this.supabase.from(tableName).select('*', { count: 'exact' });
-    if (this.orgId) query = query.eq('organization_id', this.orgId);
+    const query = this.supabase
+      .from(tableName)
+      .select('*', { count: 'exact' })
+      .eq('organization_id', this.orgId)
+      .range(from, to)
+      .order('created_at', { ascending: false });
 
-    const { data, count, error } = await query.range(from, to).order('created_at', { ascending: false });
+    const { data, count, error } = await query;
     if (error) throw new Error(error.message);
 
     return {
@@ -97,8 +132,12 @@ export abstract class BaseService {
   }
 
   public async getById<T>(tableName: string, id: string): Promise<T | null> {
-    let query = this.supabase.from(tableName).select('*').eq('id', id);
-    if (this.orgId) query = query.eq('organization_id', this.orgId);
+    this.requireReady();
+    const query = this.supabase
+      .from(tableName)
+      .select('*')
+      .eq('id', id)
+      .eq('organization_id', this.orgId);
 
     const { data, error } = await query.single();
     if (error) return null;
@@ -106,32 +145,40 @@ export abstract class BaseService {
   }
 
   public async create<T>(tableName: string, record: Record<string, unknown>, userId?: string): Promise<T> {
+    this.requireReady();
+    // Inject organization_id from the service (server-side, not client-supplied)
     const snakeRecord = this.mapToSnake({ ...record, organizationId: this.orgId });
     const { data, error } = await this.supabase.from(tableName).insert(snakeRecord).select().single();
     if (error) throw new Error(error.message);
 
-    const result = this.mapToCamel<T>(data);
-    await this.logAudit('CREATE', tableName, (result as Record<string, unknown>).id as string, undefined, record, userId);
-    return result;
+    // DB trigger log_audit_trail will auto-create the audit entry with HMAC hash
+    return this.mapToCamel<T>(data);
   }
 
   public async update<T>(tableName: string, id: string, updates: Record<string, unknown>, userId?: string): Promise<T> {
-    // Get old values for audit
-    const old = await this.getById<T>(tableName, id);
+    this.requireReady();
     const snakeUpdates = this.mapToSnake(updates);
 
-    let query = this.supabase.from(tableName).update(snakeUpdates).eq('id', id);
-    if (this.orgId) query = query.eq('organization_id', this.orgId);
+    const query = this.supabase
+      .from(tableName)
+      .update(snakeUpdates)
+      .eq('id', id)
+      .eq('organization_id', this.orgId);
 
     const { data, error } = await query.select().single();
     if (error) throw new Error(error.message);
 
-    const result = this.mapToCamel<T>(data);
-    await this.logAudit('UPDATE', tableName, id, old as Record<string, unknown>, updates, userId);
-    return result;
+    // DB trigger log_audit_trail will auto-create the audit entry with HMAC hash
+    return this.mapToCamel<T>(data);
   }
 
-  public async softDelete<T>(tableName: string, id: string, statusField = 'status', statusValue = 'Obsolete', userId?: string): Promise<T> {
+  public async softDelete<T>(
+    tableName: string,
+    id: string,
+    statusValue: string,  // ← now required, no more wrong default 'Obsolete'
+    statusField = 'status',
+    userId?: string,
+  ): Promise<T> {
     return this.update<T>(tableName, id, { [statusField]: statusValue }, userId);
   }
 }

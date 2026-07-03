@@ -23,7 +23,7 @@ interface OrganizationContextType {
     industryType?: IndustryType;
   }) => Promise<Organization | null>;
   /** Switch to a different organization (multi-org support) */
-  switchOrganization: (orgId: string) => void;
+  switchOrganization: (orgId: string) => Promise<void>;
   useOrgSettings: () => OrgSettings | null;
   useIndustry: () => IndustryType;
   useApplicableStandards: () => string[];
@@ -253,18 +253,46 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
   // -----------------------------------------------------------------------
   // Organization switching
   // -----------------------------------------------------------------------
-  const switchOrganization = useCallback(
-    (orgId: string) => {
-      if (isLive) {
-        const org = supabaseOrgs.find((o) => o.id === orgId);
-        if (org) {
-          setSelectedOrgId(orgId);
-          sessionStorage.setItem('auth_org', JSON.stringify(org));
-        }
+  const switchOrganization = useCallback(async (orgId: string) => {
+    if (!isLive) {
+      // Demo mode — just update local state
+      setSelectedOrgId(orgId);
+      const org = supabaseOrgs.find(o => o.id === orgId);
+      if (org) {
+        sessionStorage.setItem('auth_org', JSON.stringify(org));
       }
-    },
-    [isLive, supabaseOrgs],
-  );
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const res = await fetch('/api/auth/switch-org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationId: orgId }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || 'Failed to switch organization');
+      }
+
+      // Update local state
+      setSelectedOrgId(orgId);
+      const org = supabaseOrgs.find(o => o.id === orgId);
+      if (org) {
+        sessionStorage.setItem('auth_org', JSON.stringify(org));
+      }
+
+      // Reload the page to refresh all data in the new org context
+      window.location.reload();
+    } catch (err) {
+      console.error('[OrganizationContext] switchOrganization failed:', err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [isLive, supabaseOrgs]);
 
   // -----------------------------------------------------------------------
   // Hooks

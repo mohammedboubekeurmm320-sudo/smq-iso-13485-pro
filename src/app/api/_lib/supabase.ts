@@ -46,7 +46,7 @@ type ServiceMap = {
   form: FormService;
 };
 
-const SERVICE_CLASSES: Record<keyof ServiceMap, new (orgId?: string) => BaseService & ServiceMap[keyof ServiceMap]> = {
+const SERVICE_CLASSES = {
   organization: OrganizationService,
   capa: CapaService,
   ncr: NcrService,
@@ -60,11 +60,52 @@ const SERVICE_CLASSES: Record<keyof ServiceMap, new (orgId?: string) => BaseServ
   deviation: DeviationService,
   changeControl: ChangeControlService,
   form: FormService,
-} as unknown as Record<keyof ServiceMap, new (orgId?: string) => BaseService & ServiceMap[keyof ServiceMap]>;
+} as const;
+
+/**
+ * Resolve the current user's organization_id from the authenticated session.
+ * Priority:
+ *   1. Cookie "current_org_id" (set by /api/auth/switch-org endpoint)
+ *   2. profiles.organization_id (default org)
+ * Returns undefined if no user or no org.
+ */
+async function resolveOrgIdFromSession(): Promise<string | undefined> {
+  const { createClient } = await import('@/lib/supabase/server');
+  const client = await createClient();
+  if (!client) return undefined;
+
+  try {
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) return undefined;
+
+    // 1. Check cookie "current_org_id" (user may have switched org via UI)
+    const { cookies } = await import('next/headers');
+    const cookieStore = await cookies();
+    const currentOrgId = cookieStore.get('current_org_id')?.value;
+    if (currentOrgId) {
+      // Validate membership via RPC (defensive — RLS already enforces this)
+      const { data: isMember } = await client.rpc('is_org_member', {
+        org_id: currentOrgId,
+      });
+      if (isMember === true) return currentOrgId;
+    }
+
+    // 2. Fallback: profiles.organization_id
+    const { data: profile } = await client
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', user.id)
+      .single();
+    return profile?.organization_id ?? undefined;
+  } catch (err) {
+    console.error('[getService] Failed to resolve orgId from session:', err);
+    return undefined;
+  }
+}
 
 /**
  * Get an initialized Supabase service, or null if in demo mode.
- * The orgId is extracted from the request headers (set by AuthContext).
+ * The orgId is resolved from the authenticated session (cookie or profile).
  */
 export async function getService<K extends keyof ServiceMap>(
   key: K,
@@ -72,16 +113,16 @@ export async function getService<K extends keyof ServiceMap>(
 ): Promise<(ServiceMap[K] & { initialized: true }) | null> {
   if (!isLiveMode()) return null;
 
-  let orgId: string | undefined;
-  if (request) {
-    orgId = request.headers.get('x-organization-id') || undefined;
-  }
+  // Resolve orgId from session (cookie current_org_id or profiles.organization_id)
+  const orgId = await resolveOrgIdFromSession();
 
   const ServiceClass = SERVICE_CLASSES[key];
   const service = new ServiceClass(orgId) as BaseService & ServiceMap[K];
   try {
     await service.init();
-    return { ...service, initialized: true } as ServiceMap[K] & { initialized: true };
+    // FIX: do NOT spread — mutating the instance preserves prototype methods
+    (service as { initialized: true }).initialized = true;
+    return service as ServiceMap[K] & { initialized: true };
   } catch (error) {
     console.error(`[Supabase] Failed to initialize ${key} service:`, error);
     return null;
