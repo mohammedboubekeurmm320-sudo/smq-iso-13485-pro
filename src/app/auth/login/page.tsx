@@ -29,11 +29,19 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[Login] handleSubmit fired — email:', email, 'isLive:', isSupabaseConfigured());
     setError('');
     setLoading(true);
 
+    if (!email.trim() || !password) {
+      setError('Veuillez saisir email et mot de passe');
+      setLoading(false);
+      return;
+    }
+
     try {
       const ok = await loginWithPassword(email, password);
+      console.log('[Login] loginWithPassword returned:', ok);
       if (!ok) {
         setError('Email ou mot de passe incorrect');
         return;
@@ -41,7 +49,8 @@ export default function LoginPage() {
       // Full page reload — guarantees the browser sends the new session
       // cookies that were just set by the login API response.
       window.location.href = '/';
-    } catch {
+    } catch (err) {
+      console.error('[Login] Exception:', err);
       setError('Erreur reseau. Veuillez reessayer.');
     } finally {
       setLoading(false);
@@ -60,6 +69,7 @@ export default function LoginPage() {
 
       <form
         onSubmit={handleSubmit}
+        noValidate
         className="flex flex-col gap-3 w-full max-w-sm"
       >
         {error && (
