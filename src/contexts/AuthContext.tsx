@@ -1,368 +1,394 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
-import type { Profile, UserRole, Permission, Organization } from '@/types/qms';
-import { rolePermissions } from '@/types/qms';
-import { useQMSStore } from '@/lib/demo-store';
-import { isSupabaseConfigured } from '@/lib/supabase/mode';
-import { createClient } from '@/lib/supabase/browser';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from 'react';
+import { rolePermissions, type Permission, type UserRole as QmsUserRole } from '@/types/qms';
 
-// ---------------------------------------------------------------------------
-// Extended profile that includes organization info (matches DB schema)
-// ---------------------------------------------------------------------------
-export interface AuthUserProfile extends Profile {
-  organizationId?: string;
+// ============================================================================
+// Types
+// ============================================================================
+
+type UserRole =
+  | 'admin'
+  | 'quality_manager'
+  | 'auditor'
+  | 'document_controller'
+  | 'executive'
+  | 'operator';
+
+interface AuthUser {
+  id: string;
+  email: string | null;
 }
 
-interface AuthContextType {
-  currentUser: AuthUserProfile | null;
-  isAuthenticated: boolean;
+interface AuthProfile {
+  id: string;
+  email: string | null;
+  fullName: string | null;
+  role: UserRole;
+  department: string | null;
+  organizationId: string | null;
+}
+
+interface AuthOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  subscriptionStatus: string;
+  settings: Record<string, unknown> | null;
+}
+
+interface AuthMembership {
+  organizationId: string;
+  role: string;
+  status: string;
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
+}
+
+/** Backward-compatible user object (used by ~15 components) */
+interface LegacyCurrentUser {
+  id: string;
+  email: string;
+  fullName: string | null;
+  role: UserRole;
+  department: string | null;
+  jobTitle: string | null;
+  phone: string | null;
+  avatarUrl: string | null;
+  organizationId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+interface AuthState {
+  user: AuthUser | null;
+  profile: AuthProfile | null;
+  organization: AuthOrganization | null;
+  memberships: AuthMembership[];
   loading: boolean;
+  error: string | null;
+  requiresOnboarding: boolean;
+}
+
+interface AuthContextValue extends AuthState {
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; requiresOnboarding?: boolean }>;
+  logout: () => Promise<void>;
+  refreshSession: () => Promise<void>;
+  switchOrganization: (organizationId: string) => Promise<{ success: boolean; error?: string }>;
+  clearError: () => void;
+  // --- Backward-compat shims (used by 27 consumer components) ---
+  /** @deprecated Use `!!user` instead */
+  isAuthenticated: boolean;
+  /** @deprecated Use `user` + `profile` instead */
+  currentUser: LegacyCurrentUser | null;
+  /** @deprecated Supabase-only mode now */
   source: 'demo' | 'supabase';
-  /** Demo mode: login by email lookup in mock store */
-  login: (email: string) => boolean;
-  /** Supabase mode: login with email + password */
+  /** @deprecated Use `login()` instead */
   loginWithPassword: (email: string, password: string) => Promise<boolean>;
-  /** Supabase mode: signup new user */
-  signUp: (data: {
-    email: string;
-    password: string;
-    fullName?: string;
-    organizationName?: string;
-  }) => Promise<{ success: boolean; requiresConfirmation?: boolean; error?: string }>;
-  logout: () => void;
-  hasPermission: (permission: Permission) => boolean;
-  hasRole: (role: UserRole) => boolean;
+  /** @deprecated Signup is handled by /auth/signup page */
+  signUp: (data: { email: string; password: string; fullName?: string; organizationName?: string }) => Promise<{ success: boolean; requiresConfirmation?: boolean; error?: string }>;
+  /** @deprecated Demo-only — no-op in live mode */
   switchUser: (userId: string) => void;
-  /** Supabase mode: fetch current session and restore state */
+  /** @deprecated Use `refreshSession()` instead */
   restoreSession: () => Promise<void>;
+  hasPermission: (permission: Permission) => boolean;
+  hasRole: (role: QmsUserRole) => boolean;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+// ============================================================================
+// Context
+// ============================================================================
 
-function getInitialUser(profiles: Profile[]): AuthUserProfile | null {
-  return (profiles[0] as AuthUserProfile) || null;
-}
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const profiles = useQMSStore((state) => state.profiles);
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [loggedOut, setLoggedOut] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState<'demo' | 'supabase'>(
-    isSupabaseConfigured() ? 'supabase' : 'demo',
-  );
+// ============================================================================
+// Provider
+// ============================================================================
 
-  // For Supabase mode: store the real authenticated profile
-  const [supabaseUser, setSupabaseUser] = useState<AuthUserProfile | null>(null);
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<AuthState>({
+    user: null,
+    profile: null,
+    organization: null,
+    memberships: [],
+    loading: true,
+    error: null,
+    requiresOnboarding: false,
+  });
 
-  const isLive = isSupabaseConfigured();
-
-  // -----------------------------------------------------------------------
-  // Restore Supabase session on mount
-  // -----------------------------------------------------------------------
-  useEffect(() => {
-    if (!isLive) {
-      setLoading(false);
-      return;
-    }
-
-    restoreSession();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLive]);
-
-  const restoreSession = useCallback(async () => {
-    if (!isLive) return;
+  // --------------------------------------------------------------------------
+  // refreshSession — fetch the current session from /api/auth/session
+  // --------------------------------------------------------------------------
+  const refreshSession = useCallback(async () => {
     try {
-      const supabase = createClient();
-      if (!supabase) {
-        console.warn('[Auth] Supabase client unavailable — falling back to demo');
-        setLoading(false);
+      setState((prev) => ({ ...prev, loading: true, error: null }));
+
+      const res = await fetch('/api/auth/session', {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+
+      if (!res.ok) {
+        // 401 or other — not authenticated
+        setState({
+          user: null,
+          profile: null,
+          organization: null,
+          memberships: [],
+          loading: false,
+          error: null,
+          requiresOnboarding: false,
+        });
         return;
       }
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
 
-      if (session?.user) {
-        // Fetch profile from API
-        const res = await fetch('/api/auth/session');
-        const json = await res.json();
+      const data = await res.json();
 
-        if (json.success && json.data?.session) {
-          const user = json.data.user;
-
-          // Profile may be null — create a minimal profile from auth data
-          const p = user?.profile;
-          const mappedProfile: AuthUserProfile = p ? {
-            id: p.id,
-            email: p.email,
-            fullName: p.full_name,
-            role: p.role,
-            department: p.department,
-            jobTitle: p.job_title,
-            phone: p.phone,
-            avatarUrl: p.avatar_url,
-            organizationId: p.organization_id,
-            createdAt: p.created_at,
-            updatedAt: p.updated_at,
-          } : {
-            id: session.user.id,
-            email: session.user.email || '',
-            fullName: session.user.user_metadata?.full_name || null,
-            role: 'admin' as UserRole,
-            department: null,
-            jobTitle: null,
-            phone: null,
-            avatarUrl: null,
-            organizationId: user?.organization?.id || null,
-            createdAt: null,
-            updatedAt: null,
-          };
-          setSupabaseUser(mappedProfile);
-
-          // Store org info for OrganizationContext
-          if (user?.organization) {
-            sessionStorage.setItem('auth_org', JSON.stringify(user.organization));
-          }
-          if (user?.memberships) {
-            sessionStorage.setItem('auth_memberships', JSON.stringify(user.memberships));
-          }
-        }
+      if (!data.user) {
+        setState({
+          user: null,
+          profile: null,
+          organization: null,
+          memberships: [],
+          loading: false,
+          error: null,
+          requiresOnboarding: false,
+        });
+        return;
       }
+
+      setState({
+        user: data.user,
+        profile: data.profile,
+        organization: data.organization,
+        memberships: data.memberships || [],
+        loading: false,
+        error: null,
+        requiresOnboarding: data.requiresOnboarding || false,
+      });
     } catch (err) {
-      console.error('[Auth] Failed to restore session:', err);
-    } finally {
-      setLoading(false);
+      console.error('[AuthContext] refreshSession error:', err);
+      setState({
+        user: null,
+        profile: null,
+        organization: null,
+        memberships: [],
+        loading: false,
+        error: 'Failed to load session. Please refresh the page.',
+        requiresOnboarding: false,
+      });
     }
-  }, [isLive]);
+  }, []);
 
-  // -----------------------------------------------------------------------
-  // Compute current user
-  // -----------------------------------------------------------------------
-  const currentUser = useMemo(() => {
-    if (loggedOut) return null;
-
-    // Supabase mode: use the real authenticated user
-    if (isLive && supabaseUser) {
-      return supabaseUser;
-    }
-
-    // Demo mode: use the mock store
-    if (selectedUserId) {
-      return profiles.find((p) => p.id === selectedUserId) as AuthUserProfile || null;
-    }
-    return getInitialUser(profiles);
-  }, [profiles, selectedUserId, loggedOut, isLive, supabaseUser]);
-
-  const isAuthenticated = currentUser !== null;
-
-  // -----------------------------------------------------------------------
-  // Demo login (email-only, matches mock store)
-  // -----------------------------------------------------------------------
+  // --------------------------------------------------------------------------
+  // login — POST to /api/auth/login
+  // --------------------------------------------------------------------------
   const login = useCallback(
-    (email: string) => {
-      const user = profiles.find((p) => p.email === email);
-      if (user) {
-        setSelectedUserId(user.id);
-        setLoggedOut(false);
-        return true;
-      }
-      return false;
-    },
-    [profiles],
-  );
-
-  // -----------------------------------------------------------------------
-  // Supabase login with password
-  // -----------------------------------------------------------------------
-  const loginWithPassword = useCallback(
-    async (email: string, password: string): Promise<boolean> => {
-      if (!isLive) return false;
-
+    async (email: string, password: string) => {
       try {
+        setState((prev) => ({ ...prev, loading: true, error: null }));
+
         const res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ email, password }),
         });
 
-        const json = await res.json();
+        const data = await res.json();
 
-        if (!json.success) {
-          console.error('[Auth] Login error:', json.error);
-          return false;
+        if (!res.ok || !data.success) {
+          const errorMsg = data.error || 'Login failed';
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            error: errorMsg,
+          }));
+          return { success: false, error: errorMsg };
         }
 
-        const userData = json.data.user;
-        const p = userData.profile;
-
-        // Profile may be null if the profiles table has no row for this user
-        const mappedProfile: AuthUserProfile = p ? {
-          id: p.id,
-          email: p.email,
-          fullName: p.full_name,
-          role: p.role,
-          department: p.department,
-          jobTitle: p.job_title,
-          phone: p.phone,
-          avatarUrl: p.avatar_url,
-          organizationId: p.organization_id,
-          createdAt: p.created_at,
-          updatedAt: p.updated_at,
-        } : {
-          id: json.data.user.id,
-          email: json.data.user.email,
-          fullName: null,
-          role: 'admin' as UserRole,
-          department: null,
-          jobTitle: null,
-          phone: null,
-          avatarUrl: null,
-          organizationId: userData.organization?.id || null,
-          createdAt: null,
-          updatedAt: null,
-        };
-
-        setSupabaseUser(mappedProfile);
-        setLoggedOut(false);
-
-        // Store org info
-        if (userData.organization) {
-          sessionStorage.setItem('auth_org', JSON.stringify(userData.organization));
-        }
-        if (userData.memberships) {
-          sessionStorage.setItem('auth_memberships', JSON.stringify(userData.memberships));
-        }
-
-        return true;
-      } catch (err) {
-        console.error('[Auth] Login network error:', err);
-        return false;
-      }
-    },
-    [isLive],
-  );
-
-  // -----------------------------------------------------------------------
-  // Supabase signup
-  // -----------------------------------------------------------------------
-  const signUp = useCallback(
-    async (data: {
-      email: string;
-      password: string;
-      fullName?: string;
-      organizationName?: string;
-    }): Promise<{ success: boolean; requiresConfirmation?: boolean; error?: string }> => {
-      if (!isLive) return { success: false, error: 'Not in live mode' };
-
-      try {
-        const res = await fetch('/api/auth/signup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: data.email,
-            password: data.password,
-            fullName: data.fullName,
-            createOrganization: !!data.organizationName,
-            organizationName: data.organizationName,
-          }),
+        // Update state from the login response
+        setState({
+          user: data.user,
+          profile: data.profile,
+          organization: data.organization,
+          memberships: [],
+          loading: false,
+          error: null,
+          requiresOnboarding: data.requiresOnboarding || false,
         });
-
-        const json = await res.json();
-
-        if (!json.success) {
-          return { success: false, error: json.error || 'Signup failed' };
-        }
 
         return {
           success: true,
-          requiresConfirmation: json.data.user?.requiresConfirmation || false,
+          requiresOnboarding: data.requiresOnboarding,
         };
       } catch (err) {
+        console.error('[AuthContext] login error:', err);
+        const errorMsg = 'Network error. Please check your connection and try again.';
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          error: errorMsg,
+        }));
+        return { success: false, error: errorMsg };
+      }
+    },
+    []
+  );
+
+  // --------------------------------------------------------------------------
+  // logout — POST to /api/auth/logout, then clear state
+  // --------------------------------------------------------------------------
+  const logout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (err) {
+      console.warn('[AuthContext] logout error (non-fatal):', err);
+    } finally {
+      setState({
+        user: null,
+        profile: null,
+        organization: null,
+        memberships: [],
+        loading: false,
+        error: null,
+        requiresOnboarding: false,
+      });
+      // Clear any sessionStorage caches
+      try {
+        sessionStorage.removeItem('auth_org');
+        sessionStorage.removeItem('auth_memberships');
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  // --------------------------------------------------------------------------
+  // switchOrganization — POST to /api/auth/switch-org, then refresh
+  // --------------------------------------------------------------------------
+  const switchOrganization = useCallback(
+    async (organizationId: string) => {
+      try {
+        const res = await fetch('/api/auth/switch-org', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ organizationId }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          return { success: false, error: data.error || 'Failed to switch organization' };
+        }
+
+        // Refresh the full session to get updated profile + memberships
+        await refreshSession();
+
+        return { success: true };
+      } catch (err) {
+        console.error('[AuthContext] switchOrganization error:', err);
         return { success: false, error: 'Network error' };
       }
     },
-    [isLive],
+    [refreshSession]
   );
 
-  // -----------------------------------------------------------------------
-  // Logout
-  // -----------------------------------------------------------------------
-  const logout = useCallback(async () => {
-    setSelectedUserId(null);
-    setLoggedOut(true);
-    setSupabaseUser(null);
-    sessionStorage.removeItem('auth_org');
-    sessionStorage.removeItem('auth_memberships');
+  // --------------------------------------------------------------------------
+  // clearError
+  // --------------------------------------------------------------------------
+  const clearError = useCallback(() => {
+    setState((prev) => ({ ...prev, error: null }));
+  }, []);
 
-    // Also call Supabase signout to clear cookies
-    if (isLive) {
-      try {
-        await fetch('/api/auth/logout', { method: 'POST' });
-      } catch {
-        // Best-effort
+  // --------------------------------------------------------------------------
+  // On mount: fetch session
+  // --------------------------------------------------------------------------
+  useEffect(() => {
+    refreshSession();
+  }, [refreshSession]);
+
+  // --------------------------------------------------------------------------
+  // Sync across tabs (logout in one tab → logout in all)
+  // --------------------------------------------------------------------------
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'logout-event') {
+        refreshSession();
       }
-    }
-  }, [isLive]);
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [refreshSession]);
 
-  // -----------------------------------------------------------------------
-  // Permissions
-  // -----------------------------------------------------------------------
-  const hasPermission = useCallback(
-    (permission: Permission) => {
-      if (!currentUser) return false;
-      const permissions = rolePermissions[currentUser.role as UserRole] || [];
-      return permissions.includes(permission);
+  const value: AuthContextValue = {
+    ...state,
+    login,
+    logout,
+    refreshSession,
+    switchOrganization,
+    clearError,
+    // --- Backward-compat shims ---
+    isAuthenticated: !!state.user,
+    currentUser: state.user && state.profile
+      ? {
+          id: state.profile.id,
+          email: state.profile.email || state.user.email || '',
+          fullName: state.profile.fullName,
+          role: state.profile.role,
+          department: state.profile.department,
+          jobTitle: null,
+          phone: null,
+          avatarUrl: null,
+          organizationId: state.profile.organizationId,
+          createdAt: null,
+          updatedAt: null,
+        }
+      : null,
+    source: 'supabase' as const,
+    loginWithPassword: async (email: string, password: string) => {
+      const result = await login(email, password);
+      return result.success;
     },
-    [currentUser],
-  );
-
-  const hasRole = useCallback(
-    (role: UserRole) => {
-      if (!currentUser) return false;
-      return currentUser.role === role;
+    signUp: async () => ({ success: false, error: 'Use /auth/signup page' }),
+    switchUser: () => {},
+    restoreSession: refreshSession,
+    hasPermission: (permission: Permission) => {
+      if (!state.profile) return false;
+      const perms = rolePermissions[state.profile.role as QmsUserRole] || [];
+      return perms.includes(permission);
     },
-    [currentUser],
-  );
-
-  const switchUser = useCallback(
-    (userId: string) => {
-      const user = profiles.find((p) => p.id === userId);
-      if (user) {
-        setSelectedUserId(user.id);
-        setLoggedOut(false);
-      }
+    hasRole: (role: QmsUserRole) => {
+      return state.profile?.role === role;
     },
-    [profiles],
-  );
+  };
 
-  return (
-    <AuthContext.Provider
-      value={{
-        currentUser,
-        isAuthenticated,
-        loading,
-        source,
-        login,
-        loginWithPassword,
-        signUp,
-        logout,
-        hasPermission,
-        hasRole,
-        switchUser,
-        restoreSession,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
+// ============================================================================
+// Hook
+// ============================================================================
+
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
-  return context;
+  return ctx;
 }

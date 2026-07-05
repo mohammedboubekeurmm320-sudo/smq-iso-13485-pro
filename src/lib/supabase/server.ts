@@ -2,42 +2,82 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-function isValidSupabaseUrl(url: string | undefined): url is string {
-  if (!url) return false;
+/**
+ * Validate Supabase environment configuration.
+ * Throws a clear error if env vars are missing or invalid.
+ */
+function validateEnv(): { url: string; key: string } {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    throw new Error(
+      '[Supabase] Missing env vars. Required: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY. ' +
+      'Add them to .env.local (see .env.example).'
+    );
+  }
+
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(`Invalid protocol: ${parsed.protocol}`);
+    }
   } catch {
-    return false;
+    throw new Error(`[Supabase] NEXT_PUBLIC_SUPABASE_URL is not a valid URL: ${url}`);
   }
+
+  return { url, key };
 }
 
 /**
  * Create a Supabase server client with cookie handling.
- * Returns null when env vars are missing or invalid (demo mode).
- * Callers MUST check the return value before using the client.
+ *
+ * This version NEVER returns null — it throws on misconfiguration
+ * so that bugs are visible immediately (vs silent fallback to demo mode).
+ *
+ * Usage:
+ *   const supabase = await createClient();
+ *   const { data: { user } } = await supabase.auth.getUser();
  */
-export async function createClient(): Promise<SupabaseClient | null> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+export async function createClient(): Promise<SupabaseClient> {
+  const { url, key } = validateEnv();
 
-  if (!isValidSupabaseUrl(url) || !key) {
-    return null;
-  }
+  const cookieStore = await cookies();
 
-  try {
-    const cookieStore = await cookies();
-    return createServerClient(url, key, {
-      cookies: {
-        getAll() { return cookieStore.getAll(); },
-        setAll(cookiesToSet) {
-          try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); }
-          catch { /* Server Component — ignored */ }
-        },
+  return createServerClient(url, key, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
       },
-    });
-  } catch (err) {
-    console.error('[Supabase Server] Failed to create client:', err);
-    return null;
-  }
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          );
+        } catch (err) {
+          // Server Component context — can't set cookies.
+          // This is expected; the middleware will refresh them.
+          console.debug('[Supabase Server] Cookie set skipped (Server Component):', err);
+        }
+      },
+    },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
 }
+
+/**
+ * Check if Supabase is configured (for feature-flagging demo mode).
+ * Use this in routes that need to fall back to demo data when Supabase is not configured.
+ */
+export const isSupabaseConfigured = (): boolean => {
+  try {
+    validateEnv();
+    return true;
+  } catch {
+    return false;
+  }
+};

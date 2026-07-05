@@ -1,32 +1,38 @@
-import { createBrowserClient as _createBrowserClient } from '@supabase/ssr';
+import { createBrowserClient } from '@supabase/ssr';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
-function isValidSupabaseUrl(url: string | undefined): url is string {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
+let browserClient: SupabaseClient | null = null;
 
 /**
- * Create a Supabase browser client.
- * Returns null when env vars are missing or invalid (demo mode).
- * Callers MUST check the return value before using the client.
+ * Create (or return cached) Supabase browser client.
+ *
+ * Throws if env vars are missing — fail-fast is better than silent demo fallback.
+ *
+ * Usage (in Client Components):
+ *   import { createBrowserClient } from '@/lib/supabase/browser';
+ *   const supabase = createBrowserClient();
  */
-export function createClient() {
+export function createClient(): SupabaseClient {
+  if (browserClient) return browserClient;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!isValidSupabaseUrl(url) || !key) {
-    return null;
+  if (!url || !key) {
+    throw new Error(
+      '[Supabase Browser] Missing env vars. ' +
+      'Required: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY.'
+    );
   }
 
-  try {
-    return _createBrowserClient(url, key);
-  } catch (err) {
-    console.error('[Supabase Browser] Failed to create client:', err);
-    return null;
-  }
+  browserClient = createBrowserClient(url, key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce',
+    },
+  });
+
+  return browserClient;
 }

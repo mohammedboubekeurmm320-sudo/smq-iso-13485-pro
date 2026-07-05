@@ -5,7 +5,6 @@ import type { Organization, OrgSettings, IndustryType } from '@/types/qms';
 import { STANDARDS_BY_INDUSTRY } from '@/types/qms';
 import { useQMSStore } from '@/lib/demo-store';
 import { useAuth } from './AuthContext';
-import { isSupabaseConfigured } from '@/lib/supabase/mode';
 
 interface OrganizationContextType {
   currentOrg: Organization | null;
@@ -37,7 +36,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
   const storeUpdateOrganization = useQMSStore((state) => state.updateOrganization);
   const storeUpdateOrgSettings = useQMSStore((state) => state.updateOrgSettings);
 
-  const isLive = isSupabaseConfigured();
+  const isLive = source === 'supabase';
   const [supabaseOrgs, setSupabaseOrgs] = useState<Organization[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

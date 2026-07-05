@@ -1,138 +1,125 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { rateLimit, getRateLimitConfig } from '@/lib/rate-limit';
-import { updateSession } from '@/lib/supabase/supabase-auth';
-
-function isValidUrl(url: string | undefined): url is string {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
+import { NextResponse, type NextRequest } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 
 /**
- * Next.js Middleware — Supabase session refresh + API rate limiting.
+ * Middleware — refreshes Supabase session and protects routes.
  *
- * In Supabase live mode with a valid session cookie, the middleware
- * refreshes the session and enforces auth on protected routes.
- * In demo mode, it only applies rate limiting to /api/* routes.
+ * Behavior:
+ *   1. Refreshes the Supabase session on every request (handles token rotation)
+ *   2. Returns the user from getUser() (validates the JWT server-side)
+ *   3. Redirects unauthenticated users to /auth/login (except public paths)
+ *   4. Lets authenticated users through
+ *
+ * Public paths (no auth required):
+ *   - /auth/login, /auth/signup, /auth/callback
+ *   - /api/auth/login, /api/auth/signup, /api/auth/session, /api/health
+ *   - Static assets (_next, favicon, etc.) — handled by matcher
  */
+
+const PUBLIC_PATHS = [
+  '/auth/login',
+  '/auth/signup',
+  '/auth/callback',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/api/auth/login',
+  '/api/auth/signup',
+  '/api/auth/session',
+  '/api/health',
+];
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
+}
+
+async function refreshSession(request: NextRequest) {
+  let response = NextResponse.next({ request });
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    // No Supabase config — let the request through (demo mode)
+    return { response, user: null };
+  }
+
+  const supabase = createServerClient(url, key, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        // Set on request (for downstream route handlers)
+        cookiesToSet.forEach(({ name, value, options }) =>
+          request.cookies.set(name, value, options)
+        );
+        // Set on response (for browser)
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          response.cookies.set(name, value, options)
+        );
+      },
+    },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+
+  // IMPORTANT: getUser() validates the JWT server-side.
+  // Do NOT rely on getSession() which only checks cookie presence.
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error) {
+    console.debug('[Middleware] getUser error:', error.message);
+  }
+
+  return { response, user };
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // 1) Refresh Supabase session (no-op in demo mode).
-  const supabaseResponse = await updateSession(request);
-
-  // 2) Auth enforcement — ONLY when Supabase URL is a valid HTTP(S) URL
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const isLive = isValidUrl(supabaseUrl);
-
-  if (isLive) {
-    // Never apply auth enforcement to requests with a file extension
-    // (e.g. /manifest.json, /robots.txt served by public/ directory).
-    if (pathname.includes('.')) {
-      return supabaseResponse;
-    }
-
-    // Public paths that don't require auth
-    const publicPaths = [
-      '/auth/login',
-      '/auth/signup',
-      '/auth/callback',
-      '/api/auth/login',
-      '/api/auth/signup',
-      '/api/auth/session',
-      '/api/auth/logout',
-      '/api/health',
-    ];
-
-    const isPublicPath = publicPaths.some(
-      (p) => pathname === p || pathname.startsWith(p + '/'),
-    );
-
-    if (!isPublicPath) {
-      // Check for Supabase auth cookies
-      const cookies = supabaseResponse.cookies.getAll();
-      const hasAuthToken = cookies.some(
-        (c) =>
-          c.name.includes('sb-') &&
-          (c.name.includes('access-token') || c.name.includes('auth-token')),
-      );
-
-      if (!hasAuthToken) {
-        if (pathname.startsWith('/api/')) {
-          return NextResponse.json(
-            { success: false, error: 'Authentication required' },
-            { status: 401, headers: supabaseResponse.headers },
-          );
-        }
-        // Redirect to login for page routes
-        const loginUrl = new URL('/auth/login', request.url);
-        loginUrl.searchParams.set('redirect', pathname);
-        return NextResponse.redirect(loginUrl);
-      }
-    }
+  // Skip static assets and Next internals
+  if (
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/favicon') ||
+    pathname.includes('.')
+  ) {
+    return NextResponse.next();
   }
 
-  // 3) Rate-limit only API routes
-  if (!pathname.startsWith('/api/')) {
-    return supabaseResponse;
-  }
+  const { response, user } = await refreshSession(request);
 
-  const forwarded = supabaseResponse.headers.get('x-forwarded-for')
-    ?? request.headers.get('x-forwarded-for');
-  const realIp = supabaseResponse.headers.get('x-real-ip')
-    ?? request.headers.get('x-real-ip');
-  const clientIp = forwarded?.split(',')[0]?.trim() || realIp || 'unknown';
-
-  const method = request.method;
-  const config = getRateLimitConfig(method, pathname);
-
-  const methodGroup = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method.toUpperCase())
-    ? 'write'
-    : 'read';
-  const routePrefix = pathname.split('/').slice(0, 3).join('/');
-  const identifier = `${clientIp}:${methodGroup}:${routePrefix}`;
-
-  const result = rateLimit(identifier, config.limit, config.windowMs);
-  const retryAfterSeconds = Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1000));
-
-  if (!result.success) {
-    const response = NextResponse.json(
-      {
-        error: 'Too Many Requests',
-        message: 'Rate limit exceeded. Please try again later.',
-        retryAfter: retryAfterSeconds,
-      },
-      {
-        status: 429,
-        headers: {
-          'Retry-After': String(retryAfterSeconds),
-          'X-RateLimit-Limit': String(config.limit),
-          'X-RateLimit-Remaining': '0',
-          'X-RateLimit-Reset': String(Math.ceil(result.resetAt / 1000)),
-        },
-      },
-    );
-    supabaseResponse.cookies.getAll().forEach((c) => response.cookies.set(c));
+  // If public path, let it through regardless of auth state
+  if (isPublicPath(pathname)) {
     return response;
   }
 
-  supabaseResponse.headers.set('X-RateLimit-Limit', String(config.limit));
-  supabaseResponse.headers.set('X-RateLimit-Remaining', String(result.remaining));
-  supabaseResponse.headers.set('X-RateLimit-Reset', String(Math.ceil(result.resetAt / 1000)));
+  // If no user and not a public path → redirect to login
+  if (!user) {
+    const loginUrl = new URL('/auth/login', request.url);
+    loginUrl.searchParams.set('next', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
 
-  return supabaseResponse;
+  // Authenticated user — let them through
+  return response;
 }
 
-/**
- * Middleware matcher — skip Next.js internals, static assets, and JSON files.
- */
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|json|manifest|robots\\.txt)$).*)',
+    /*
+     * Match all request paths except for:
+     * - _next/static (static files)
+     * - _next/image (image optimization)
+     * - favicon.ico (favicon)
+     * - public assets (svg, png, jpg, etc.)
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map)$).*)',
   ],
 };
