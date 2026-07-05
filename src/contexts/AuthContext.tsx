@@ -153,29 +153,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const data = await res.json();
+      const json = await res.json();
+      const data = json.data || json; // unwrap apiSuccess wrapper
 
-      if (!data.user) {
+      const authUser = data.user || null;
+      if (!authUser) {
         setState({
-          user: null,
-          profile: null,
-          organization: null,
-          memberships: [],
-          loading: false,
-          error: null,
-          requiresOnboarding: false,
+          user: null, profile: null, organization: null,
+          memberships: [], loading: false, error: null, requiresOnboarding: false,
         });
         return;
       }
 
+      // Profile & org are nested inside user in the API response
+      const profile = data.profile || authUser.profile || null;
+      const organization = data.organization || authUser.organization || null;
+      const memberships = data.memberships || authUser.memberships || [];
+
       setState({
-        user: data.user,
-        profile: data.profile,
-        organization: data.organization,
-        memberships: data.memberships || [],
+        user: { id: authUser.id, email: authUser.email },
+        profile: profile ? {
+          id: profile.id,
+          email: profile.email,
+          fullName: profile.full_name ?? profile.fullName ?? null,
+          role: profile.role || 'admin',
+          department: profile.department ?? null,
+          organizationId: profile.organization_id ?? profile.organizationId ?? null,
+        } : null,
+        organization: organization ? {
+          id: organization.id,
+          name: organization.name,
+          slug: organization.slug,
+          subscriptionStatus: organization.subscriptionStatus ?? organization.subscription_status ?? 'trial',
+          settings: organization.settings ?? null,
+        } : null,
+        memberships,
         loading: false,
         error: null,
-        requiresOnboarding: data.requiresOnboarding || false,
+        requiresOnboarding: !profile?.organization_id && !profile?.organizationId,
       });
     } catch (err) {
       console.error('[AuthContext] refreshSession error:', err);
@@ -206,32 +221,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify({ email, password }),
         });
 
-        const data = await res.json();
+        const json = await res.json();
 
-        if (!res.ok || !data.success) {
-          const errorMsg = data.error || 'Login failed';
-          setState((prev) => ({
-            ...prev,
-            loading: false,
-            error: errorMsg,
-          }));
+        if (!res.ok || !json.success) {
+          const errorMsg = json.error || 'Login failed';
+          setState((prev) => ({ ...prev, loading: false, error: errorMsg }));
           return { success: false, error: errorMsg };
         }
 
-        // Update state from the login response
+        // Unwrap apiSuccess({ data: { user, session } })
+        const payload = json.data || json;
+        const authUser = payload.user || {};
+        const profile = payload.profile || authUser.profile || null;
+        const organization = payload.organization || authUser.organization || null;
+        const memberships = payload.memberships || authUser.memberships || [];
+
         setState({
-          user: data.user,
-          profile: data.profile,
-          organization: data.organization,
-          memberships: [],
+          user: { id: authUser.id, email: authUser.email },
+          profile: profile ? {
+            id: profile.id,
+            email: profile.email,
+            fullName: profile.full_name ?? profile.fullName ?? null,
+            role: profile.role || 'admin',
+            department: profile.department ?? null,
+            organizationId: profile.organization_id ?? profile.organizationId ?? null,
+          } : null,
+          organization: organization ? {
+            id: organization.id,
+            name: organization.name,
+            slug: organization.slug,
+            subscriptionStatus: organization.subscriptionStatus ?? organization.subscription_status ?? 'trial',
+            settings: organization.settings ?? null,
+          } : null,
+          memberships,
           loading: false,
           error: null,
-          requiresOnboarding: data.requiresOnboarding || false,
+          requiresOnboarding: !profile?.organization_id && !profile?.organizationId,
         });
 
         return {
           success: true,
-          requiresOnboarding: data.requiresOnboarding,
+          requiresOnboarding: !profile?.organization_id && !profile?.organizationId,
         };
       } catch (err) {
         console.error('[AuthContext] login error:', err);
