@@ -104,8 +104,8 @@ export function TrainingView() {
   const profiles = store.profiles;
   const documents = store.documents;
   const { getApprovedTemplates, hasApprovedTemplate, moduleTypeLabels } = useRecordWorkflow();
-  const approvedTrainingTemplates = getApprovedTemplates('TRAINING');
-  const trainingHasApprovedTemplate = hasApprovedTemplate('TRAINING');
+  const approvedTrainingTemplates = getApprovedTemplates('training');
+  const trainingHasApprovedTemplate = hasApprovedTemplate('training');
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');

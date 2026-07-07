@@ -132,7 +132,7 @@ function getAvailableTransitions(current: RiskStatus): RiskStatus[] {
   switch (current) {
     case 'Open': return ['Mitigated', 'Accepted'];
     case 'Mitigated': return ['Closed'];
-    case 'Accepted': return [];
+    case 'Accepted': return ['Closed'];
     case 'Closed': return [];
     default: return [];
   }

@@ -182,8 +182,8 @@ export function OosOotView() {
   const profiles = store.profiles;
   const capas = store.capas;
   const { getApprovedTemplates, hasApprovedTemplate } = useRecordWorkflow();
-  const approvedOosTemplates = getApprovedTemplates('OOS_OOT');
-  const oosHasApprovedTemplate = hasApprovedTemplate('OOS_OOT');
+  const approvedOosTemplates = getApprovedTemplates('oos_oot');
+  const oosHasApprovedTemplate = hasApprovedTemplate('oos_oot');
 
   // Filter to only OOS/OOT NCRs
   const oosOotNcrs = useMemo(() => ncrs.filter(n => n.isOosOot), [ncrs]);

@@ -423,7 +423,13 @@ export function FormView() {
       id: `fi-${Date.now()}`,
       templateId: fillingTemplate.id,
       templateVersion: fillingTemplate.version,
-      referenceNumber: `FORM-2024-${String(instances.length + 1).padStart(3, '0')}`,
+      const nextFormNum = instances.length > 0
+        ? Math.max(...instances.map(i => {
+            const m = i.referenceNumber.match(/(\d+)$/);
+            return m ? parseInt(m[1], 10) : 0;
+          })) + 1
+        : 1;
+      const referenceNumber = `FORM-${new Date().getFullYear()}-${String(nextFormNum).padStart(3, '0')}`,
       values: formValues,
       status: 'Submitted',
       isLocked: false,

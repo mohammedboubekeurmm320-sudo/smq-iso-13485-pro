@@ -279,7 +279,13 @@ export function ChangeControlView() {
 
     const newCC: ChangeControl = {
       id: `cc-${Date.now()}`,
-      ccNumber: `CC-2024-${String(changeControls.length + 1).padStart(3, '0')}`,
+      const nextCcNum = changeControls.length > 0
+        ? Math.max(...changeControls.map(c => {
+            const m = c.ccNumber.match(/(\d+)$/);
+            return m ? parseInt(m[1], 10) : 0;
+          })) + 1
+        : 1;
+      const ccNumber = `CC-${new Date().getFullYear()}-${String(nextCcNum).padStart(3, '0')}`,
       title: formTitle,
       type: formType,
       status: 'Requested',

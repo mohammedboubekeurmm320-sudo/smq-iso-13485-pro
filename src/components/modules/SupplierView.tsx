@@ -123,8 +123,8 @@ export function SupplierView() {
   const suppliers = store.suppliers;
   const documents = store.documents;
   const { getApprovedTemplates, hasApprovedTemplate } = useRecordWorkflow();
-  const approvedSupplierTemplates = getApprovedTemplates('SUPPLIER');
-  const supplierHasApprovedTemplate = hasApprovedTemplate('SUPPLIER');
+  const approvedSupplierTemplates = getApprovedTemplates('supplier');
+  const supplierHasApprovedTemplate = hasApprovedTemplate('supplier');
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');

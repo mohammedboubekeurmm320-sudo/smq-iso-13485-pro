@@ -233,7 +233,13 @@ export function DeviationView() {
   const handleCreate = () => {
     const newDev: Deviation = {
       id: `dev-${Date.now()}`,
-      devNumber: `DEV-2024-${String(deviations.length + 1).padStart(3, '0')}`,
+      const nextDevNum = deviations.length > 0
+        ? Math.max(...deviations.map(d => {
+            const m = d.devNumber.match(/(\d+)$/);
+            return m ? parseInt(m[1], 10) : 0;
+          })) + 1
+        : 1;
+      const devNumber = `DEV-${new Date().getFullYear()}-${String(nextDevNum).padStart(3, '0')}`,
       title: form.title,
       type: form.type,
       status: 'Open',

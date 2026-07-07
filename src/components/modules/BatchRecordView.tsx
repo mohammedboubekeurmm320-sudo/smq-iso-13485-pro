@@ -116,8 +116,8 @@ export function BatchRecordView() {
   const batchRecords = store.batchRecords;
   const profiles = store.profiles;
   const { getApprovedTemplates, hasApprovedTemplate } = useRecordWorkflow();
-  const approvedBatchTemplates = getApprovedTemplates('BATCH_RECORD');
-  const batchHasApprovedTemplate = hasApprovedTemplate('BATCH_RECORD');
+  const approvedBatchTemplates = getApprovedTemplates('batch_record');
+  const batchHasApprovedTemplate = hasApprovedTemplate('batch_record');
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -201,8 +201,14 @@ export function BatchRecordView() {
   };
 
   const generateLotNumber = () => {
-    const count = batchRecords.length + 1;
-    return `BN-${new Date().getFullYear()}-${String(count).padStart(3, '0')}`;
+    const year = new Date().getFullYear();
+    const nextBnNum = batchRecords.length > 0
+      ? Math.max(...batchRecords.map(b => {
+          const m = b.lotNumber.match(/(\d+)$/);
+          return m ? parseInt(m[1], 10) : 0;
+        })) + 1
+      : 1;
+    return `BN-${year}-${String(nextBnNum).padStart(3, '0')}`;
   };
 
   const addFormRawMaterial = () => {

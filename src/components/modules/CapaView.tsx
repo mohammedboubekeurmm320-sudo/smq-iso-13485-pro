@@ -233,7 +233,13 @@ export function CapaView() {
 
     const newCapa: Capa = {
       id: `capa-${Date.now()}`,
-      capaNumber: `CAPA-2024-${String(capas.length + 1).padStart(3, '0')}`,
+      const nextCapaNum = capas.length > 0
+        ? Math.max(...capas.map(c => {
+            const m = c.capaNumber.match(/(\d+)$/);
+            return m ? parseInt(m[1], 10) : 0;
+          })) + 1
+        : 1;
+      const capaNumber = `CAPA-${new Date().getFullYear()}-${String(nextCapaNum).padStart(3, '0')}`,
       title: formTitle,
       type: formType,
       status: 'Open',

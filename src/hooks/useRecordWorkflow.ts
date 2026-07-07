@@ -237,8 +237,9 @@ function resolveBranchTargets(
     }
   }
 
-  // If current status IS a branch state, add its return paths
-  if (flow.branches[currentStatus]) {
+  // If current status IS a branch state AND NOT terminal, add its return paths
+  // (terminal states like 'Rejected' for change_control must not allow revival)
+  if (flow.branches[currentStatus] && !(flow.terminal?.includes(currentStatus))) {
     targets.push(...flow.branches[currentStatus]);
   }
 
@@ -413,11 +414,11 @@ export function useRecordWorkflow(): UseRecordWorkflowReturn {
   // Layer 1 guards
   // -----------------------------------------------------------------------
   const getApprovedTemplates = useCallback((moduleType: string): FormTemplate[] => {
-    return store.getApprovedTemplatesForModule(moduleType);
+    return store.getApprovedTemplatesForModule(moduleType.toLowerCase());
   }, [store]);
 
   const hasApprovedTemplate = useCallback((moduleType: string): boolean => {
-    return store.getApprovedTemplatesForModule(moduleType).length > 0;
+    return store.getApprovedTemplatesForModule(moduleType.toLowerCase()).length > 0;
   }, [store]);
 
   // -----------------------------------------------------------------------
@@ -438,7 +439,7 @@ export function useRecordWorkflow(): UseRecordWorkflowReturn {
     hasApprovedTemplate,
     getStatusFlow,
     getModuleTypeLabel,
-    moduleTypeLabels: SYSTEM_MODULE_LABELS,
+    moduleTypeLabels: dynamicLabels,
     recordTypes,
     isLoadingRecordTypes,
   }), [

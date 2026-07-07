@@ -1,10 +1,20 @@
+// src/components/shared/ElectronicSignatureModal.tsx
+// ============================================================================
+// Electronic Signature Modal — 21 CFR Part 11 compliant.
+//
+// CRITICAL FIX vs old version:
+//   - The password is now VERIFIED via /api/auth/verify-signature
+//     (the old version only checked password.trim() !== '' — purely cosmetic).
+//   - The signature hash is generated server-side with HMAC-SHA256.
+//   - The signer's full name and role are passed back for persistence.
+// ============================================================================
+
 'use client';
 
-import React, { useState } from 'react';
-import { useQMSStore } from '@/lib/demo-store';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import type { SignatureType } from '@/types/qms';
-import { AlertTriangle, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ShieldCheck, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -18,7 +28,15 @@ import { cn } from '@/lib/utils';
 interface ElectronicSignatureModalProps {
   open: boolean;
   onClose: () => void;
-  onSign: (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType; reason?: string }) => void;
+  onSign: (signatureData: {
+    signatureHash: string;
+    signedAt: string;
+    signatureType: SignatureType;
+    signedById: string;
+    signerName: string;
+    signerRole: string;
+    reason?: string;
+  }) => void;
   recordTitle: string;
   recordId: string;
   signatureType: SignatureType;
@@ -46,50 +64,78 @@ export function ElectronicSignatureModal({
   recordId,
   signatureType,
 }: ElectronicSignatureModalProps) {
-  const { currentUser } = useAuth();
-  const store = useQMSStore();
+  const { user, profile } = useAuth();
 
   const [password, setPassword] = useState('');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
 
-  const handleConfirm = () => {
+  // Reset state when modal opens/closes
+  useEffect(() => {
+    if (!open) {
+      setPassword('');
+      setReason('');
+      setError(null);
+      setVerifying(false);
+    }
+  }, [open]);
+
+  const handleConfirm = async () => {
     if (!password.trim()) {
       setError('Password is required for electronic signature');
       return;
     }
 
-    // Generate signature hash
-    const signatureHash = store.generateSignatureHash(
-      currentUser?.id || 'unknown',
-      recordId,
-      signatureType
-    );
-
-    // Log audit trail entry
-    store.logAudit('SIGN', 'ElectronicSignature', recordId, undefined, {
-      signatureType,
-      recordTitle,
-      signerId: currentUser?.id,
-      signerEmail: currentUser?.email,
-    });
-
-    // Call onSign callback
-    onSign({
-      signatureHash,
-      signedAt: new Date().toISOString(),
-      signatureType,
-      reason: reason || undefined,
-    });
-
-    // Reset and close
-    setPassword('');
-    setReason('');
+    setVerifying(true);
     setError(null);
-    onClose();
+
+    try {
+      const res = await fetch('/api/auth/verify-signature', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          password,
+          recordId,
+          signatureType,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setError(data.error || 'Signature verification failed');
+        setVerifying(false);
+        return;
+      }
+
+      // Call onSign callback with the server-generated signature data
+      onSign({
+        signatureHash: data.signatureHash,
+        signedAt: data.signedAt,
+        signatureType,
+        signedById: data.signedById,
+        signerName: data.signerName,
+        signerRole: data.signerRole,
+        reason: reason || undefined,
+      });
+
+      // Reset and close
+      setPassword('');
+      setReason('');
+      setError(null);
+      onClose();
+    } catch (err) {
+      console.error('[ElectronicSignatureModal] verify error:', err);
+      setError('Network error. Please check your connection and try again.');
+    } finally {
+      setVerifying(false);
+    }
   };
 
   const handleClose = () => {
+    if (verifying) return; // Don't close while verifying
     setPassword('');
     setReason('');
     setError(null);
@@ -122,7 +168,9 @@ export function ElectronicSignatureModal({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Signer:</span>
-              <span className="text-sm font-medium">{currentUser?.fullName || currentUser?.email || 'Unknown'}</span>
+              <span className="text-sm font-medium">
+                {profile?.fullName || user?.email || 'Unknown'}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Signature Type:</span>
@@ -142,6 +190,8 @@ export function ElectronicSignatureModal({
               onChange={(e) => { setPassword(e.target.value); setError(null); }}
               placeholder="Enter your password to sign"
               autoComplete="off"
+              disabled={verifying}
+              autoFocus
             />
           </div>
 
@@ -154,6 +204,7 @@ export function ElectronicSignatureModal({
               onChange={(e) => setReason(e.target.value)}
               placeholder="Enter reason for this signature..."
               rows={2}
+              disabled={verifying}
             />
           </div>
 
@@ -180,12 +231,30 @@ export function ElectronicSignatureModal({
 
           {/* Action Buttons */}
           <div className="flex gap-3 pt-2">
-            <Button variant="outline" className="flex-1" onClick={handleClose}>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={handleClose}
+              disabled={verifying}
+            >
               Cancel
             </Button>
-            <Button className="flex-1" onClick={handleConfirm} disabled={!password.trim()}>
-              <ShieldCheck className="h-4 w-4 mr-2" />
-              Sign
+            <Button
+              className="flex-1"
+              onClick={handleConfirm}
+              disabled={!password.trim() || verifying}
+            >
+              {verifying ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="h-4 w-4 mr-2" />
+                  Sign
+                </>
+              )}
             </Button>
           </div>
         </div>
