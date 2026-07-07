@@ -1,213 +1,225 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { apiError } from '../../_lib/response';
-import { createAdminClient } from '@/lib/supabase/admin';
-import { isLiveMode } from '../../_lib/supabase';
-
-async function createRequestClient(request: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createServerClient(url, key, {
-    cookies: {
-      getAll() { return request.cookies.getAll(); },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-      },
-    },
-  });
-}
-
-function validateOnboardInput(body: Record<string, unknown>) {
-  const errors: string[] = [];
-  const name = body.name;
-  if (!name || typeof name !== 'string' || name.trim().length < 2) {
-    errors.push('name: required, minimum 2 characters');
-  }
-  let slug = body.slug;
-  if (!slug || typeof slug !== 'string' || slug.trim().length < 2) {
-    if (typeof name === 'string' && name.trim().length >= 2) {
-      slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
-    } else {
-      errors.push('slug: required (auto-generated from name when omitted)');
-    }
-  } else {
-    slug = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
-  }
-  const industryType = body.industryType;
-  if (industryType && !['medical_device', 'pharmaceutical', 'biotech', 'ivd', 'combination_product'].includes(industryType as string)) {
-    errors.push('industryType: must be one of medical_device, pharmaceutical, biotech, ivd, combination_product');
-  }
-  return {
-    valid: errors.length === 0,
-    errors,
-    data: {
-      name: (name as string).trim(),
-      slug: slug as string,
-      industryType: (industryType as string) || 'medical_device',
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------
+// src/app/api/organizations/onboard/route.ts
+// ============================================================================
 // POST /api/organizations/onboard
+// Body: { name: string, slug?: string, settings?: object }
 //
-// Creates an organization AND adds the authenticated user as owner.
-// Uses admin client (service_role) for inserts (bypasses RLS), but validates
-// the user's session first via the request-based server client.
-// ---------------------------------------------------------------------------
+// Creates a new organization for the authenticated user.
+// Uses the create_organization_for_user RPC for atomic creation.
+//
+// Returns:
+//   201 — { success: true, organization: {...} }
+//   400 — missing name
+//   401 — not authenticated
+//   409 — slug collision
+//   500 — server error
+// ============================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .substring(0, 50);
+}
+
 export async function POST(request: NextRequest) {
+  let body: { name?: unknown; slug?: unknown; settings?: unknown };
   try {
-    if (!isLiveMode()) {
-      return apiError('On-demand organization creation requires Supabase (live mode).', 400);
-    }
-
-    // 1) Authenticate the requesting user via session cookies
-    const serverClient = await createRequestClient(request);
-    if (!serverClient) {
-      console.error('[Onboard] createRequestClient returned null');
-      return apiError('Server configuration error', 500);
-    }
-
-    const {
-      data: { user: authUser },
-      error: authError,
-    } = await serverClient.auth.getUser();
-
-    if (authError) {
-      console.error('[Onboard] getUser error:', authError.message);
-      return apiError('Authentication required', 401);
-    }
-
-    if (!authUser) {
-      console.warn('[Onboard] No user in session');
-      return apiError('Authentication required', 401);
-    }
-
-    console.log('[Onboard] Authenticated user:', authUser.id, authUser.email);
-
-    // 2) Parse and validate request body
-    const body = await request.json();
-    const validation = validateOnboardInput(body);
-    if (!validation.valid) {
-      return apiError('Validation failed', 400, validation.errors);
-    }
-    const { name, slug, industryType } = validation.data;
-
-    // 3) Use admin client (bypasses RLS)
-    const admin = createAdminClient();
-    if (!admin) {
-      console.error('[Onboard] createAdminClient returned null');
-      return apiError('Server configuration error — admin client unavailable', 500);
-    }
-
-    // 3a) Check slug uniqueness
-    const { data: existingOrg, error: slugCheckErr } = await admin
-      .from('organizations')
-      .select('id')
-      .eq('slug', slug)
-      .maybeSingle();
-
-    if (slugCheckErr) {
-      console.error('[Onboard] Slug check failed:', slugCheckErr.message);
-      return apiError('Failed to check organization availability', 500);
-    }
-    if (existingOrg) {
-      return apiError('An organization with this slug already exists', 409);
-    }
-
-    // 3b) Create organization with default settings
-    const defaultSettings = {
-      setup_completed: false,
-      industry_type: industryType,
-      applicable_standards: [],
-      active_modules: ['documents', 'capa', 'ncr', 'audits', 'training', 'reports', 'compliance'],
-      company_name: name,
-      require_electronic_signatures: true,
-      require_prerequisite_docs: false,
-      audit_trail_enabled: true,
-      notification_settings: {
-        email_notifications: true,
-        due_date_reminders: true,
-        approval_requests: true,
-      },
-    };
-
-    const { data: newOrg, error: orgError } = await admin
-      .from('organizations')
-      .insert({
-        name,
-        slug,
-        subscription_status: 'trial',
-        settings: defaultSettings,
-      })
-      .select()
-      .single();
-
-    if (orgError) {
-      console.error('[Onboard] Org insert failed:', orgError.message, orgError.code);
-      if (orgError.code === '23505') {
-        return apiError('An organization with this slug already exists', 409);
-      }
-      return apiError('Failed to create organization', 500);
-    }
-
-    console.log('[Onboard] Organization created:', newOrg.id, newOrg.name);
-
-    // 3c) Add the user as organization owner
-    const { error: memberError } = await admin.from('organization_members').insert({
-      organization_id: newOrg.id,
-      user_id: authUser.id,
-      role: 'owner',
-      status: 'active',
-    });
-
-    if (memberError) {
-      console.error('[Onboard] Member insert failed:', memberError.message);
-      await admin.from('organizations').delete().eq('id', newOrg.id);
-      return apiError('Failed to add user as organization member', 500);
-    }
-
-    // 3d) Update the user's profile with the new organization_id
-    try {
-      await admin
-        .from('profiles')
-        .update({ organization_id: newOrg.id, updated_at: new Date().toISOString() })
-        .eq('id', authUser.id)
-        .is('organization_id', null);
-    } catch (err) {
-      console.warn('[Onboard] Profile update failed (non-fatal):', err);
-    }
-
-    // 3e) Audit trail — non-fatal
-    try {
-      await admin.from('audit_trails').insert({
-        audit_action: 'CREATE',
-        table_name: 'organizations',
-        record_id: newOrg.id,
-        user_id: authUser.id,
-        new_values: JSON.stringify({ name, slug, industryType }),
-        organization_id: newOrg.id,
-      });
-    } catch (err) {
-      console.warn('[Onboard] Audit trail insert failed (non-fatal):', err);
-    }
-
-    // 4) Return the created organization
-    const org = {
-      id: newOrg.id,
-      name: newOrg.name,
-      slug: newOrg.slug,
-      subscriptionStatus: newOrg.subscription_status,
-      settings: JSON.stringify(newOrg.settings),
-      createdAt: newOrg.created_at,
-      updatedAt: newOrg.updated_at,
-    };
-
-    console.log('[Onboard] Success — returning org:', org.id);
-    return NextResponse.json({ success: true, data: org }, { status: 201 });
-  } catch (error) {
-    console.error('[Onboard] Unhandled error:', error);
-    return apiError('Failed to onboard organization', 500, error instanceof Error ? error.message : undefined);
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: 'Invalid JSON body' },
+      { status: 400 }
+    );
   }
+
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const slugInput = typeof body.slug === 'string' ? body.slug.trim() : '';
+  const settings =
+    body.settings && typeof body.settings === 'object' && !Array.isArray(body.settings)
+      ? (body.settings as Record<string, unknown>)
+      : {};
+
+  if (!name) {
+    return NextResponse.json(
+      { success: false, error: 'Organization name is required' },
+      { status: 400 }
+    );
+  }
+
+  const slug = slugify(slugInput || name);
+  if (!slug) {
+    return NextResponse.json(
+      { success: false, error: 'Could not generate a valid slug from the organization name' },
+      { status: 400 }
+    );
+  }
+
+  // 1. Verify user is authenticated
+  let supabase;
+  try {
+    supabase = await createClient();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: 'Authentication service unavailable' },
+      { status: 503 }
+    );
+  }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json(
+      { success: false, error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
+  // 2. Call create_organization_for_user RPC (atomic)
+  const admin = createAdminClient();
+  if (!admin) {
+    return NextResponse.json(
+      { success: false, error: 'Service role unavailable — contact administrator' },
+      { status: 503 }
+    );
+  }
+
+  const { data: orgId, error: rpcError } = await admin.rpc(
+    'create_organization_for_user',
+    {
+      p_user_id: user.id,
+      p_name: name,
+      p_slug: slug,
+      p_settings: settings,
+    }
+  );
+
+  if (rpcError) {
+    if (rpcError.code === '23505' || rpcError.message.includes('already exists')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Organization slug "${slug}" is already taken. Please choose a different name.`,
+          code: 'SLUG_COLLISION',
+        },
+        { status: 409 }
+      );
+    }
+    console.error('[Onboard] RPC error:', rpcError.message);
+    return NextResponse.json(
+      { success: false, error: 'Failed to create organization' },
+      { status: 500 }
+    );
+  }
+
+  // 3. Fetch the created org details
+  const { data: orgData, error: orgFetchError } = await admin
+    .from('organizations')
+    .select('id, name, slug, subscription_status, settings, created_at, updated_at')
+    .eq('id', orgId as string)
+    .maybeSingle();
+
+  if (orgFetchError || !orgData) {
+    // Org was created but we couldn't fetch it — return minimal info
+    return NextResponse.json(
+      {
+        success: true,
+        organization: {
+          id: orgId as string,
+          name,
+          slug,
+          subscriptionStatus: 'trial',
+          settings: {},
+        },
+      },
+      { status: 201 }
+    );
+  }
+
+  // 4. Set current_org_id cookie via response (so the user lands in their new org)
+  const response = NextResponse.json(
+    {
+      success: true,
+      organization: {
+        id: (orgData as { id: string }).id,
+        name: (orgData as { name: string }).name,
+        slug: (orgData as { slug: string }).slug,
+        subscriptionStatus: (orgData as { subscription_status: string }).subscription_status,
+        settings: (orgData as { settings: Record<string, unknown> | null }).settings || {},
+      },
+    },
+    { status: 201 }
+  );
+
+  response.cookies.set('current_org_id', orgId as string, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+  });
+
+  return response;
+}
+
+/**
+ * GET /api/organizations/onboard
+ * Returns the user's current organizations (for the onboarding wizard).
+ */
+export async function GET() {
+  let supabase;
+  try {
+    supabase = await createClient();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { success: false, error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
+  const { data: memberships, error } = await supabase
+    .from('organization_members')
+    .select(
+      `organization_id, role, status,
+       organizations ( id, name, slug, subscription_status )`
+    )
+    .eq('user_id', user.id)
+    .eq('status', 'active');
+
+  if (error) {
+    console.error('[Onboard GET] Error:', error.message);
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch organizations' },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({
+    success: true,
+    memberships: (memberships || []).map((m) => ({
+      organizationId: (m as { organization_id: string }).organization_id,
+      role: (m as { role: string }).role,
+      organization: (m as { organizations: Record<string, unknown> | null }).organizations,
+    })),
+  });
 }
