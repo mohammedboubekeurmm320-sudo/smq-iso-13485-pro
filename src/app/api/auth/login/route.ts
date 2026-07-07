@@ -1,20 +1,16 @@
+// src/app/api/auth/login/route.ts
+// ============================================================================
+// POST /api/auth/login
+// Body: { email: string, password: string }
+//
+// Authenticates the user with Supabase Auth.
+// On success, sets httpOnly cookies (handled by Supabase SDK).
+// NEVER returns the access_token in the body (anti-XSS).
+// ============================================================================
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-/**
- * POST /api/auth/login
- * Body: { email: string, password: string }
- *
- * Authenticates the user with Supabase Auth.
- * On success, sets httpOnly cookies (handled by Supabase SDK).
- *
- * Returns:
- *   200 — { success: true, user: { id, email }, organization: { id, name, slug } | null }
- *   400 — { error: 'Email and password are required' }
- *   401 — { error: 'Invalid email or password' }
- *   403 — { error: 'Email not confirmed. Please check your inbox.' }
- *   500 — { error: 'Login failed. Please try again.' }
- */
 export async function POST(request: NextRequest) {
   let body: { email?: unknown; password?: unknown };
   try {
@@ -151,7 +147,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Build response — DO NOT include access_token (cookies handle it)
-  const response = NextResponse.json({
+  return NextResponse.json({
     success: true,
     user: {
       id: data.user.id,
@@ -177,6 +173,4 @@ export async function POST(request: NextRequest) {
       : null,
     requiresOnboarding: !profile?.organization_id,
   });
-
-  return response;
 }

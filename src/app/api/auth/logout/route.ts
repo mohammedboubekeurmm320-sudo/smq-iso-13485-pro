@@ -1,12 +1,14 @@
+// src/app/api/auth/logout/route.ts
+// ============================================================================
+// POST /api/auth/logout
+//
+// Signs out the user globally (revokes the refresh token server-side)
+// and explicitly clears all sb-* cookies so the browser stops sending them.
+// ============================================================================
+
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-/**
- * POST /api/auth/logout
- *
- * Signs out the user globally (revokes the refresh token server-side)
- * and explicitly clears all sb-* cookies so the browser stops sending them.
- */
 export async function POST() {
   let supabase;
   try {
@@ -42,22 +44,19 @@ export async function POST() {
  * "ghost sessions" where the browser still sends expired tokens.
  */
 function clearSupabaseCookies(response: NextResponse) {
-  // We don't have direct access to request cookies here, so we set
-  // the most common Supabase cookie names to empty with maxAge=0.
-  // The browser will delete them.
   const cookieNames = [
     'sb-access-token',
     'sb-refresh-token',
     'sb-localhost-auth-token',
     'sb-production-auth-token',
+    'current_org_id',
   ];
 
-  // Also handle the project-specific cookie prefix (sb-<project-ref>-auth-token)
-  // The project ref is the first 20 chars of the Supabase URL subdomain.
+  // Handle the project-specific cookie prefix (sb-<project-ref>-auth-token)
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (url) {
     try {
-      const hostname = new URL(url).hostname; // e.g. qhstvynjkrygwxilqaih.supabase.co
+      const hostname = new URL(url).hostname;
       const projectRef = hostname.split('.')[0];
       if (projectRef) {
         cookieNames.push(`sb-${projectRef}-auth-token`);

@@ -1,20 +1,16 @@
+// src/middleware.ts
+// ============================================================================
+// Middleware — refreshes Supabase session and protects routes.
+//
+// Behavior:
+//   1. Refreshes the Supabase session on every request (handles token rotation)
+//   2. Returns the user from getUser() (validates the JWT server-side)
+//   3. Redirects unauthenticated users to /auth/login (except public paths)
+//   4. Lets authenticated users through
+// ============================================================================
+
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
-
-/**
- * Middleware — refreshes Supabase session and protects routes.
- *
- * Behavior:
- *   1. Refreshes the Supabase session on every request (handles token rotation)
- *   2. Returns the user from getUser() (validates the JWT server-side)
- *   3. Redirects unauthenticated users to /auth/login (except public paths)
- *   4. Lets authenticated users through
- *
- * Public paths (no auth required):
- *   - /auth/login, /auth/signup, /auth/callback
- *   - /api/auth/login, /api/auth/signup, /api/auth/session, /api/health
- *   - Static assets (_next, favicon, etc.) — handled by matcher
- */
 
 const PUBLIC_PATHS = [
   '/auth/login',
@@ -25,7 +21,6 @@ const PUBLIC_PATHS = [
   '/api/auth/login',
   '/api/auth/signup',
   '/api/auth/session',
-  '/api/auth/logout',
   '/api/health',
 ];
 
@@ -41,7 +36,7 @@ async function refreshSession(request: NextRequest) {
 
   if (!url || !key) {
     // No Supabase config — let the request through (demo mode)
-    return { response, user: null };
+    return { response, user: null as null | { id: string } };
   }
 
   const supabase = createServerClient(url, key, {
@@ -50,21 +45,14 @@ async function refreshSession(request: NextRequest) {
         return request.cookies.getAll();
       },
       setAll(cookiesToSet) {
-        // Set on request (for downstream route handlers)
         cookiesToSet.forEach(({ name, value, options }) =>
           request.cookies.set(name, value, options)
         );
-        // Set on response (for browser)
         response = NextResponse.next({ request });
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options)
         );
       },
-    },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
     },
   });
 
@@ -98,6 +86,10 @@ export async function middleware(request: NextRequest) {
 
   // If public path, let it through regardless of auth state
   if (isPublicPath(pathname)) {
+    // If user is authenticated and tries to access /auth/login, redirect to dashboard
+    if (user && (pathname === '/auth/login' || pathname === '/auth/signup')) {
+      return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
     return response;
   }
 

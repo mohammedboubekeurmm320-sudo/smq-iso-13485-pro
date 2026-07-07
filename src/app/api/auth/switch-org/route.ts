@@ -1,3 +1,9 @@
+// src/app/api/auth/switch-org/route.ts
+// ============================================================================
+// POST /api/auth/switch-org  — Switch the user's current organization
+// GET  /api/auth/switch-org  — List all orgs the user is a member of
+// ============================================================================
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
@@ -5,18 +11,10 @@ import { createClient } from '@/lib/supabase/server';
  * POST /api/auth/switch-org
  * Body: { organizationId: string }
  *
- * Switches the user's current organization.
  *   1. Validates the user is authenticated
  *   2. Validates membership via is_org_member RPC
  *   3. Updates profiles.organization_id (default org)
  *   4. Sets a current_org_id cookie (read by BaseService)
- *
- * Returns:
- *   200 — { success: true, organization: {...} }
- *   400 — missing organizationId
- *   401 — not authenticated
- *   403 — not a member of this org
- *   500 — server error
  */
 export async function POST(request: NextRequest) {
   let body: { organizationId?: unknown };

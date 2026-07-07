@@ -1,12 +1,14 @@
+// src/app/page.tsx
+// ============================================================================
+// Root page — redirects based on auth state:
+//   - Not authenticated → /auth/login
+//   - Authenticated but no organization → /setup (onboarding)
+//   - Authenticated with organization → /dashboard
+// ============================================================================
+
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 
-/**
- * Root page — redirects based on auth state:
- *   - Not authenticated → /auth/login
- *   - Authenticated but no organization → /setup (onboarding)
- *   - Authenticated with organization → /dashboard
- */
 export default async function RootPage() {
   let supabase;
   try {

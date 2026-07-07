@@ -1,19 +1,17 @@
+// src/app/api/auth/session/route.ts
+// ============================================================================
+// GET /api/auth/session
+//
+// Returns the current user's session info:
+//   - user (id, email)
+//   - profile (id, email, fullName, role, department, organizationId)
+//   - organization (id, name, slug, subscriptionStatus)
+//   - memberships (all orgs the user belongs to)
+// ============================================================================
+
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-/**
- * GET /api/auth/session
- *
- * Returns the current user's session info:
- *   - user (id, email)
- *   - profile (id, email, fullName, role, department, organizationId)
- *   - organization (id, name, slug, subscriptionStatus)
- *   - memberships (all orgs the user belongs to)
- *
- * Returns:
- *   200 — { user, profile, organization, memberships } or { user: null }
- *   401 — if no authenticated session
- */
 export async function GET() {
   let supabase;
   try {
@@ -31,8 +29,16 @@ export async function GET() {
     return NextResponse.json({ user: null }, { status: 200 });
   }
 
-  // Fetch profile (single row, no RLS issue since RLS allows self-read)
-  let profile: Record<string, unknown> | null = null;
+  // Fetch profile (RLS allows self-read)
+  let profile: {
+    id: string;
+    email: string | null;
+    full_name: string | null;
+    role: string;
+    department: string | null;
+    organization_id: string | null;
+  } | null = null;
+
   try {
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
@@ -50,8 +56,15 @@ export async function GET() {
   }
 
   // Fetch the user's default organization
-  let organization: Record<string, unknown> | null = null;
-  const orgId = (profile as { organization_id?: string } | null)?.organization_id;
+  let organization: {
+    id: string;
+    name: string;
+    slug: string;
+    subscription_status: string;
+    settings: Record<string, unknown> | null;
+  } | null = null;
+
+  const orgId = profile?.organization_id;
   if (orgId) {
     try {
       const { data: orgData, error: orgError } = await supabase
@@ -96,46 +109,28 @@ export async function GET() {
     console.warn('[Session] Memberships fetch failed:', err);
   }
 
-  // Map profile to camelCase for the frontend
-  const p = profile as {
-    id: string;
-    email: string | null;
-    full_name: string | null;
-    role: string;
-    department: string | null;
-    organization_id: string | null;
-  } | null;
-
-  const o = organization as {
-    id: string;
-    name: string;
-    slug: string;
-    subscription_status: string;
-    settings: Record<string, unknown> | null;
-  } | null;
-
   return NextResponse.json({
     user: {
       id: user.id,
       email: user.email,
     },
-    profile: p
+    profile: profile
       ? {
-          id: p.id,
-          email: p.email,
-          fullName: p.full_name,
-          role: p.role,
-          department: p.department,
-          organizationId: p.organization_id,
+          id: profile.id,
+          email: profile.email,
+          fullName: profile.full_name,
+          role: profile.role,
+          department: profile.department,
+          organizationId: profile.organization_id,
         }
       : null,
-    organization: o
+    organization: organization
       ? {
-          id: o.id,
-          name: o.name,
-          slug: o.slug,
-          subscriptionStatus: o.subscription_status,
-          settings: o.settings,
+          id: organization.id,
+          name: organization.name,
+          slug: organization.slug,
+          subscriptionStatus: organization.subscription_status,
+          settings: organization.settings,
         }
       : null,
     memberships: memberships.map((m) => ({
@@ -150,6 +145,6 @@ export async function GET() {
           }
         : null,
     })),
-    requiresOnboarding: !p?.organization_id,
+    requiresOnboarding: !profile?.organization_id,
   });
 }

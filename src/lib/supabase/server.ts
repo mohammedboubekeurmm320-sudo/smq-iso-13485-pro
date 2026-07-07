@@ -1,18 +1,20 @@
+// src/lib/supabase/server.ts
+// ============================================================================
+// Supabase server client — throws on misconfiguration (no silent null return).
+// Used by Route Handlers, Server Components, Server Actions.
+// ============================================================================
+
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-/**
- * Validate Supabase environment configuration.
- * Throws a clear error if env vars are missing or invalid.
- */
 function validateEnv(): { url: string; key: string } {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !key) {
     throw new Error(
-      '[Supabase] Missing env vars. Required: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY. ' +
+      '[Supabase Server] Missing env vars. Required: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY. ' +
       'Add them to .env.local (see .env.example).'
     );
   }
@@ -23,7 +25,7 @@ function validateEnv(): { url: string; key: string } {
       throw new Error(`Invalid protocol: ${parsed.protocol}`);
     }
   } catch {
-    throw new Error(`[Supabase] NEXT_PUBLIC_SUPABASE_URL is not a valid URL: ${url}`);
+    throw new Error(`[Supabase Server] NEXT_PUBLIC_SUPABASE_URL is not a valid URL: ${url}`);
   }
 
   return { url, key };
@@ -31,9 +33,7 @@ function validateEnv(): { url: string; key: string } {
 
 /**
  * Create a Supabase server client with cookie handling.
- *
- * This version NEVER returns null — it throws on misconfiguration
- * so that bugs are visible immediately (vs silent fallback to demo mode).
+ * NEVER returns null — throws on misconfiguration so bugs are visible.
  *
  * Usage:
  *   const supabase = await createClient();
@@ -56,22 +56,16 @@ export async function createClient(): Promise<SupabaseClient> {
           );
         } catch (err) {
           // Server Component context — can't set cookies.
-          // This is expected; the middleware will refresh them.
+          // The middleware will refresh them on the next request.
           console.debug('[Supabase Server] Cookie set skipped (Server Component):', err);
         }
       },
-    },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
     },
   });
 }
 
 /**
  * Check if Supabase is configured (for feature-flagging demo mode).
- * Use this in routes that need to fall back to demo data when Supabase is not configured.
  */
 export const isSupabaseConfigured = (): boolean => {
   try {

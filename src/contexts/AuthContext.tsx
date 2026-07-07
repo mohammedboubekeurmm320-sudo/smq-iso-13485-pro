@@ -1,3 +1,16 @@
+// src/contexts/AuthContext.tsx
+// ============================================================================
+// AuthContext — provides authentication state to the entire app.
+//
+// Features:
+//   - login(email, password) → calls /api/auth/login
+//   - logout() → calls /api/auth/logout, clears state
+//   - refreshSession() → calls /api/auth/session
+//   - switchOrganization(orgId) → calls /api/auth/switch-org
+//   - Error state visible to UI (no more "nothing happens")
+//   - Multi-tab sync (logout in one tab → logout in all)
+// ============================================================================
+
 'use client';
 
 import {
@@ -140,7 +153,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!res.ok) {
-        // 401 or other — not authenticated
         setState({
           user: null,
           profile: null,
@@ -153,44 +165,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const json = await res.json();
-      const data = json.data || json; // unwrap apiSuccess wrapper
+      const data = await res.json();
 
-      const authUser = data.user || null;
-      if (!authUser) {
+      if (!data.user) {
         setState({
-          user: null, profile: null, organization: null,
-          memberships: [], loading: false, error: null, requiresOnboarding: false,
+          user: null,
+          profile: null,
+          organization: null,
+          memberships: [],
+          loading: false,
+          error: null,
+          requiresOnboarding: false,
         });
         return;
       }
 
-      // Profile & org are nested inside user in the API response
-      const profile = data.profile || authUser.profile || null;
-      const organization = data.organization || authUser.organization || null;
-      const memberships = data.memberships || authUser.memberships || [];
-
       setState({
-        user: { id: authUser.id, email: authUser.email },
-        profile: profile ? {
-          id: profile.id,
-          email: profile.email,
-          fullName: profile.full_name ?? profile.fullName ?? null,
-          role: profile.role || 'admin',
-          department: profile.department ?? null,
-          organizationId: profile.organization_id ?? profile.organizationId ?? null,
-        } : null,
-        organization: organization ? {
-          id: organization.id,
-          name: organization.name,
-          slug: organization.slug,
-          subscriptionStatus: organization.subscriptionStatus ?? organization.subscription_status ?? 'trial',
-          settings: organization.settings ?? null,
-        } : null,
-        memberships,
+        user: data.user,
+        profile: data.profile,
+        organization: data.organization,
+        memberships: data.memberships || [],
         loading: false,
         error: null,
-        requiresOnboarding: !profile?.organization_id && !profile?.organizationId,
+        requiresOnboarding: data.requiresOnboarding || false,
       });
     } catch (err) {
       console.error('[AuthContext] refreshSession error:', err);
@@ -221,47 +218,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify({ email, password }),
         });
 
-        const json = await res.json();
+        const data = await res.json();
 
-        if (!res.ok || !json.success) {
-          const errorMsg = json.error || 'Login failed';
-          setState((prev) => ({ ...prev, loading: false, error: errorMsg }));
+        if (!res.ok || !data.success) {
+          const errorMsg = data.error || 'Login failed';
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            error: errorMsg,
+          }));
           return { success: false, error: errorMsg };
         }
 
-        // Unwrap apiSuccess({ data: { user, session } })
-        const payload = json.data || json;
-        const authUser = payload.user || {};
-        const profile = payload.profile || authUser.profile || null;
-        const organization = payload.organization || authUser.organization || null;
-        const memberships = payload.memberships || authUser.memberships || [];
-
+        // Update state from the login response
         setState({
-          user: { id: authUser.id, email: authUser.email },
-          profile: profile ? {
-            id: profile.id,
-            email: profile.email,
-            fullName: profile.full_name ?? profile.fullName ?? null,
-            role: profile.role || 'admin',
-            department: profile.department ?? null,
-            organizationId: profile.organization_id ?? profile.organizationId ?? null,
-          } : null,
-          organization: organization ? {
-            id: organization.id,
-            name: organization.name,
-            slug: organization.slug,
-            subscriptionStatus: organization.subscriptionStatus ?? organization.subscription_status ?? 'trial',
-            settings: organization.settings ?? null,
-          } : null,
-          memberships,
+          user: data.user,
+          profile: data.profile,
+          organization: data.organization,
+          memberships: [],
           loading: false,
           error: null,
-          requiresOnboarding: !profile?.organization_id && !profile?.organizationId,
+          requiresOnboarding: data.requiresOnboarding || false,
         });
 
         return {
           success: true,
-          requiresOnboarding: !profile?.organization_id && !profile?.organizationId,
+          requiresOnboarding: data.requiresOnboarding,
         };
       } catch (err) {
         console.error('[AuthContext] login error:', err);
@@ -298,7 +280,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: null,
         requiresOnboarding: false,
       });
-      // Clear any sessionStorage caches
       try {
         sessionStorage.removeItem('auth_org');
         sessionStorage.removeItem('auth_memberships');
@@ -366,6 +347,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('storage', handleStorage);
   }, [refreshSession]);
 
+  // --------------------------------------------------------------------------
+  // Backward-compat: build LegacyCurrentUser from state
+  // --------------------------------------------------------------------------
+  const currentUser: LegacyCurrentUser | null = useMemo(() => {
+    if (!state.user || !state.profile) return null;
+    return {
+      id: state.profile.id,
+      email: state.profile.email || state.user.email || '',
+      fullName: state.profile.fullName,
+      role: state.profile.role,
+      department: state.profile.department,
+      jobTitle: null,
+      phone: null,
+      avatarUrl: null,
+      organizationId: state.profile.organizationId,
+      createdAt: null,
+      updatedAt: null,
+    };
+  }, [state.user, state.profile]);
+
   const value: AuthContextValue = {
     ...state,
     login,
@@ -375,21 +376,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearError,
     // --- Backward-compat shims ---
     isAuthenticated: !!state.user,
-    currentUser: state.user && state.profile
-      ? {
-          id: state.profile.id,
-          email: state.profile.email || state.user.email || '',
-          fullName: state.profile.fullName,
-          role: state.profile.role,
-          department: state.profile.department,
-          jobTitle: null,
-          phone: null,
-          avatarUrl: null,
-          organizationId: state.profile.organizationId,
-          createdAt: null,
-          updatedAt: null,
-        }
-      : null,
+    currentUser,
     source: 'supabase' as const,
     loginWithPassword: async (email: string, password: string) => {
       const result = await login(email, password);
