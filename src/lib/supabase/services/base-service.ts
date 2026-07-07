@@ -1,5 +1,14 @@
-// Base service for Supabase entity operations
-// Provides common CRUD patterns with org-scoping and audit trail
+// src/lib/supabase/services/base-service.ts
+// ============================================================================
+// Base service for Supabase entity operations.
+// Provides common CRUD patterns with org-scoping and audit trail.
+//
+// CRITICAL FIXES vs old version:
+//   1. requireReady() fail-fast — throws if init() skipped or orgId missing
+//   2. mapToSnake/mapToCamel recursive (handles JSONB nested)
+//   3. softDelete: statusValue is now REQUIRED (no more wrong 'Obsolete' default)
+//   4. logAudit is a no-op (DB trigger log_audit_trail handles everything)
+// ============================================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '../server';
@@ -139,8 +148,12 @@ export abstract class BaseService {
       .eq('id', id)
       .eq('organization_id', this.orgId);
 
-    const { data, error } = await query.single();
-    if (error) return null;
+    const { data, error } = await query.maybeSingle();
+    if (error) {
+      console.warn(`[BaseService.getById] ${tableName}:${id} error:`, error.message);
+      return null;
+    }
+    if (!data) return null;
     return this.mapToCamel<T>(data);
   }
 
@@ -175,10 +188,24 @@ export abstract class BaseService {
   public async softDelete<T>(
     tableName: string,
     id: string,
-    statusValue: string,  // ← now required, no more wrong default 'Obsolete'
-    statusField = 'status',
+    statusField: string,         // 'status', 'doc_status', etc.
+    statusValue: string,         // 'Closed', 'Obsolete', 'Rejected', etc. — REQUIRED, no more 'Obsolete' default
     userId?: string,
   ): Promise<T> {
     return this.update<T>(tableName, id, { [statusField]: statusValue }, userId);
+  }
+
+  /**
+   * Hard delete — use with caution. Most entities should use softDelete.
+   * Audit trail entry is auto-created by DB trigger.
+   */
+  public async delete(tableName: string, id: string): Promise<void> {
+    this.requireReady();
+    const { error } = await this.supabase
+      .from(tableName)
+      .delete()
+      .eq('id', id)
+      .eq('organization_id', this.orgId);
+    if (error) throw new Error(error.message);
   }
 }

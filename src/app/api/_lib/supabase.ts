@@ -1,7 +1,16 @@
-import type { NextRequest } from 'next/server';
-
+// src/app/api/_lib/supabase.ts
+// ============================================================================
 // Supabase bridge — returns initialized service if Supabase is configured,
 // otherwise returns null (demo-mode fallback).
+//
+// CRITICAL FIXES vs old version:
+//   1. getService() does NOT spread the service instance anymore —
+//      spreading loses prototype methods. We mutate the instance instead.
+//   2. orgId is resolved from the authenticated session (cookie or profile),
+//      NOT from a client-supplied x-organization-id header.
+// ============================================================================
+
+import type { NextRequest } from 'next/server';
 
 import { CapaService } from '@/lib/supabase/services/capa-service';
 import { NcrService } from '@/lib/supabase/services/ncr-service';
@@ -71,15 +80,20 @@ const SERVICE_CLASSES = {
  */
 async function resolveOrgIdFromSession(): Promise<string | undefined> {
   const { createClient } = await import('@/lib/supabase/server');
-  const client = await createClient();
-  if (!client) return undefined;
+  const { cookies } = await import('next/headers');
+
+  let client;
+  try {
+    client = await createClient();
+  } catch {
+    return undefined;
+  }
 
   try {
     const { data: { user } } = await client.auth.getUser();
     if (!user) return undefined;
 
     // 1. Check cookie "current_org_id" (user may have switched org via UI)
-    const { cookies } = await import('next/headers');
     const cookieStore = await cookies();
     const currentOrgId = cookieStore.get('current_org_id')?.value;
     if (currentOrgId) {
@@ -95,7 +109,7 @@ async function resolveOrgIdFromSession(): Promise<string | undefined> {
       .from('profiles')
       .select('organization_id')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
     return profile?.organization_id ?? undefined;
   } catch (err) {
     console.error('[getService] Failed to resolve orgId from session:', err);
@@ -120,8 +134,8 @@ export async function getService<K extends keyof ServiceMap>(
   const service = new ServiceClass(orgId) as BaseService & ServiceMap[K];
   try {
     await service.init();
-    // FIX: do NOT spread — use Object.defineProperty to preserve prototype chain
-    Object.defineProperty(service, 'initialized', { value: true, writable: false, enumerable: true });
+    // FIX: do NOT spread — mutating the instance preserves prototype methods
+    (service as { initialized: true }).initialized = true;
     return service as ServiceMap[K] & { initialized: true };
   } catch (error) {
     console.error(`[Supabase] Failed to initialize ${key} service:`, error);
