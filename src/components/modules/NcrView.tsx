@@ -225,15 +225,16 @@ export function NcrView() {
   };
 
   const handleCreate = () => {
+    const nextNcrNum = ncrs.length > 0
+      ? Math.max(...ncrs.map(n => {
+          const m = n.ncrNumber.match(/(\d+)$/);
+          return m ? parseInt(m[1], 10) : 0;
+        })) + 1
+      : 1;
+    const ncrNumber = `NCR-${new Date().getFullYear()}-${String(nextNcrNum).padStart(3, '0')}`;
     const newNcr: NonConformance = {
       id: `ncr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      const nextNcrNum = ncrs.length > 0
-        ? Math.max(...ncrs.map(n => {
-            const m = n.ncrNumber.match(/(\d+)$/);
-            return m ? parseInt(m[1], 10) : 0;
-          })) + 1
-        : 1;
-      const ncrNumber = `NCR-${new Date().getFullYear()}-${String(nextNcrNum).padStart(3, '0')}`,
+      ncrNumber,
       title: formTitle,
       type: formType,
       status: 'Open',

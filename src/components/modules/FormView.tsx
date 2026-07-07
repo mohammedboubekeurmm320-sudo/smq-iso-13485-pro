@@ -419,17 +419,18 @@ export function FormView() {
 
   const handleSubmitInstance = () => {
     if (!fillingTemplate) return;
+    const nextFormNum = instances.length > 0
+      ? Math.max(...instances.map(i => {
+          const m = i.referenceNumber.match(/(\d+)$/);
+          return m ? parseInt(m[1], 10) : 0;
+        })) + 1
+      : 1;
+    const referenceNumber = `FORM-${new Date().getFullYear()}-${String(nextFormNum).padStart(3, '0')}`;
     const newInstance: FormInstance = {
       id: `fi-${Date.now()}`,
       templateId: fillingTemplate.id,
       templateVersion: fillingTemplate.version,
-      const nextFormNum = instances.length > 0
-        ? Math.max(...instances.map(i => {
-            const m = i.referenceNumber.match(/(\d+)$/);
-            return m ? parseInt(m[1], 10) : 0;
-          })) + 1
-        : 1;
-      const referenceNumber = `FORM-${new Date().getFullYear()}-${String(nextFormNum).padStart(3, '0')}`,
+      referenceNumber,
       values: formValues,
       status: 'Submitted',
       isLocked: false,

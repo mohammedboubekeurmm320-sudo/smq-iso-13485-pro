@@ -345,11 +345,10 @@ export function DocumentControlView() {
     }
 
     // For other status transitions, just update directly
-    store.updateDocument(doc.id, {
-      status: next,
-      effectiveDate: (next as DocumentStatus) === 'Approved' ? new Date().toISOString() : undefined,
-      lastReviewed: (next as DocumentStatus) === 'Under Review' ? new Date().toISOString() : undefined,
-    });
+    const updates: Partial<Document> = { status: next };
+    if (next === 'Approved') updates.effectiveDate = new Date().toISOString();
+    if (next === 'Under Review') updates.lastReviewed = new Date().toISOString();
+    store.updateDocument(doc.id, updates);
 
     if (selectedDoc?.id === doc.id) {
       setSelectedDoc({

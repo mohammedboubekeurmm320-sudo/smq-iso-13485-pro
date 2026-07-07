@@ -231,15 +231,16 @@ export function DeviationView() {
   };
 
   const handleCreate = () => {
+    const nextDevNum = deviations.length > 0
+      ? Math.max(...deviations.map(d => {
+          const m = d.devNumber.match(/(\d+)$/);
+          return m ? parseInt(m[1], 10) : 0;
+        })) + 1
+      : 1;
+    const devNumber = `DEV-${new Date().getFullYear()}-${String(nextDevNum).padStart(3, '0')}`;
     const newDev: Deviation = {
       id: `dev-${Date.now()}`,
-      const nextDevNum = deviations.length > 0
-        ? Math.max(...deviations.map(d => {
-            const m = d.devNumber.match(/(\d+)$/);
-            return m ? parseInt(m[1], 10) : 0;
-          })) + 1
-        : 1;
-      const devNumber = `DEV-${new Date().getFullYear()}-${String(nextDevNum).padStart(3, '0')}`,
+      devNumber,
       title: form.title,
       type: form.type,
       status: 'Open',

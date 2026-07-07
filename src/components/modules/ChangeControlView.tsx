@@ -277,15 +277,16 @@ export function ChangeControlView() {
     // Resolve template reference
     const selectedTemplate = formTemplateId ? approvedTemplates.find(t => t.id === formTemplateId) : undefined;
 
+    const nextCcNum = changeControls.length > 0
+      ? Math.max(...changeControls.map(c => {
+          const m = c.ccNumber.match(/(\d+)$/);
+          return m ? parseInt(m[1], 10) : 0;
+        })) + 1
+      : 1;
+    const ccNumber = `CC-${new Date().getFullYear()}-${String(nextCcNum).padStart(3, '0')}`;
     const newCC: ChangeControl = {
       id: `cc-${Date.now()}`,
-      const nextCcNum = changeControls.length > 0
-        ? Math.max(...changeControls.map(c => {
-            const m = c.ccNumber.match(/(\d+)$/);
-            return m ? parseInt(m[1], 10) : 0;
-          })) + 1
-        : 1;
-      const ccNumber = `CC-${new Date().getFullYear()}-${String(nextCcNum).padStart(3, '0')}`,
+      ccNumber,
       title: formTitle,
       type: formType,
       status: 'Requested',
@@ -337,7 +338,7 @@ export function ChangeControlView() {
     const next = getNextStatus(cc.status);
     if (!next) return;
 
-    if (next === 'Approved') {
+    if (['Approved', 'Completed', 'Rejected'].includes(next)) {
       setPendingStatusAdvance(cc);
       setShowSignatureModal(true);
       return;
@@ -356,13 +357,18 @@ export function ChangeControlView() {
     }
   };
 
-  const handleSignatureConfirm = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType }) => {
-    void signatureData;
+  const handleSignatureConfirm = (signatureData: { signatureHash: string; signedAt: string; signatureType: SignatureType; signedById: string; signerName: string; signerRole: string; reason?: string }) => {
     if (!pendingStatusAdvance) return;
     const cc = pendingStatusAdvance;
     store.updateChangeControl(cc.id, {
       status: 'Approved',
       approvedBy: currentUser?.id,
+      signatureHash: signatureData.signatureHash,
+      signedAt: signatureData.signedAt,
+      signedById: signatureData.signedById,
+      signerName: signatureData.signerName,
+      signerRole: signatureData.signerRole,
+      signatureReason: signatureData.reason,
     });
     if (selectedCC?.id === cc.id) {
       setSelectedCC({ ...cc, status: 'Approved', approvedBy: currentUser?.id });

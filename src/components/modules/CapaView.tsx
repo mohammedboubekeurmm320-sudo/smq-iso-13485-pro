@@ -231,15 +231,16 @@ export function CapaView() {
     }
     setPrereqError(null);
 
+    const nextCapaNum = capas.length > 0
+      ? Math.max(...capas.map(c => {
+          const m = c.capaNumber.match(/(\d+)$/);
+          return m ? parseInt(m[1], 10) : 0;
+        })) + 1
+      : 1;
+    const capaNumber = `CAPA-${new Date().getFullYear()}-${String(nextCapaNum).padStart(3, '0')}`;
     const newCapa: Capa = {
       id: `capa-${Date.now()}`,
-      const nextCapaNum = capas.length > 0
-        ? Math.max(...capas.map(c => {
-            const m = c.capaNumber.match(/(\d+)$/);
-            return m ? parseInt(m[1], 10) : 0;
-          })) + 1
-        : 1;
-      const capaNumber = `CAPA-${new Date().getFullYear()}-${String(nextCapaNum).padStart(3, '0')}`,
+      capaNumber,
       title: formTitle,
       type: formType,
       status: 'Open',
