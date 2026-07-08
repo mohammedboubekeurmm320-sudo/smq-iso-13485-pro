@@ -23,6 +23,7 @@ import {
   type ReactNode,
 } from 'react';
 import { rolePermissions, type Permission, type UserRole as QmsUserRole } from '@/types/qms';
+import { isSupabaseConfigured } from '@/lib/supabase/mode';
 
 // ============================================================================
 // Types
@@ -377,7 +378,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // --- Backward-compat shims ---
     isAuthenticated: !!state.user,
     currentUser,
-    source: 'supabase' as const,
+    source: isSupabaseConfigured() ? 'supabase' as const : 'demo' as const,
     loginWithPassword: async (email: string, password: string) => {
       const result = await login(email, password);
       return result.success;

@@ -93,6 +93,11 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  // If no Supabase config → demo mode: let everything through
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return response;
+  }
+
   // If no user and not a public path → redirect to login
   if (!user) {
     const loginUrl = new URL('/auth/login', request.url);

@@ -7,12 +7,53 @@
 //   - profile (id, email, fullName, role, department, organizationId)
 //   - organization (id, name, slug, subscriptionStatus)
 //   - memberships (all orgs the user belongs to)
+//
+// In demo mode (no Supabase configured): returns a mock admin user
+// so the UI can render all modules with demo data from the Zustand store.
 // ============================================================================
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { isSupabaseConfigured } from '@/lib/supabase/mode';
 
 export async function GET() {
+  // ── Demo mode: no Supabase configured → return mock user ──
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json({
+      user: { id: 'demo-admin', email: 'admin@demo.qms' },
+      profile: {
+        id: 'demo-admin',
+        email: 'admin@demo.qms',
+        fullName: 'Admin Demo',
+        role: 'admin',
+        department: 'Quality Assurance',
+        organizationId: 'demo-org',
+      },
+      organization: {
+        id: 'demo-org',
+        name: 'QMS Demo Organization',
+        slug: 'qms-demo',
+        subscriptionStatus: 'trial',
+        settings: {
+          industry_type: 'medical_device',
+          applicable_standards: ['ISO 13485:2016', '21 CFR Part 820'],
+          setup_completed: true,
+        },
+      },
+      memberships: [
+        {
+          organizationId: 'demo-org',
+          role: 'admin',
+          status: 'active',
+          organization: { id: 'demo-org', name: 'QMS Demo Organization', slug: 'qms-demo' },
+        },
+      ],
+      requiresOnboarding: false,
+      _demo: true,
+    });
+  }
+
+  // ── Live mode: Supabase auth ──
   let supabase;
   try {
     supabase = await createClient();
