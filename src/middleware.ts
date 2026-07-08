@@ -1,12 +1,14 @@
 // src/middleware.ts
 // ============================================================================
-// Middleware — refreshes Supabase session and protects routes.
+// Middleware — refreshes Supabase session.
 //
 // Behavior:
 //   1. Refreshes the Supabase session on every request (handles token rotation)
 //   2. Returns the user from getUser() (validates the JWT server-side)
-//   3. Redirects unauthenticated users to /auth/login (except public paths)
-//   4. Lets authenticated users through
+//   3. Lets ALL requests through (auth guard removed for demo/testing)
+//
+// NOTE: Auth protection is temporarily disabled. Re-enable by uncommenting
+// the redirect block at the bottom of middleware().
 // ============================================================================
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -93,19 +95,17 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // If no Supabase config → demo mode: let everything through
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    return response;
-  }
+  // ── Auth guard disabled for demo/testing ──
+  // All requests pass through regardless of auth state.
+  // The session API returns a demo user when no real session exists.
+  //
+  // To re-enable auth protection, uncomment below:
+  // if (!user) {
+  //   const loginUrl = new URL('/auth/login', request.url);
+  //   loginUrl.searchParams.set('next', pathname);
+  //   return NextResponse.redirect(loginUrl);
+  // }
 
-  // If no user and not a public path → redirect to login
-  if (!user) {
-    const loginUrl = new URL('/auth/login', request.url);
-    loginUrl.searchParams.set('next', pathname);
-    return NextResponse.redirect(loginUrl);
-  }
-
-  // Authenticated user — let them through
   return response;
 }
 

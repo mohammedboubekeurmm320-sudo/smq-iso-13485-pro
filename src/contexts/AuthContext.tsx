@@ -23,7 +23,6 @@ import {
   type ReactNode,
 } from 'react';
 import { rolePermissions, type Permission, type UserRole as QmsUserRole } from '@/types/qms';
-import { isSupabaseConfigured } from '@/lib/supabase/mode';
 
 // ============================================================================
 // Types
@@ -93,6 +92,8 @@ interface AuthState {
   loading: boolean;
   error: string | null;
   requiresOnboarding: boolean;
+  /** True when session API returned a demo/fallback user */
+  isDemo: boolean;
 }
 
 interface AuthContextValue extends AuthState {
@@ -139,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading: true,
     error: null,
     requiresOnboarding: false,
+    isDemo: false,
   });
 
   // --------------------------------------------------------------------------
@@ -155,40 +157,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!res.ok) {
         setState({
-          user: null,
-          profile: null,
-          organization: null,
-          memberships: [],
-          loading: false,
-          error: null,
-          requiresOnboarding: false,
+          user: null, profile: null, organization: null,
+          memberships: [], loading: false, error: null,
+          requiresOnboarding: false, isDemo: false,
         });
         return;
       }
 
       const data = await res.json();
 
-      if (!data.user) {
+      // Unwrap apiSuccess wrapper if present
+      const payload = data.data || data;
+
+      if (!payload.user) {
         setState({
-          user: null,
-          profile: null,
-          organization: null,
-          memberships: [],
-          loading: false,
-          error: null,
-          requiresOnboarding: false,
+          user: null, profile: null, organization: null,
+          memberships: [], loading: false, error: null, requiresOnboarding: false,
+          isDemo: false,
         });
         return;
       }
 
+      const isDemo = !!payload._demo;
+
       setState({
-        user: data.user,
-        profile: data.profile,
-        organization: data.organization,
-        memberships: data.memberships || [],
+        user: payload.user,
+        profile: payload.profile,
+        organization: payload.organization,
+        memberships: payload.memberships || [],
         loading: false,
         error: null,
-        requiresOnboarding: data.requiresOnboarding || false,
+        requiresOnboarding: payload.requiresOnboarding || false,
+        isDemo,
       });
     } catch (err) {
       console.error('[AuthContext] refreshSession error:', err);
@@ -200,6 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading: false,
         error: 'Failed to load session. Please refresh the page.',
         requiresOnboarding: false,
+        isDemo: false,
       });
     }
   }, []);
@@ -240,6 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           loading: false,
           error: null,
           requiresOnboarding: data.requiresOnboarding || false,
+          isDemo: false,
         });
 
         return {
@@ -273,13 +275,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.warn('[AuthContext] logout error (non-fatal):', err);
     } finally {
       setState({
-        user: null,
-        profile: null,
-        organization: null,
-        memberships: [],
-        loading: false,
-        error: null,
-        requiresOnboarding: false,
+        user: null, profile: null, organization: null,
+        memberships: [], loading: false, error: null,
+        requiresOnboarding: false, isDemo: false,
       });
       try {
         sessionStorage.removeItem('auth_org');
@@ -378,7 +376,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // --- Backward-compat shims ---
     isAuthenticated: !!state.user,
     currentUser,
-    source: isSupabaseConfigured() ? 'supabase' as const : 'demo' as const,
+    source: state.isDemo ? 'demo' as const : 'supabase' as const,
     loginWithPassword: async (email: string, password: string) => {
       const result = await login(email, password);
       return result.success;

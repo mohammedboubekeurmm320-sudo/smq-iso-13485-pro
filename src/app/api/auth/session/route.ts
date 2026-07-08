@@ -10,6 +10,9 @@
 //
 // In demo mode (no Supabase configured): returns a mock admin user
 // so the UI can render all modules with demo data from the Zustand store.
+//
+// When Supabase IS configured but no valid session exists, also falls back
+// to a demo user so the app is testable without login.
 // ============================================================================
 
 import { NextResponse } from 'next/server';
@@ -67,7 +70,39 @@ export async function GET() {
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    return NextResponse.json({ user: null }, { status: 200 });
+    // No real session → return demo user so the UI works without login
+    return NextResponse.json({
+      user: { id: 'demo-admin', email: 'admin@demo.qms' },
+      profile: {
+        id: 'demo-admin',
+        email: 'admin@demo.qms',
+        fullName: 'Admin Demo',
+        role: 'admin',
+        department: 'Quality Assurance',
+        organizationId: 'demo-org',
+      },
+      organization: {
+        id: 'demo-org',
+        name: 'QMS Demo Organization',
+        slug: 'qms-demo',
+        subscriptionStatus: 'trial',
+        settings: {
+          industry_type: 'medical_device',
+          applicable_standards: ['ISO 13485:2016', '21 CFR Part 820'],
+          setup_completed: true,
+        },
+      },
+      memberships: [
+        {
+          organizationId: 'demo-org',
+          role: 'admin',
+          status: 'active',
+          organization: { id: 'demo-org', name: 'QMS Demo Organization', slug: 'qms-demo' },
+        },
+      ],
+      requiresOnboarding: false,
+      _demo: true,
+    });
   }
 
   // Fetch profile (RLS allows self-read)
